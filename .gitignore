@@ -1,0 +1,23 @@
+# IDE and local artifacts
+.idea/
+.vscode/
+*.swp
+
+# Go build outputs
+*.test
+*.out
+
+# Local runtime state, binaries, logs, memories, and workspace metadata
+/.memgov/
+*.db
+
+# Local config
+/config.local.yaml
+/config.local.yaml.backup
+/dist/
+__pycache__/
+*.pyc
+*.db-wal
+*.db-shm
+*.db.lock
+/web/node_modules/

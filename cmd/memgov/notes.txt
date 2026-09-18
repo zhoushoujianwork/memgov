@@ -1,0 +1,5 @@
+cmd/memgov 只负责进程入口、信号与退出码；命令实现在 internal/cli，业务和 SQLite 事务在 internal/core。
+
+当前使用说明：README.md、docs/reference/cli-contract.md。
+治理与恢复：docs/guides/governance.md。
+旧设计仅存档于 docs/archive/decisions，不构成新版运行要求。

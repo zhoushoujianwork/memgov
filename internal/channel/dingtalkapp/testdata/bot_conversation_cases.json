@@ -1,0 +1,119 @@
+[
+  {
+    "name": "group_mention",
+    "owner": false,
+    "frame": {
+      "conversationId": "cid:group-a",
+      "conversationType": "2",
+      "msgId": "fixture-group-question",
+      "msgtype": "richText",
+      "senderId": "fixture-requester-union",
+      "senderStaffId": "fixture-requester-user",
+      "senderNick": "测试提问人",
+      "senderCorpId": "corp",
+      "chatbotCorpId": "corp",
+      "chatbotUserId": "fixture-chatbot-user",
+      "robotCode": "fixture-bot",
+      "createAt": 1789622776000,
+      "isInAtList": true,
+      "sessionWebhook": "https://example.invalid/robot?session=FIXTURE_SESSION_SECRET",
+      "sessionWebhookExpiredTime": 1789623076000,
+      "content": {
+        "richText": [
+          {"text": "@测试机器人"},
+          {"text": " 请验证群聊回复会 @ 提问人"}
+        ]
+      }
+    },
+    "expect": {
+      "conversation_type": "group",
+      "mentioned": true,
+      "triggered": true,
+      "runtime_reply": true
+    }
+  },
+  {
+    "name": "group_without_mention",
+    "owner": false,
+    "frame": {
+      "conversationId": "cid:group-a",
+      "conversationType": "2",
+      "msgId": "fixture-group-context",
+      "msgtype": "text",
+      "senderId": "fixture-member-union",
+      "senderStaffId": "fixture-member-user",
+      "senderNick": "测试群成员",
+      "senderCorpId": "corp",
+      "chatbotCorpId": "corp",
+      "chatbotUserId": "fixture-chatbot-user",
+      "robotCode": "fixture-bot",
+      "createAt": 1789622777000,
+      "isInAtList": false,
+      "sessionWebhook": "https://example.invalid/robot?session=FIXTURE_SESSION_SECRET",
+      "sessionWebhookExpiredTime": 1789623077000,
+      "text": {"content": "普通群消息只作为上下文"}
+    },
+    "expect": {
+      "conversation_type": "group",
+      "mentioned": false,
+      "triggered": false,
+      "runtime_reply": false
+    }
+  },
+  {
+    "name": "owner_private",
+    "owner": true,
+    "frame": {
+      "conversationId": "cid:owner-app",
+      "conversationType": "1",
+      "msgId": "fixture-owner-private",
+      "msgtype": "text",
+      "senderId": "fixture-owner-union",
+      "senderStaffId": "owner",
+      "senderNick": "测试 Owner",
+      "senderCorpId": "corp",
+      "chatbotCorpId": "corp",
+      "chatbotUserId": "fixture-chatbot-user",
+      "robotCode": "fixture-bot",
+      "createAt": 1789622778000,
+      "isInAtList": false,
+      "sessionWebhook": "https://example.invalid/robot?session=FIXTURE_SESSION_SECRET",
+      "sessionWebhookExpiredTime": 1789623078000,
+      "text": {"content": "请验证 Owner 私聊会直接进入 Agent 并回复"}
+    },
+    "expect": {
+      "conversation_type": "direct",
+      "mentioned": false,
+      "triggered": true,
+      "runtime_reply": true
+    }
+  },
+  {
+    "name": "ordinary_user_private",
+    "owner": false,
+    "frame": {
+      "conversationId": "cid:owner-app",
+      "conversationType": "1",
+      "msgId": "fixture-ordinary-private",
+      "msgtype": "text",
+      "senderId": "fixture-ordinary-union",
+      "senderStaffId": "ordinary-user",
+      "senderNick": "测试普通用户",
+      "senderCorpId": "corp",
+      "chatbotCorpId": "corp",
+      "chatbotUserId": "fixture-chatbot-user",
+      "robotCode": "fixture-bot",
+      "createAt": 1789622779000,
+      "isInAtList": false,
+      "sessionWebhook": "https://example.invalid/robot?session=FIXTURE_SESSION_SECRET",
+      "sessionWebhookExpiredTime": 1789623079000,
+      "text": {"content": "普通用户私聊不应启动 Agent 或收到回复"}
+    },
+    "expect": {
+      "conversation_type": "direct",
+      "mentioned": false,
+      "triggered": true,
+      "runtime_reply": false
+    }
+  }
+]

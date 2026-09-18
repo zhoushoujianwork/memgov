@@ -1,0 +1,502 @@
+# memgov AI 值守用户手册
+
+Cyber 并发增量见[运行时设计](../design/agent-runtime-design.md#cyber-并发与可靠性2026-09-18)：配置显式启用分析 8、执行 4、30 秒聚合与 120/900/120 秒截止。完整 Agent 使用运行账户权限，不是沙箱；破坏性操作先在管理台展示目标、影响、恢复方式，Owner 核对后在已绑定机器人私聊发送该提案的完整口令。等待确认释放槽位，历史或引用消息不能批准。业务完成与记忆审查结果分别展示；未知外部动作必须先核验，历史失败不会自动重跑。
+
+本文说明当前源码的配置与使用。本轮把 DWS 后台观察和机器人交互分开：后台评估后启动独立完整 Agent，完成仅记录；机器人仅 Owner 私聊和有效群 @ 直接回答。源码实现和离线验证已完成；真实模型与平台业务验收仍由部署者执行。详见[主设计](../design/dingtalk-integration-design.md)与[协议](../design/dingtalk-integration-design-detail.md#后台观察与机器人交互)；旧 agent_origin_reply / runtime reply 方案已被替代。
+
+macOS 长期运行推荐 `memgov service install --config ~/.memgov/config.dual.yaml`，由系统托管并接管旧服务，进程退出或二进制替换后自动恢复。`service status/stop/start` 查看、停止或恢复整个服务；未安装托管时 start/restart 仍为前台模式。默认一并启动管理台；下文按实例启动的低层命令保留用于兼容和诊断。详见[统一本地服务](../design/unified-service-design.md)。
+后台观察通过 DWS 采集，Haiku 按 20 条或从首条待分析消息起 30 秒评估事项价值，再启动独立 Agent 调查并解决问题。值得处理但输入不齐时可以查证；完成、失败或阻塞只记录结果，不经过主 Agent，也不自动向 Owner 或原群汇报。Agent 按预设授权主动沟通是独立工具行为，和任务完成通知分开。
+
+值守所有者可以像聊天一样私聊机器人。普通文字原样交给同一个 Agent 会话，追问、补充和自然语言的取消都由 Agent 理解；是否调用记忆由 Agent 通过内置 skill 决定。运行时不做关键词判断、不预先召回记忆、不要求聊天答复产生代码提交，也不调用 Haiku。主动值守按 20 条或从首条待分析消息起 30 秒触发；群内通过钉钉 @ 功能选中机器人后，每条有效 @ 直接交给群 Agent 回答，包括“在吗”等问候，不经过 Haiku 筛选或等待凑批。普通非 @ 群消息只作为采集和上下文。本人私聊与有效群 @ 共用阶段标记：原消息依次显示“已收到”“处理中”“已完成”，失败切为“打叉”。进入待审批后 Agent 本轮结束，但任务保持“处理中”；所有者同意后服务重新领取原任务继续执行，最终切为“已完成”或“打叉”。群任务即使最终失败或外部操作结果未知，只要前序处理已经形成结论，机器人仍会把结论和当前未完成状态回复到原群；“打叉”不再替代结果正文。服务重启会按数据库中的任务状态补齐缺失标记和尚未发送的异常结果反馈，原消息只保留当前标记，管理台保留每个阶段的投递结果。普通群消息不发状态标记。群答复在回调 webhook 有效时原生 @ 需求发起人，并把 `@` 放在答复末尾且只显示一次；服务重启或 webhook 过期时仍发送一次正文昵称提示，但客户端不会产生原生 @ 提醒。需要额外操作确认时，卡片留在原群并 @ 已核验 DWS 所有者；所有者可点“同意”继续执行或点“拒绝”取消，其他成员无权操作。配置和模板要求见[确认卡片](../design/dingtalk-integration-design-detail.md#群回复与确认卡片)。平台接受阶段表情不等于回答已经送达。普通用户私聊不会进入 Agent；Owner 在群里 @ 也只能使用该群 Agent 权限。
+
+直接 Agent 单轮最长运行 30 分钟。到达上限会明确失败；服务恢复时，遗留运行中任务和尝试收口为 `failed/runtime_restarted`，未知外部操作与投递收口为 `unknown` 且不自动重放。已确认接收的 Owner 私聊会收到一次机器人身份的幂等失败通知，不会只停留在“已收到”。
+
+私聊与群 @ 由机器人 Stream 实时接收。消息先用一个短事务保存去重、任务恢复和投递所需的 SQLite 状态，再立即唤醒对应 Agent；默认 1 秒扫描只在唤醒合并或丢失时兜底，不会等待 DWS 群历史查询。原消息的“已收到”“处理中”等表情按顺序旁路发送，平台接口变慢不会阻止 Agent 开始；群目录刷新和补漏也独立运行。回答与工具验证仍由 Claude 执行，正文当前在完整结果生成后一次性交付，回复会显示接入耗时、执行耗时和实际模型。
+
+运行时会按实际通道加入通道专属系统提示。本人在钉钉私聊中提到某位同事、且问题可能依赖双方沟通时，Agent 默认通过 `dws` 先在当前企业中确认联系人，再读取与该人的一对一聊天；不会先遍历长期记忆，也不能因为运行时会话目录为空就声称没有聊天或正式记忆。重名时先请本人消歧，不猜测身份。只有本人明确询问长期知识，或私聊记录不足时，才继续使用 `memgov-memory`。群内 @ 使用另一套边界：只使用当前群及向该群开放的上下文，不会因为提到某人而读取其私聊。
+
+发送也按通道区分身份。私聊机器人的普通回答不用调用 `dws`，由运行时以应用机器人身份回复当前私聊；本人明确要求“另发给某人或某群”时，绑定了 DWS profile 的完整 Owner Agent 才可用 `dws chat +messages-send --as user` 以本人身份发送，并保留 AI 标识。群 Agent 的回答始终以应用机器人身份回到原群，即使 Owner 在群里要求也不能改用 DWS 本人身份；跨群或私聊没有精确的机器人发送授权时只生成待处理操作。看到 Agent 为普通群回答探测 `dws chat --help`，或用 `--as user` 发送，均属于错误选路。
+
+系统提示的共用自我定位在 [identity.md](../../internal/sysprompt/identity.md)、安全规则在 [security.md](../../internal/sysprompt/security.md) 统一维护，各入口基础提示放在同目录。Agent 被问及身份或能力时，会把自己简要说明为能结合对话、获准工具和受治理长期记忆推进工作的 AI 伙伴，只列当前实际能力，不自称底层模型或 CLI 产品。修改后需要构建、安装新二进制并重启服务，所有入口一起生效；当前不支持热加载，也无需逐个同步 preset。升级后若继续旧任务提示策略已变化，应重新发起请求。规则、验证与完整 Bash 的安全限制见[维护说明](../design/agent-runtime-design-detail.md#统一系统提示与安全验证)。
+
+已采集的增量会话可以直接查询，但它仍是原始观测，不会自动写成长期记忆。`memgov message query dingtalk-watch-dingtalk --query "项目名" --since 2026-09-15T00:00:00Z` 返回匹配消息及会话类型、水位和缺口；加 `--conversation` 可限定一个会话，`--until` 使用不包含结束点的 RFC3339 时间。空结果只有在覆盖完整且目标会话确实属于采集范围时才有意义；独立数据源默认只采集已授权群聊；明确启用 `direct.enabled` 后还可采集授权同事私聊并保留七天原文，见[私聊采集与保留](../design/direct-message-retention-design.md)。未启用、窗口外或有缺口的私聊仍需按授权通过 `dws` 回查。
+
+私聊发送完整的 `/clear` 可开启新会话，发送 `/status` 可查看当前生效的 Agent、preset、模型、技能继承与技能清单、能力、Bash、外部操作策略、记忆范围和热词写入权限；两者无需调用模型。`/clear 请解释` 等普通文字仍交给 Agent。清空会话不删除长期记忆或审计记录。重启进程后，继续使用 SQLite 中同一会话已交付的对话；撤回的内容不会带入恢复上下文。记忆 skill 随二进制内置，无需手动复制配置。普通私聊不会预先召回全部记忆，Agent 按当前问题决定是否调用 `memgov-memory`。变更模型配置、preset 或工具权限后，下一轮会自动重建 Agent 进程并使用新权限。
+
+已核验 Owner 私聊默认拥有完整 Bash、文件读写、测试与记忆 skill，owner_request 按本人的明确请求执行。新建默认后台 Agent 同样拥有完整能力和执行器技能，owner_delegated 按 Owner 预设自主处理；显式受限 Agent 保留限制，升级不暗中扩大权限。群默认关闭自由 Bash，额外动作沿用同群 Owner 确认。消息、引用、记忆和工具输出不能扩大这些授权。
+
+这些配置封装 Claude 的原生工具及 memgov 能力：`bash` 对应 Bash；`local_read` 对应文件读取/搜索；`local_write` 对应文件编辑；`local_test` 不能绕过 Bash 开关。`memory_read` 提供的是 memgov 记忆能力，本人私聊安装内置 skill 并由 Agent 决定是否调用 CLI；群任务只提供该群已发布的记忆。完整 Bash 使用运行进程账户的权限，文件工具或记忆包装器不再构成完整访问隔离。
+
+需要覆盖本人私聊默认值时，在现有 YAML 中增加：
+
+```yaml
+agents:
+  owner-chat:
+    preset: claude-default
+    claude_profile: cc
+    execution_model: profile
+    memory_scope: owner_authorized
+    capabilities: [memory_read, local_read, local_write, local_test]
+    bash: true
+    external_actions: owner_request
+applications:
+  owner_private:
+    enabled: true
+    runtime: owner-private # 可省略；内部兼容绑定
+    agent: owner-chat
+```
+
+保留原有其他 Agent、proactive 和 group_mention 配置。未声明 `owner_private` 的现有本人直聊使用内置默认值；声明它但不写 `agent` 时接管现有本人实例并保留模型配置。指定了 Agent 时严格使用声明：`bash` 只能为 `true`/`false`，省略为 `false`。要关闭本人 Bash，可设 `bash: false` 和 `external_actions: owner_confirmation`。预览会拒绝缺失或身份不匹配的私聊实例，无需重新填写平台 ID。
+
+新配置推荐按机器人声明，下面引用现有群 Agent；`owner_private.agent` 省略时继承 bot 默认人设/模型并使用完整 Owner 权限，显式设置才能收紧：
+
+```yaml
+applications:
+  bots:
+    app-main:
+      default_agent: group-helper
+      owner: {id_type: user_id, id_value: OWNER_ID}
+      owner_private: {enabled: true, runtime: owner-private}
+      group_mention:
+        enabled: true
+        bindings: []
+        # source: work_chat  # 可选同群历史
+```
+
+不要同时为同一机器人保留冲突的旧 group_mention，或让两个 Owner 声明绑定同一 runtime。其他机器人可用各自 channel 名重复声明。仅使用机器人交互时可以不配置 data_sources；Owner 身份核验仍不可省略。
+
+仅为一个群开放 Bash 时，复制出独立 Agent，设置 `bash: true`，再通过 `applications.group_mention.bindings` 绑定目标群；不要修改共享默认 Agent。完整 Bash 不能与受控 `directories` 快照模式同时配置。配置应用及重启方法见下文；`runtime status` 和私聊 `/status` 可查看 Bash 与外部操作策略。权限变化后旧执行与会话失效。
+
+首次接入默认关注当前账号中已确认最近 30 天有消息、且目标机器人已加入的群。`runtime setup` 会自动完成数据库初始化、Agent preset、工作区、当前钉钉身份、本人 `userId`、活跃群与群机器人交集发现、通道、路由、能力探测和运行时配置。只需用 `--ignore` 标记不希望 AI 处理的活跃群。
+
+## 章节导航
+
+1. [准备](#1-准备)
+2. [一键接入](#2-一键接入)
+3. [用双模式 YAML 启动独立采集与群 Agent](#3-用双模式-yaml-启动独立采集与群-agent)
+4. [启动](#4-启动)
+5. [切换到正式参数](#5-切换到正式参数)
+6. [查看和管理任务](#6-查看和管理任务)
+7. [确认外部操作](#7-确认外部操作)
+8. [运行日志](#8-运行日志)
+9. [暂停、恢复和停止](#9-暂停恢复和停止)
+10. [常见问题](#10-常见问题)
+11. [不同群使用不同 Agent](#11-不同群使用不同-agent)
+12. [限定所有者 Agent 的目录](#12-限定所有者-agent-的目录)
+13. [离线验证](#13-离线验证)
+
+## 1. 准备
+
+本机需要安装并登录：
+
+- `dws`：已登录目标钉钉企业；
+- `claude`：已完成 Claude CLI 登录，或已在 zsh alias 中配置可用的 Anthropic 接入；
+- `git`：用于 Agent preset 和代码任务的本地提交。
+
+在项目目录安装 memgov：
+
+```bash
+cd "$HOME/src/memgov"
+make install
+
+export PATH="$PWD/.memgov/bin:$PATH"
+export MEMGOV_HOME="$HOME/.memgov"
+```
+
+检查依赖：
+
+```bash
+memgov version
+dws profile list --format json
+claude auth status
+```
+
+## 2. 一键接入
+
+重复使用的 profile、机器人 Code、忽略群、Claude 模型及触发参数可放到 YAML 的 `runtime_setup` 中，日志保留参数放到 `logging`。参见[统一配置说明](initialization.md)和[完整配置示例](../../config.local.yaml.example)。使用 `--config` 指定文件，命令行同名参数优先；这些初始化默认值不会覆盖已存在实例。
+
+进入希望 AI 处理代码任务的项目目录，然后运行：
+
+```bash
+memgov runtime setup my-watcher \
+  --ignore "告警通知群" \
+  --ignore "闲聊群" \
+  --pilot
+```
+
+程序使用当前 dws profile 与 contact +me 核验本人稳定 userId，发现最近 30 天活跃群，并将当前目录注册为任务工作区。机器人筛选可选，不再自动选择唯一机器人。搜索被分页上限截断时只纳入本轮正向核验群；discovered.group_discovery_complete=false 表示未覆盖全部群，watched_group_count 表示实际范围。没有可核验群时配置失败。
+
+`--ignore` 可以重复传入群名或稳定会话 ID；名称必须完整匹配，避免误忽略名称相近的群。完整群目录中匹配的忽略规则会保留，即使该群未出现在本轮截断的活跃结果中，也只会创建 `ignore` 路由。`--pilot` 使用“新增 1 条或等待 30 秒”触发，适合首次验证。
+
+如需把观察范围限定为某个机器人所在群，显式提供 Code 和名称；不提供时按 DWS 可访问的活跃群及 ignore 规则筛选：
+
+```bash
+memgov runtime setup my-watcher \
+  --ignore "告警通知群" \
+  --robot-code "机器人 Code" \
+  --robot-name "机器人名称" \
+  --pilot
+```
+
+后台观察不要求机器人单聊发送权限，也不建立完成通知路由。机器人参数只用于可选范围筛选；机器人私聊/群 @ 是另外配置的应用入口。memgov 不替用户创建企业应用或申请管理员权限。
+
+常用可选项：
+
+| 参数 | 默认值 | 用途 |
+| --- | --- | --- |
+| `--ignore` | 无 | 标记不采集、不分析的群；可重复传入 |
+| `--profile` | 当前 dws profile | 指定另一个已登录企业身份 |
+| `--delivery-conversation` | 旧参数 | 后台 record_only 不使用该投递目标 |
+| `--robot-name` | 不筛选机器人 | 与显式 robot-code 配合，限定机器人所在群 |
+| `--workspace-path` | 当前目录 | 指定代码任务目录 |
+| `--workspace-name` | runtime 名称 | 指定 memgov 工作区名称 |
+| `--channel-name` | `<runtime>-dingtalk` | 指定本地通道名称 |
+| `--agent-preset` | `claude-default` | 指定受控 Agent preset |
+| `--claude-profile` | 无 | 读取指定 zsh alias 中的 Claude 环境和默认模型 |
+| `--analysis-model` | `haiku` | 指定分析模型；`profile` 表示沿用 alias 默认模型 |
+| `--execution-model` | Claude 默认值 | 指定执行模型；`profile` 表示沿用 alias 默认模型 |
+| `--pilot` | 关闭 | 使用 1 条/30 秒/10 秒对账的验证参数 |
+
+被忽略的群会以 `mode: ignore` 保存在通道配置中，便于通过 `memgov channel show my-watcher-dingtalk` 查阅。系统不会订阅或补漏这些群，即使收到意外事件也不会保存消息正文。
+
+运行期间每个对账周期重新读取群列表，只有正向活跃证据且符合可选机器人过滤的新群才成为 collect；已有 ignore 路由保持排除。
+
+`setup` 只读核验钉钉身份和范围，不发送测试消息，也不启用自动结果投递。
+
+### 2.1 使用本机 Claude alias
+
+如果平时通过 `cc` 之类的 zsh alias 启动 Claude，可直接把它作为运行时配置档：
+
+```bash
+memgov runtime setup my-watcher --claude-profile cc --pilot
+```
+
+指定 profile 后，任务执行默认沿用 alias 中的 `ANTHROPIC_MODEL`，增量识别仍默认使用 Haiku。也可以显式覆盖某个阶段：
+
+```bash
+memgov runtime setup my-watcher \
+  --claude-profile cc \
+  --analysis-model haiku \
+  --execution-model profile
+```
+
+memgov 只解析 alias 中简单的 `ANTHROPIC_*` 和 `CLAUDE_CODE_*` 环境变量，不执行 alias，也不继承其中的命令行参数。SQLite 只保存 alias 名和模型选择；认证信息仅传给 Claude 子进程。
+
+## 3. 用双模式 YAML 启动独立采集与群 Agent
+
+[配置示例](../../config.local.yaml.example)支持 channels、data_sources、agents、applications。后台来源不要求绑定机器人；机器人按 applications.bots.<channel> 配置默认人设及 Owner 私聊/群覆盖，无需启用 DWS 采集或历史导入。Owner 身份仍须通过 DWS 核验；群若显式绑定 source 才读对应同群历史。新建通道仍需核验其实际使用的收发能力。
+
+```bash
+memgov --config config.local.yaml config validate
+memgov --config config.local.yaml config plan
+```
+
+`plan` 返回 `plan_digest` 和 `applied_version`。确认展示的变更后，填入这两个值应用：
+
+```bash
+memgov --config config.local.yaml config apply-runtime \
+  --plan-digest PLAN_DIGEST \
+  --expected-version APPLIED_VERSION
+```
+
+扩大可用群或 Agent 权限时，命令会要求明确理由；变更身份或记忆披露边界也需明示。例如：
+
+```bash
+memgov --config config.local.yaml config apply-runtime \
+  --plan-digest PLAN_DIGEST --expected-version APPLIED_VERSION \
+  --authorize-expansion --reason "所有者批准扩大接管范围"
+```
+
+预览会核对逐群 Agent 绑定、目录能力和通道权限。群 Agent 支持只读目录快照及隔离产物；所有者 Agent 的声明目录采用独立副本；声明目录中的 Shell 测试与未核验通道能力仍会阻止相关应用。修改 YAML 后重新预览，旧摘要不能继续使用。应用只写入本地 SQLite，不会自动发送钉钉消息。
+
+机器人已具备明确 assistant 群路由和 Owner 身份核验时，可以直接启用 bots 内的群助手，无需先运行来源。希望自动挂载 DWS 发现的群时，先停用群应用、建立并启动来源，再按下述方式应用。新来源从空范围开始；已启用后台观察也会先显示 proactive_deferred，正向发现后才创建运行实例，不继承通道旧群。
+
+数据源启动后核验 DWS Owner 并发现活跃会话；仅设置 member_robot 时才筛选机器人所在群。正向收据写入后，同一 YAML 再 plan/apply 即可创建后台运行实例。旧来源可用 data-source attest-owner 重新核验身份。自动群挂载仍需要同企业、机器人在群等证明，详见[首次自动挂载](#群助手首次自动挂载)；显式群路由不依赖该自动过程。以下为兼容的分进程调试示例，日常优先使用统一服务：
+
+```bash
+memgov --config config.local.yaml data-source start work_chat
+memgov --config config.local.yaml config plan
+memgov --config config.local.yaml config apply-runtime \
+  --plan-digest NEW_PLAN_DIGEST --expected-version CURRENT_VERSION
+memgov --config config.local.yaml runtime start proactive
+```
+
+来源或群证明变化时旧摘要会失效；已运行的主动值守需先 `runtime stop proactive`，再预览并应用新范围。
+
+开启群助手并完成它的 `config apply-runtime` 后，再在另一个终端运行 `memgov --config config.local.yaml runtime start group-mention`。
+
+按实际启用模式保留相应进程。数据源独立负责实时接收与周期补漏；在 YAML 中启用 `history_import.enabled` 后，会为新接管群建立固定范围历史导入（默认 30 天）。停止主动值守或群 Agent，采集仍可继续。
+
+数据源的独立运行日志可用 `memgov data-source logs list <source>`、`memgov data-source logs show <source>` 和 `memgov data-source logs follow <source>` 查阅；`memgov data-source status <source>` 会显示日志健康状态。跨通道消息是否已由平台核验，可用 `memgov message association <message-id>` 查看；`unresolved` 表示尚无可用证据，不会按文字相似自动合并。
+
+```bash
+memgov data-source status work_chat
+memgov data-source history list work_chat
+memgov data-source history show IMPORT_ID
+memgov data-source history cancel IMPORT_ID
+memgov data-source history retry IMPORT_ID
+memgov data-source pause work_chat
+memgov data-source resume work_chat
+memgov data-source stop work_chat
+```
+
+导入的旧消息只供上下文查询；`history list/show` 的覆盖与去重计数可以区分导入完成、缺口和重复读取。关闭来源时请先停止依赖它的 AI 消费者，再改配置。
+
+独立采集默认每 5 分钟复核一次最近 30 天活跃群和机器人成员关系，并补齐遗漏消息。YAML 的 `data_sources.<名称>.reconcile_seconds` 可调整间隔，最短 10 秒。连接正常时也会执行检查；群范围没有变化时不会重连。新群自动纳入，机器人退出、群不再活跃或被标记 `ignore` 后会收缩采集范围。
+
+消息搜索被截断时，只把已出现消息、且机器人确实在群内的群作为本轮已核验范围；这些群可以开始采集和挂载群 Agent。未出现在前 500 条里的旧群会保留，不会被误判退出。每轮最多核验 64 个活动候选群，整轮最多 2 分钟；大型账号可能只完成部分范围，状态中的 `discovery.complete=false` 会明确显示这一点。
+
+`discovery.valid=true` 表示收据列出的群已得到本轮正向证明，不表示所有群都检查完成。发现超时时，收据仍标记失效；如果最近一次正向证明在 24 小时内，且来源、通道、机器人和路由授权都未变化，启动或重启仍可采集其中已授权的群并有界补漏。预先配置到其他工作区的群继续存入原工作区，不会移入采集来源的默认工作区。被忽略、修改过或缺少证据的群不会恢复；没有可用证据时等待发现成功。降级不会新增群、更新证据时间或启动历史导入任务，状态显示 `discovery_unavailable`，日志显示 `discovery_degraded`。历史读取失败也不会中断实时接收。暂停会释放接收租约，恢复重新检查范围并补漏；进程重启保留已提交的覆盖和轮询游标。通过 `data-source status <名称>` 查看断点和发现收据，通过 `data-source logs follow <名称>` 查看周期检查及耗时。
+
+## 4. 启动
+
+以前台方式启动值守：
+
+```bash
+memgov runtime start my-watcher
+```
+
+保持该终端运行。它会把结构化日志输出到 stdout，并同时写入独立日志目录。
+
+另开一个终端查看状态：
+
+```bash
+memgov runtime status my-watcher
+memgov runtime logs follow my-watcher
+```
+
+在监听群发送一条启动后的新消息，例如：
+
+```text
+请你检查这个项目当前测试是否通过，并把结果告诉我。
+```
+
+后台验证应核对本地任务、Agent 产物和操作审计，而不是等待机器人通知。新矩阵见[验收要求](../architecture/best-practice-scenarios-detail.md#后台观察与机器人交互验收)：
+
+1. 新消息进入增量批次；
+2. Haiku 评估处理价值与可行调查方向；
+3. 独立 Agent 按预设权限查证、处理并验证；
+4. 实际代码修改按工作目录策略留下产物和本地 commit，普通调查无需制造提交；
+5. 本地保存结果，不自动发送完成通知；主动工具沟通另查 runtime message list <任务ID>。
+
+机器人交互另外使用 Markdown 私聊或群消息并在末尾 @ 发起人，附问题引用和执行模型/耗时；只有需要所有者同意或拒绝时才显示审批卡片。这类展示不用于后台自动通知，例如：
+
+```text
+> 你问：请检查这个项目当前测试是否通过
+
+测试已经通过。
+
+⏱ 执行 46.0s · 🤖 claude-sonnet-4
+```
+
+源码已提供 `memgov runtime task resume <任务ID>` 和 Web 任务详情的「继续任务」入口：中断后恢复原会话，或结合旧任务的原请求与已有文件继续。该入口需更新程序并显式升级到 Schema 21；使用与边界见[中断后继续任务](../design/task-continuation.md)。
+
+首次启动前的历史只作上下文，不执行陈年任务。没有新消息时不会调用模型。
+
+## 5. 切换到正式参数
+
+`--pilot` 适合短期验证。正式实例默认按新增 20 条或等待 5 分钟触发，并每 5 分钟补漏。建议验证通过后创建不带 `--pilot` 的正式实例：
+
+```bash
+memgov runtime setup work-watcher \
+  --ignore "不参与值守的群" \
+  --robot-code "机器人 Code"
+
+memgov runtime start work-watcher
+```
+
+需要精细修改已有实例时，使用 `runtime status` 查看当前配置，再通过 `runtime configure --input runtime.json --expected-version VERSION` 更新。
+
+## 6. 查看和管理任务
+
+```bash
+memgov runtime task list my-watcher
+memgov runtime task list my-watcher --status failed
+memgov runtime task show TASK_ID
+memgov runtime task cancel TASK_ID
+memgov runtime task retry TASK_ID
+```
+
+同一事项的后续消息会更新原任务。执行中发生编辑、取消或撤回时，旧版本结果不会交付。
+
+## 7. 确认外部操作
+
+群助手关联 `identity.confirmation_card_template` 后，仅 DWS 所有者可在原群卡片选择“同意”或“拒绝”，不能用下面的口令绕过按钮。卡片标题使用当前事件标题，详情以纯文本优先列出操作类型、目标和内容，不显示群回复中的 Markdown 标记、耗时或 @。按钮与执行链路有自动化测试覆盖；真实平台往返仍需部署者验收，见[模板要求](../design/dingtalk-integration-design-detail.md#群回复与确认卡片)。
+
+以下口令兼容协议适用于未配置模板的群助手和显式收紧权限的 Owner 私聊（owner_confirmation）。后台默认 owner_delegated 自主处理；受限后台的待确认只留本地记录，不发送确认通知。Owner 私聊默认 owner_request，按本人的明确要求处理。
+
+使用 owner_confirmation 的交互 Agent 先准备具体操作，再展示一次性口令：群助手在任务原群，受限 Owner 私聊在该私聊。后台 Agent 的已授权操作不走这个交互确认流程；需要独立沟通时调用 runtime message send，并保存目标、理由、证据和回执。
+
+```text
+确认操作 ACTION_ID DIGEST_PREFIX
+```
+
+确认无误后，群任务由所有者在任务原群通过钉钉 @ 功能选中机器人并发送整行口令；其他模式在绑定的机器人单聊回复。只有已核验所有者、动作生成后的新消息和完整匹配的口令有效。群任务不接受其他群或私聊确认。运行结果未知的外部动作不会被盲目重试。
+
+旧主动值守通过机器人私聊确认的配置已被 record_only 替代，不再作为后台必需入口。若现有实例保留对应路由，它只保留历史和其他交互用途，不能恢复主动完成/确认通知。机器人 identity.history_channel 可用于 DWS Owner 身份核验，不要求启动采集进程。
+
+值守 Owner 应使用经过 DWS 认证核验的 `user_id`。旧配置若写 `staff_id`，不能仅因值相同就视为已核验：先通过认证 DWS profile 核验本人，再将值守 Owner 改为该 `user_id` 并重新 plan/apply。机器人消息若使用另一种 ID 类型，还需已核验的 identity link。配置缺失或存在多个可用机器人/私聊入口时，系统不自动接受跨通道确认。错误群聊、其他人的回复、过期或撤回消息均无效。确认口令不会作为新的私聊任务调用模型。
+
+## 8. 运行日志
+
+```bash
+memgov runtime logs list my-watcher
+memgov runtime logs show my-watcher --level error
+memgov runtime logs show my-watcher --component execution
+memgov runtime logs show my-watcher --task TASK_ID
+memgov runtime logs follow my-watcher --task TASK_ID
+```
+
+日志文件位于：
+
+```text
+<MEMGOV_HOME>/runtime/logs/<runtime-id>/
+```
+
+结构化诊断日志不保存聊天原文、完整提示词、模型完整输出、凭据或原始子进程 stderr。任务正文、来源和执行结果仍通过 `runtime task show` 从 SQLite 查阅。
+
+## 9. 暂停、恢复和停止
+
+```bash
+memgov runtime status my-watcher --human
+memgov runtime pause my-watcher
+memgov runtime resume my-watcher
+memgov runtime stop my-watcher
+memgov runtime restart my-watcher
+```
+
+- `pause` 继续采集消息，暂停新分析和执行；
+- `resume` 恢复分析和执行；
+- `stop` 保存停止状态并让前台进程退出；
+- `restart` 先请求该实例旧的 `runtime start` 或 `runtime restart` 进程退出，确认原进程已结束后，由当前终端以前台方式重新启动。重启命令会持续运行并输出 JSONL 日志，终端需要保持开启；超过全局 `--timeout` 仍未停止时不会启动第二个进程。
+
+## 10. 常见问题
+
+### 10.1 找不到或存在多个机器人
+
+查看本人创建的机器人，然后把选定的 `robotCode` 交给 `--robot-code`：
+
+```bash
+dws chat +bot-search --page 1 --size 100 --format json
+```
+
+后台观察不依赖机器人列表；不设置 robot-code/robot-name 即可按活跃群与 ignore 筛选。只有显式要求机器人范围过滤时才需要核验所选机器人的 Code/名称。机器人交互入口仍需独立应用配置和能力核验。setup 失败不会提交半套配置。
+
+### 10.2 ignore 群名没有找到
+
+先查找完整群名，再重新执行 setup；也可以把 `openConversationId` 直接传给 `--ignore`：
+
+```bash
+dws chat +chat-search --query "群名" --page-all --page-limit 20 --format json
+```
+
+### 10.3 启动返回 `unavailable`
+
+查看自动生成的通道名称及能力：
+
+```bash
+memgov channel show my-watcher-dingtalk
+memgov channel probe my-watcher-dingtalk
+```
+
+现行旧 DWS 值守将收发绑定，要求 `history`、`receive` 和 `send` 都为 `true`；这不是只读采集的目标要求。新设计将采集与最终回答能力分离，采集启动不依赖 send，回答时才校验独立发送授权。诊断现行版本时同时检查 dws 登录、机器人状态和 Claude 登录。
+
+### 10.4 群里有消息但没有模型调用
+
+检查消息是否在首次启动之后到达、runtime 是否为 `running`，以及是否达到触发条数或等待时间：
+
+```bash
+memgov runtime status my-watcher
+memgov runtime logs show my-watcher --level warn
+```
+
+### 10.5 Agent preset 变脏
+
+```bash
+memgov agent preset status claude-default
+git -C "$MEMGOV_HOME/agents/claude-default" status
+```
+
+审阅并提交需要的规则修改，或恢复误改后再启动。运行时不会加载未提交的规则。
+
+### 10.6 日志进入 degraded
+
+检查 `<MEMGOV_HOME>/runtime/logs/` 权限和磁盘空间。日志故障时系统继续保存采集断点，但暂停创建新的 AI 任务。
+
+## 11. 不同群使用不同 Agent
+
+双模式配置的群助手可以设置默认 Agent，再为个别群指定专属 Agent：
+
+```yaml
+agents:
+  group-helper:
+    preset: claude-default
+    memory_scope: conversation_published
+    capabilities: [conversation_history_read, memory_read]
+  product-helper:
+    preset: product-rules
+    claude_profile: cc
+    execution_model: profile
+    memory_scope: conversation_published
+    capabilities: [conversation_history_read, memory_read, local_read, artifact_create]
+    directories: [/Users/you/group-documents]
+applications:
+  group_mention:
+    enabled: true
+    source: work_chat
+    channel: app-main
+    default_agent: group-helper
+    bindings:
+      - conversation_id: YOUR_GROUP_ID
+        agent: product-helper
+```
+
+上例需合并到已有数据源、通道配置中，并先启用相应 preset。运行 `memgov --config <配置文件> config plan` 查看影响，再使用输出中的版本与摘要执行 `config apply-runtime`。
+
+`directories` 是明确提供给该群 Agent 的只读文字资料。系统把资料复制到该任务中，输出留在独立产物目录；群 Agent 不执行 Shell，也不直接修改原目录。隐藏文件、二进制文件和依赖缓存不读取；符号链接或资料超出限制时任务报错。详细限制见 [Agent 运行时详细稿](../design/agent-runtime-design-detail.md#按群解析-agent-与目录快照)。
+
+模型、preset 和 commit 可从 `runtime task show` 的执行尝试中查看。配置变更后旧任务会失效，避免把原权限下生成的结果继续发到群里。此能力需要安装包含该功能的新二进制，已有运行进程不会因源码更新而自动升级。
+
+## 12. 限定所有者 Agent 的目录
+
+为所有者 Agent 添加 `directories` 后，系统只读取这些明确授权的原目录，在任务副本中修改文件。示例：
+
+```yaml
+agents:
+  owner-assistant:
+    preset: claude-default
+    memory_scope: owner_authorized
+    capabilities: [memory_read, local_read, local_write, artifact_create]
+    directories: [/Users/you/work/project]
+```
+
+若 workspace 是代码仓库，授权目录必须包含整个仓库根目录；系统建立私有 clone/worktree，以仓库 HEAD 为基础工作，原目录未提交修改保持不变。完成后会检查 Git 差异并记录本地提交。普通文件修改保存在任务的 `work/` 副本，生成产物保存在 `artifacts/`。
+
+受控目录模式当前不执行任意 Shell 或项目测试，不能配置 `local_test`；这项能力需要经过验证的操作系统沙箱。未填写 `directories` 的现有代码任务继续使用原有 worktree、测试和本地提交流程。目录必须填写真实绝对路径，不接受符号链接；资料量限制与群目录快照相同。
+
+## 13. 离线验证
+
+不连接真实钉钉、不调用真实模型的测试：
+
+```bash
+cd "$HOME/src/memgov"
+make test-runtime
+make test-runtime-race
+```
+
+产品范围参见[钉钉接入设计](../design/dingtalk-integration-design.md)和[Agent 运行时设计](../design/agent-runtime-design.md)。
+
+## 群助手首次自动挂载
+
+开启 `applications.group_mention` 后，`config plan` 可以根据独立采集已核验的群范围，预览并自动补建机器人群路由。无需先手工为每个群添加 `assistant` 路由。
+
+首次使用顺序：
+
+1. 应用通道和数据源配置，核验 DWS 与应用机器人的能力。
+2. 启动独立数据源，等待一轮完整的群列表、最近 30 天活跃筛选与机器人成员检查。
+3. 开启群助手配置，运行 `config plan`；`group_mounts` 列出即将接管的群。
+4. 使用当前计划摘要和版本执行 `config apply-runtime`，同一事务创建群路由并配置群助手。随后通过 `memgov service start` 统一运行；已有服务按已应用配置重新加载模块。
+
+机器人回复仍只由可信群 @ 触发，并返回原群。`ignore` 的群名或会话 ID 优先；已经手工标成 ignore 的机器人路由也不会被覆盖。已有其他类型的机器人路由保留原策略。
+
+发现收据、有效期及身份限制见[接入详细稿](../design/dingtalk-integration-design-detail.md#群助手首次挂载约束)。

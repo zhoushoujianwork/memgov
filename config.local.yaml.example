@@ -1,0 +1,146 @@
+# 复制到 ~/.memgov/config.yaml，或通过 --config / MEMGOV_CONFIG 指定。
+# 仓库内的 config.local.yaml 不会自动加载。完整说明：docs/guides/initialization.md
+# 未列出的字段会报错，旧 store / index / skill 配置已失效。
+default_workspace: global
+format: json                       # json | text；命令行 --format 优先
+timeout: 2m                        # 普通命令期限；runtime start 持续运行直至停止
+actor: cli                         # 操作审计中的调用方标识
+
+# runtime start 时读取；已运行进程需重启后生效。单位使用 h，不支持 d。
+logging:
+  retention: 720h                  # 30 天
+  max_bytes: 1073741824            # 每个 runtime 最多 1 GiB
+  file_bytes: 10485760             # 单文件 10 MiB 后滚动
+
+# 仅用于 runtime setup 新建实例；命令行同名参数优先。
+# 已存在实例用 runtime configure 修改，不会被此处默认值覆盖。
+runtime_setup:
+  # profile: corp-id:user-id       # 已登录的 dws profile，省略则使用当前身份
+  # robot_code: your-robot-code    # 可选：限定观察范围为该机器人所在群
+  # robot_name: your-robot-name    # 显式机器人范围过滤时提供准确名称
+  ignore: []                      # 不参与值守的群名或会话 ID
+  # 后台完成仅记录，不配置自动投递目标。
+  # workspace_path: /absolute/project
+  # workspace_name: my-project
+  # channel_name: my-watcher-dingtalk
+  agent_preset: claude-default
+  # claude_profile: cc             # 本机 zsh alias，只读取受支持的环境配置
+  # analysis_model: haiku          # 增量识别默认固定 Haiku；可显式覆盖
+  # execution_model: profile       # 仅在设置 claude_profile 后使用 profile
+  item_threshold: 20
+  max_wait_seconds: 300
+  reconcile_seconds: 300
+  concurrency: 1                  # 旧执行并发别名，范围 1..32；与 execution_concurrency 不得冲突
+  pilot: false                    # true 固定为 1 条 / 30 秒 / 10 秒对账
+
+# 声明通道不会自动连接或发送消息；统一的 config apply-runtime 会预览后写入数据库。
+# 将 channels: [] 替换为下面所需的示例（取消注释），填写实际 ID，再执行：
+#   memgov --config config.local.yaml config validate
+#   memgov --config config.local.yaml config plan
+#   memgov --config config.local.yaml config apply-runtime --plan-digest ... --expected-version ...
+#   memgov channel show app-main
+# 新通道仍须核验平台能力，才能启动数据采集或 AI；边界和出站权限扩张须显式授权。
+channels: []
+# channels:
+#   - name: app-main
+#     kind: dingtalk_app
+#     identity:
+#       expected_corp_id: your-corp-id
+#       client_id: your-app-key
+#       robot_code: your-robot-code
+#     credential_ref: env://DINGTALK_APP_SECRET
+#     # 也支持 file:///absolute/path/to/secret 或 keychain://service/account。
+#     # 不支持 client_secret 明文；config show 不会解析密钥引用。
+#     transport: stream
+#     route:
+#       conversation_id: your-open-conversation-id
+#       conversation_type: group
+#       workspace_id: global
+#       mode: assistant
+#       triggers: [mention]
+#       audience_policy: local_private
+#       memory_policy: explicit_only
+#       send_policy: reply_to_trigger # 有效 @ 的交互回答仅回原群
+#
+#   - name: dws-main
+#     kind: dws_personal
+#     identity:
+#       profile: your-corp-id:your-user-id
+#       expected_corp_id: your-corp-id
+#       expected_user_id: your-user-id
+#       delivery_robot_code: your-robot-code
+#       delivery_robot_name: your-robot-name
+#     transport: dws
+#     route:
+#       conversation_id: your-open-conversation-id
+#       conversation_type: group
+#       workspace_id: global
+#       mode: collect
+#       send_policy: draft_only
+
+# 双模式声明已支持 validate、只读 plan、apply-runtime；通道可以与来源和应用同次建立。
+# 启用采集或 AI 前仍须核验通道平台能力和受控 Agent preset。
+# 以下为可校验模板。enabled: false 停用对应应用；data_sources 可以独立采集。
+# 取消注释后，先运行 memgov --config config.local.yaml config validate。
+# validate 只检查结构；plan 检查本地引用、权限及差异，不解析密钥正文。
+# data_sources:
+#   work_chat:
+#     channel: dws-main
+#     enabled: true                 # 来源默认启用；应用默认停用
+#     archive: sqlite
+#     groups:
+#       active_days: 30             # 1..30，默认 30；历史归档需另行启用
+#       # member_robot: app-main   # 可选；不设则无需机器人参与观察
+#       ignore: []                  # 排除优先于显式群绑定
+#     reconcile_seconds: 300
+#     history_import: {enabled: false, days: 30}
+# agents:
+#   proactive-helper:
+#     preset: claude-default
+#     memory_scope: owner_authorized
+#     capabilities: [conversation_history_read, memory_read, artifact_create, local_read, local_write, local_test]
+#     bash: true
+#     external_actions: owner_delegated # 仅后台使用 Owner 预设授权
+#     skills: {inherit: executor, paths: []}
+#   group-helper:
+#     preset: claude-default
+#     memory_scope: conversation_published
+#     capabilities: [conversation_history_read, memory_read, artifact_create]
+#     bash: false
+#     external_actions: owner_confirmation
+#     skills: {inherit: none, paths: []}
+# applications:
+#   proactive:
+#     enabled: false
+#     source: work_chat
+#     owner: {id_type: user_id, id_value: OWNER_ID}
+#     agent: proactive-helper        # 省略时生成完整默认 Agent；显式声明保留其限制
+#     focus: owner_relevant_work
+#     batch: {items: 20, max_wait_seconds: 30}
+#     analysis_concurrency: 8
+#     execution_concurrency: 4
+#     analysis_timeout_seconds: 120
+#     execution_timeout_seconds: 900
+#     review_timeout_seconds: 120
+#     analysis_model: haiku
+#     delivery: record_only          # 完成仅记录；独立工具沟通另记审计
+#   bots:
+#     app-main:                      # 应用机器人 channel 名，每个 bot 独立配置
+#       default_agent: group-helper
+#       owner: {id_type: user_id, id_value: OWNER_ID} # 必须已有同企业 DWS 本人核验
+#       owner_private:
+#         enabled: false
+#         runtime: owner-private     # 引用已核验 direct 实例
+#         # agent: owner-chat        # 显式 Agent 可收紧；省略则继承 bot 人设/模型 + 完整 Owner 能力
+#       group_mention:
+#         enabled: false
+#         # source: work_chat        # 可选同群历史；机器人交互不要求启用数据源
+#         # agent: group-helper      # 可覆盖 bot 默认 Agent
+#         bindings: []
+#         # - conversation_id: GROUP_ID
+#         #   agent: specialized-group-helper
+#
+# 兼容旧 applications.owner_private / group_mention，但不可与 bots 对同一机器人或 runtime 冲突。
+# 旧 proactive delivery: owner_direct 会归一化为 record_only 并提示；不会恢复旧自动通知。
+# 显式 Agent 省略 bash 仍默认 false；owner_request 仅 Owner 私聊，owner_delegated 仅后台。
+# 新/变更权限须通过 plan 预览与显式应用；已有受限 Agent 不会自动扩权。
