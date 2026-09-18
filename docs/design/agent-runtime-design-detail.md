@@ -280,3 +280,10 @@ Schema 19 的历史迁移曾将群与 proactive 设为 false/owner_confirmation�
 Claude/确认动作执行前后都复核任务与 attempt 绑定的 applied configuration version。配置变化、任务撤回或取消后，旧结果不得继续提交或投递；在变更前已经开始的外部操作保持结果不明的保守状态，不自动重发。
 
 2026-09-17 群卡片增量：群回答 @ 发起人，待确认卡片 @ DWS 所有者。已发布关联应用的审批模板，仅所有者可同意或拒绝；拒绝后任务取消且动作不可执行，操作变更不继承旧批准，口令不能绕过卡片。源码与离线验证已具备，真实群按钮往返待验收，详见[确认卡片](dingtalk-integration-design-detail.md#群回复与确认卡片)。
+
+
+## Per-Agent home and CLAUDE.md
+
+`agents.<name>.home` is normalized to an absolute path during config loading. When omitted, runtime uses `<MEMGOV_HOME>/agent-homes/<name>`. The runtime creates the directory with mode `0700` and a regular `CLAUDE.md` with mode `0600`, then passes the directory to Claude with `--add-dir`; the preset repository remains Git-controlled and clean.
+
+The execution prompt treats `CLAUDE.md` as durable Agent-local notes, not authorization. Only Agents with `local_write` receive exact `Edit(<home>/CLAUDE.md)` and `Write(<home>/CLAUDE.md)` allowlist entries; group Agents do not receive arbitrary home-file access. Notes must be non-secret and bounded by the existing conversation and disclosure policy. Memgov memory tools remain explicitly on demand rather than being queried on every turn; an empty result is not evidence that the library is empty.

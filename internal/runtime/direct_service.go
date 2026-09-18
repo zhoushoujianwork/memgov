@@ -146,7 +146,7 @@ func (s *Service) executeDirectTurn(ctx context.Context, cfg core.RuntimeConfig,
 			fail(e)
 			return
 		}
-		execInput := ExecutionInput{Task: task, AttemptID: attempt.ID, SessionID: session.ID, NativeSessionID: attempt.ID, RecordSession: s.sessionRecorder(task, attempt), DirectoryPolicy: policy.Directories, AgentPolicyDigest: core.Digest(policy), Home: s.Home, WorkspaceID: workspace.ID, WorkDir: workdir, Preset: preset, ApplicationMode: "direct", Capabilities: policy.Capabilities, BashEnabled: policy.BashEnabled, ExternalActions: policy.ExternalActions, ConversationContext: history, HotwordContext: hotwords, ChannelSystemPrompt: channelPrompt, Skills: policy.Skills, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile}
+		execInput := ExecutionInput{Task: task, AttemptID: attempt.ID, SessionID: session.ID, NativeSessionID: attempt.ID, RecordSession: s.sessionRecorder(task, attempt), DirectoryPolicy: policy.Directories, AgentPolicyDigest: core.Digest(policy), Home: s.Home, AgentHome: effectiveAgentHome(s.Home, policy.Home, policy.Agent), WorkspaceID: workspace.ID, WorkDir: workdir, Preset: preset, ApplicationMode: "direct", Capabilities: policy.Capabilities, BashEnabled: policy.BashEnabled, ExternalActions: policy.ExternalActions, ConversationContext: history, HotwordContext: hotwords, ChannelSystemPrompt: channelPrompt, Skills: policy.Skills, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile}
 		result, err = s.Executor.Execute(ctx, execInput)
 		if err == nil {
 			err = s.checkTaskAgent(ctx, cfg, task, policy, preset)

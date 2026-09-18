@@ -97,6 +97,22 @@ func (a *app) loadConfig(raw []byte) error {
 	}
 	home, _ := os.UserHomeDir()
 	for name, agent := range a.cfg.Agents {
+		if agent.Home != "" {
+			value := agent.Home
+			if value == "~" {
+				value = home
+			} else if strings.HasPrefix(value, "~/") {
+				value = filepath.Join(home, strings.TrimPrefix(value, "~/"))
+			}
+			if !filepath.IsAbs(value) {
+				value = filepath.Join(base, value)
+			}
+			absolute, err := filepath.Abs(value)
+			if err != nil {
+				return core.Fail("invalid_input", "agents.home: cannot resolve path")
+			}
+			agent.Home = filepath.Clean(absolute)
+		}
 		for i, value := range agent.Skills.Paths {
 			if value == "~" {
 				value = home

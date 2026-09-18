@@ -11,6 +11,7 @@ type RuntimeAgentPolicy struct {
 	ExcludedMemoryCategories []string           `json:"excluded_memory_categories,omitempty"`
 	SharedMemoryWorkspaces   []string           `json:"shared_memory_workspaces,omitempty"`
 	Agent                    string             `json:"agent"`
+	Home                     string             `json:"home,omitempty"`
 	Preset                   string             `json:"preset"`
 	ClaudeProfile            string             `json:"claude_profile"`
 	ExecutionModel           string             `json:"execution_model"`

@@ -40,6 +40,7 @@ type HistoryImportConfig struct {
 	Days    *int  `yaml:"days" json:"days"`
 }
 type AgentDeclaration struct {
+	Home            string                  `yaml:"home" json:"home"`
 	Preset          string                  `yaml:"preset" json:"preset"`
 	ClaudeProfile   string                  `yaml:"claude_profile" json:"claude_profile"`
 	ExecutionModel  string                  `yaml:"execution_model" json:"execution_model"`
@@ -59,7 +60,7 @@ func (a *AgentDeclaration) UnmarshalYAML(node *yaml.Node) error {
 	}
 	allowed := map[string]bool{"preset": true, "claude_profile": true, "execution_model": true,
 		"memory_scope": true, "capabilities": true, "directories": true, "skills": true,
-		"external_actions": true, "bash": true}
+		"external_actions": true, "bash": true, "home": true}
 	seen := map[string]bool{}
 	for i := 0; i < len(node.Content); i += 2 {
 		key, value := node.Content[i].Value, node.Content[i+1]
@@ -256,6 +257,12 @@ func NormalizeDualModeConfig(c Config) (DualModeValidation, error) {
 	for name, a := range d.Agents {
 		if !declarationName.MatchString(name) {
 			return out, dualInvalid("agents", "invalid declaration name")
+		}
+		if a.Home != "" && (!filepath.IsAbs(a.Home) || strings.ContainsAny(a.Home, "\r\n\x00")) {
+			return out, dualInvalid("agents.home", "must be an absolute path after configuration loading")
+		}
+		if a.Home != "" {
+			a.Home = filepath.Clean(a.Home)
 		}
 		defaultString(&a.Preset, "claude-default")
 		defaultString(&a.MemoryScope, "conversation_published")

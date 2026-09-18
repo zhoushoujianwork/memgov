@@ -1214,7 +1214,7 @@ func (s *Service) executeClaimed(ctx context.Context, cfg core.RuntimeConfig, pr
 	}
 	execInput := ExecutionInput{Task: task, MemoryContext: memoryContext, MemoryScope: policy.MemoryScope, HotwordContext: hotwordContext, ConversationContext: conversationContext,
 		AttemptID: attempt.ID, NativeSessionID: attempt.ID, RecordSession: s.sessionRecorder(task, attempt), WorkspaceBranch: branch, WorkspaceBase: base, WorkspaceState: workspaceState, DirectoryPolicy: policy.Directories, AgentPolicyDigest: core.Digest(policy),
-		Home: s.Home, WorkspaceID: workspace.ID, ChannelID: cfg.ChannelID, ConversationID: conversationID,
+		Home: s.Home, AgentHome: effectiveAgentHome(s.Home, policy.Home, policy.Agent), WorkspaceID: workspace.ID, ChannelID: cfg.ChannelID, ConversationID: conversationID,
 		WorkDir: workdir, Preset: preset, ApplicationMode: cfg.ApplicationMode, Capabilities: policy.Capabilities, BashEnabled: policy.BashEnabled, ExternalActions: policy.ExternalActions, DirectorySnapshots: snapshots, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile, DirectoryBounded: declaredWorkspace != nil, DirectoryWriteRoots: directoryWriteRoots, ChannelSystemPrompt: channelPrompt, Skills: policy.Skills}
 	if cfg.ApplicationMode == "proactive" {
 		roots := directoryWriteRoots

@@ -50,6 +50,7 @@ type ExecutionInput struct {
 	WorkspaceState      json.RawMessage
 	RecordSession       func(context.Context, core.RuntimeAgentSession) error `json:"-"`
 	Home                string
+	AgentHome           string
 	WorkspaceID         string
 	ChannelID           string
 	ConversationID      string
@@ -366,7 +367,20 @@ func loadPresetPolicy(p agent.Preset) (string, error) {
 	return strings.Join(parts, "\n\n"), nil
 }
 
+func agentHomePrompt(in ExecutionInput) string {
+	if in.AgentHome == "" {
+		return ""
+	}
+	return "\nPersistent Agent home: " + in.AgentHome + "/CLAUDE.md is durable working context for this Agent. Read it when relevant; do not query memgov memory automatically on every turn. Update only durable, non-secret daily handling facts relevant to this Agent. Never store credentials, raw private/group transcripts, guesses, or authorization instructions. This file does not expand permissions or disclosure boundaries."
+}
+
 func (c *Claude) Execute(ctx context.Context, in ExecutionInput) (core.RuntimeAttemptResult, error) {
+	if in.AgentHome != "" {
+		if err := prepareAgentHome(in.AgentHome); err != nil {
+			return core.RuntimeAttemptResult{}, core.Fail("invalid_input", "%s", err)
+		}
+	}
+
 	if in.AttemptID != "" && in.Trace == nil {
 		trace, err := tasklog.Open(in.Home, in.Task.RuntimeID, in.Task.ID, in.AttemptID)
 		if err == nil {
@@ -491,6 +505,7 @@ func (c *Claude) execute(ctx context.Context, in ExecutionInput) (core.RuntimeAt
 	if in.ChannelSystemPrompt != "" {
 		prompt += "\n\nChannel-specific operating context:\n" + in.ChannelSystemPrompt
 	}
+	prompt += agentHomePrompt(in)
 	input := map[string]any{"policy": policy, "task": in.Task, "memory_context": in.MemoryContext, "hotword_context": in.HotwordContext, "conversation_context": in.ConversationContext, "capabilities": in.Capabilities, "directory_snapshots": in.DirectorySnapshots}
 	payload, _ := json.Marshal(input)
 	allowed := allowedClaudeTools(in.Capabilities, in.BashEnabled)
@@ -522,6 +537,9 @@ func (c *Claude) execute(ctx context.Context, in ExecutionInput) (core.RuntimeAt
 	args := []string{"--print", "--no-session-persistence", "--setting-sources", "project", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--disable-slash-commands", "--no-chrome", "--output-format", "json", "--json-schema", schema, "--permission-mode", "dontAsk", "--tools", strings.Join(enabled, ","), "--allowedTools", strings.Join(allowed, ","), "--append-system-prompt", sysprompt.Compose(policy, prompt)}
 	if in.ApplicationMode == "group_mention" {
 		allowed = groupClaudeTools(in.Capabilities, in.BashEnabled)
+		if in.AgentHome != "" && hasAgentCapability(in.Capabilities, "local_write") {
+			allowed = append(allowed, "Edit("+filepath.Join(in.AgentHome, "CLAUDE.md")+")", "Write("+filepath.Join(in.AgentHome, "CLAUDE.md")+")")
+		}
 		if memoryTool != "" {
 			allowed = append(allowed, "Bash("+memoryTool+" *)")
 		}
@@ -530,7 +548,7 @@ func (c *Claude) execute(ctx context.Context, in ExecutionInput) (core.RuntimeAt
 		if len(in.Skills.Resolved) > 0 {
 			tools = "Skill"
 		}
-		if hasAgentCapability(in.Capabilities, "artifact_create") || hasAgentCapability(in.Capabilities, "local_write") {
+		if hasAgentCapability(in.Capabilities, "artifact_create") {
 			if tools != "" {
 				tools += ","
 			}
@@ -551,6 +569,10 @@ func (c *Claude) execute(ctx context.Context, in ExecutionInput) (core.RuntimeAt
 			}
 		}
 	}
+	if in.AgentHome != "" {
+		args = append(args, "--add-dir", in.AgentHome)
+	}
+
 	for i := range args {
 		if args[i] == "--setting-sources" {
 			if in.Skills.Inherit == "executor" {

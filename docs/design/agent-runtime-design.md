@@ -26,13 +26,14 @@ Agent 规则、会话、任务和日志分开保存：
 
 ```text
 <MEMGOV_HOME>/agents/<preset>/     已提交的 Agent 规则
+<MEMGOV_HOME>/agent-homes/<agent>/ 持久 Agent 工作上下文（CLAUDE.md）
 <MEMGOV_HOME>/runtime/sessions/    私聊 Agent 会话目录
 <MEMGOV_HOME>/runtime/tasks/       独立任务目录
 <MEMGOV_HOME>/runtime/worktrees/   代码任务 Git worktree
 <MEMGOV_HOME>/runtime/logs/        脱敏运行日志
 ```
 
-普通 `memgov init` 不创建 preset；显式执行 `memgov agent preset enable claude --name claude-default` 后才建立规则目录和初始提交。每次执行前检查 preset 启用、Git 工作树干净，并记录实际 commit。默认使用当前 Claude CLI；可通过 `claude_profile` 选择已有接入和模型，运行时不执行 alias，也不持久化认证信息。
+普通 `memgov init` 不创建 preset；显式执行 `memgov agent preset enable claude --name claude-default` 后才建立规则目录和初始提交。每次执行前检查 preset 启用、Git 工作树干净，并记录实际 commit。每个 Agent 可配置独立 home；Claude 通过 `--add-dir` 自动加载其中的 `CLAUDE.md`，缺省时按 Agent 名称创建。具备 `local_write` 的 Agent 只能更新该 home 下的 `CLAUDE.md`，不能借此扩大工具或消息权限。该文件用于持久化非敏感的日常处理事实，不保存凭据、原始私聊/群聊记录或猜测。memgov 长期记忆保持按需查询，不在每轮自动预取。默认使用当前 Claude CLI；可通过 `claude_profile` 选择已有接入和模型，运行时不执行 alias，也不持久化认证信息。
 
 群 Agent 默认关闭 Bash，只提供已授权的同群上下文、共享记忆和产物目录。独立群 Agent 可以显式开启 Bash，但不能同时声明受控目录快照。Owner 声明目录时采用只读输入与独立副本，代码副本保留 Git 历史；受控目录模式不运行任意 Shell。权限和目录细节见[能力映射](agent-runtime-design-detail.md#会话-bash-与能力映射)。
 

@@ -96,6 +96,7 @@ channels: []
 #     history_import: {enabled: false, days: 30}
 # agents:
 #   proactive-helper:
+#     home: ~/.memgov/agent-homes/proactive-helper # 可选；Agent 的持久 CLAUDE.md
 #     preset: claude-default
 #     memory_scope: owner_authorized
 #     capabilities: [conversation_history_read, memory_read, artifact_create, local_read, local_write, local_test]
@@ -103,6 +104,7 @@ channels: []
 #     external_actions: owner_delegated # 仅后台使用 Owner 预设授权
 #     skills: {inherit: executor, paths: []}
 #   group-helper:
+#     home: ~/.memgov/agent-homes/group-helper # 可选；Agent 的持久 CLAUDE.md
 #     preset: claude-default
 #     memory_scope: conversation_published
 #     capabilities: [conversation_history_read, memory_read, artifact_create]

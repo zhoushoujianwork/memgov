@@ -100,6 +100,11 @@ func (s *directSession) close() {
 }
 
 func (c *Claude) executeDirectAgent(ctx context.Context, in ExecutionInput) (core.RuntimeAttemptResult, error) {
+	if in.AgentHome != "" {
+		if err := prepareAgentHome(in.AgentHome); err != nil {
+			return core.RuntimeAttemptResult{}, core.Fail("invalid_input", "%s", err)
+		}
+	}
 	var out core.RuntimeAttemptResult
 	if _, err := uuid.Parse(in.SessionID); err != nil || !filepath.IsAbs(in.WorkDir) || !filepath.IsAbs(in.Home) || len(in.Task.Messages) == 0 {
 		return out, core.Fail("invalid_input", "direct session, home, work directory and current message are required")
@@ -314,7 +319,7 @@ func directPolicyDigest(in ExecutionInput, profile, model string) string {
 	capabilities := append([]string(nil), in.Capabilities...)
 	sort.Strings(capabilities)
 	return core.Digest(map[string]any{"preset_commit": in.Preset.Commit, "preset_path": in.Preset.Path,
-		"capabilities": capabilities, "workspace": in.WorkspaceID, "home": in.Home,
+		"capabilities": capabilities, "workspace": in.WorkspaceID, "home": in.Home, "agent_home": in.AgentHome,
 		"workdir": in.WorkDir, "profile": profile, "model": model,
 		"bash": in.BashEnabled, "external_actions": in.ExternalActions,
 		"skills": in.Skills, "hotwords": core.Digest(in.HotwordContext),
@@ -359,6 +364,9 @@ func directClaudeArgs(in ExecutionInput, policy, model, memgovBinary string) []s
 		}
 	}
 	allowed = append(allowed, skillAllowlist(in.Skills)...)
+	if hasAgentCapability(in.Capabilities, "local_write") && in.AgentHome != "" {
+		allowed = append(allowed, "Edit("+filepath.Join(in.AgentHome, "CLAUDE.md")+")", "Write("+filepath.Join(in.AgentHome, "CLAUDE.md")+")")
+	}
 	actionTool := filepath.Join(in.WorkDir, ".claude", "tools", "memgov-action")
 	hotwordTool := filepath.Join(in.WorkDir, ".claude", "tools", "memgov-hotword")
 	if in.BashEnabled {
@@ -369,7 +377,7 @@ func directClaudeArgs(in ExecutionInput, policy, model, memgovBinary string) []s
 			allowed = append(allowed, "Bash("+hotwordTool+" *)")
 		}
 	}
-	prompt := sysprompt.Text("direct")
+	prompt := sysprompt.Text("direct") + agentHomePrompt(in)
 	if in.ChannelSystemPrompt != "" {
 		prompt += "\n\nChannel-specific operating context:\n" + in.ChannelSystemPrompt
 	}
@@ -402,6 +410,9 @@ func directClaudeArgs(in ExecutionInput, policy, model, memgovBinary string) []s
 			"Write(" + filepath.Join(in.WorkDir, ".claude", "**") + ")",
 		}, ","),
 		"--append-system-prompt", sysprompt.Compose(policy, prompt)}
+	if in.AgentHome != "" {
+		args = append(args, "--add-dir", in.AgentHome)
+	}
 	if model != "" {
 		args = append(args, "--model", model)
 	}
@@ -699,7 +710,7 @@ func installDirectMemoryTool(in ExecutionInput, binary string) error {
 	if hasAgentCapability(in.Capabilities, "local_write") && in.Task.Kind != "memory" {
 		write = "yes"
 	}
-	config, _ := json.Marshal(map[string]string{"binary": binary, "home": in.Home, "workspace": in.WorkspaceID, "workdir": in.WorkDir, "write": write})
+	config, _ := json.Marshal(map[string]string{"binary": binary, "home": in.Home, "agent_home": in.AgentHome, "workspace": in.WorkspaceID, "workdir": in.WorkDir, "write": write})
 	if err := writeDirectTool(tools, "memgov", []byte(fmt.Sprintf(directMemoryPython, config))); err != nil {
 		return core.Fail("unavailable", "direct memory tool could not be installed")
 	}
@@ -717,7 +728,7 @@ func installDirectActionTool(in ExecutionInput, binary string) error {
 			return core.Fail("denied", "direct action tool directory is not a regular directory")
 		}
 	}
-	config, _ := json.Marshal(map[string]string{"binary": binary, "home": in.Home, "workspace": in.WorkspaceID, "workdir": in.WorkDir})
+	config, _ := json.Marshal(map[string]string{"binary": binary, "home": in.Home, "agent_home": in.AgentHome, "workspace": in.WorkspaceID, "workdir": in.WorkDir})
 	if err := writeDirectTool(tools, "memgov-action", []byte(fmt.Sprintf(directActionPython, config))); err != nil {
 		return core.Fail("unavailable", "direct action tool could not be installed")
 	}
@@ -735,7 +746,7 @@ func installDirectHotwordTool(in ExecutionInput, binary string) error {
 			return core.Fail("denied", "direct hotword tool directory is not a regular directory")
 		}
 	}
-	config, _ := json.Marshal(map[string]string{"binary": binary, "home": in.Home, "workspace": in.WorkspaceID, "workdir": in.WorkDir})
+	config, _ := json.Marshal(map[string]string{"binary": binary, "home": in.Home, "agent_home": in.AgentHome, "workspace": in.WorkspaceID, "workdir": in.WorkDir})
 	if err := writeDirectTool(tools, "memgov-hotword", []byte(fmt.Sprintf(directHotwordPython, config))); err != nil {
 		return core.Fail("unavailable", "direct hotword tool could not be installed")
 	}
