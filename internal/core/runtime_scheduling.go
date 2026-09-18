@@ -12,6 +12,20 @@ import (
 
 // Scheduling is shared by the durable runtime and declarative configuration.
 // Concurrency in legacy input is an alias for ExecutionConcurrency.
+type inMemoryCapacityKey struct{}
+
+// WithInMemoryCapacity marks a runtime-owned claim as already reserved by the
+// process-local scheduler. Core callers that do not use that scheduler retain
+// the durable compatibility capacity check.
+func WithInMemoryCapacity(ctx context.Context) context.Context {
+	return context.WithValue(ctx, inMemoryCapacityKey{}, true)
+}
+
+func inMemoryCapacity(ctx context.Context) bool {
+	v, _ := ctx.Value(inMemoryCapacityKey{}).(bool)
+	return v
+}
+
 type Scheduling struct {
 	AnalysisConcurrency     int `json:"analysis_concurrency,omitempty" yaml:"analysis_concurrency,omitempty"`
 	ExecutionConcurrency    int `json:"execution_concurrency,omitempty" yaml:"execution_concurrency,omitempty"`
@@ -143,7 +157,7 @@ func (tx *Tx) claimWork(ctx context.Context, c RuntimeConfig, kind, id, route, t
 	if err != nil {
 		return err
 	}
-	_, err = tx.Conn.ExecContext(ctx, `INSERT INTO runtime_work_leases(id,runtime_id,kind,route_id,task_id,task_version,policy_version,owner,owner_pid,owner_started,deadline_at,heartbeat_at,lease_until) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, id, c.ID, kind, route, task, version, applied.Version, id, os.Getpid(), processStarted, now.Add(time.Duration(seconds)*time.Second).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), now.Add(30*time.Second).Format(time.RFC3339Nano))
+	_, err = tx.Conn.ExecContext(ctx, `INSERT INTO runtime_work_leases(id,runtime_id,kind,route_id,task_id,task_version,policy_version,owner,owner_pid,owner_started,deadline_at,heartbeat_at,lease_until) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, id, c.ID, kind, route, task, version, applied.Version, id, os.Getpid(), processStarted, now.Add(time.Duration(seconds)*time.Second).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), now.Add(time.Duration(seconds)*time.Second).Format(time.RFC3339Nano))
 	if err == nil {
 		_, err = tx.Conn.ExecContext(ctx, "UPDATE runtime_work_leases SET runtime_policy_digest=? WHERE id=?", runtimePolicyDigest(c), id)
 	}

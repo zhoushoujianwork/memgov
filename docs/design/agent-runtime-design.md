@@ -1,6 +1,6 @@
 # Agent preset 与 AI 运行时
 
-状态：运行时源码与离线检查已完成。MVP 优先简化控制面与 SQLite 热写路径；该简化尚未实现。见[MVP 核心取舍](../architecture/best-practice-scenarios.md#mvp-核心取舍业务先顺畅运行)。实现协议与兼容规则见[详细稿](agent-runtime-design-detail.md)，接入方式见[钉钉主设计](dingtalk-integration-design.md)。
+状态：运行时源码已完成 MVP SQLite 热写简化并通过离线检查；部署后的真实业务验收仍待完成。见[MVP 核心取舍](../architecture/best-practice-scenarios.md#mvp-核心取舍业务先顺畅运行)。实现协议与兼容规则见[详细稿](agent-runtime-design-detail.md)，接入方式见[钉钉主设计](dingtalk-integration-design.md)。
 
 ## 目标与使用方式
 

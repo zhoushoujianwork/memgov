@@ -884,8 +884,10 @@ func (tx *Tx) ClaimRuntimeBatch(ctx context.Context, value string, at time.Time)
 	if c.Status != "running" {
 		return out, nil
 	}
-	if available, e := PoolAvailable(ctx, tx.Conn, c, "analysis"); e != nil || !available {
-		return out, e
+	if !inMemoryCapacity(ctx) {
+		if available, e := PoolAvailable(ctx, tx.Conn, c, "analysis"); e != nil || !available {
+			return out, e
+		}
 	}
 	routes, e := eligibleAnalysisRoutes(ctx, tx.Conn, c, at)
 	if e != nil {
@@ -1615,8 +1617,10 @@ func (tx *Tx) ClaimRuntimeTask(ctx context.Context, value, attemptID, model, pre
 	if (c.ApplicationMode != "proactive" && active > 0) || active >= c.Concurrency {
 		return t, a, nil
 	}
-	if available, e := PoolAvailable(ctx, tx.Conn, c, "execution"); e != nil || !available {
-		return t, a, e
+	if !inMemoryCapacity(ctx) {
+		if available, e := PoolAvailable(ctx, tx.Conn, c, "execution"); e != nil || !available {
+			return t, a, e
+		}
 	}
 	err = scanRuntimeTask(tx.Conn.QueryRowContext(ctx, "SELECT "+runtimeTaskColumns+` FROM runtime_tasks WHERE runtime_id=? AND status='pending'
 AND route_id IN (SELECT value FROM json_each(?))
@@ -2024,8 +2028,10 @@ func (tx *Tx) ClaimRuntimeAction(ctx context.Context, value, attemptID, model st
 	if c.Status != "running" {
 		return action, attempt, nil
 	}
-	if available, e := PoolAvailable(ctx, tx.Conn, c, "execution"); e != nil || !available {
-		return action, attempt, e
+	if !inMemoryCapacity(ctx) {
+		if available, e := PoolAvailable(ctx, tx.Conn, c, "execution"); e != nil || !available {
+			return action, attempt, e
+		}
 	}
 	var active int
 	if err = tx.Conn.QueryRowContext(ctx, `SELECT

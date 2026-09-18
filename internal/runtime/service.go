@@ -51,12 +51,49 @@ type Service struct {
 	workers         sync.WaitGroup
 	concurrent      bool
 	workerWake      chan struct{}
+	slotsMu         sync.Mutex
+	analysisSlots   int
+	executionSlots  int
 }
 
 type stageDelivery struct {
 	Config  core.RuntimeConfig
 	TaskID  string
 	Purpose string
+}
+
+func (s *Service) reserveSlot(cfg core.RuntimeConfig, kind string) bool {
+	if cfg.ApplicationMode != "proactive" || !s.concurrent {
+		return true
+	}
+	s.slotsMu.Lock()
+	defer s.slotsMu.Unlock()
+	if kind == "analysis" {
+		if s.analysisSlots >= cfg.AnalysisConcurrency {
+			return false
+		}
+		s.analysisSlots++
+	} else {
+		if s.executionSlots >= cfg.Concurrency {
+			return false
+		}
+		s.executionSlots++
+	}
+	return true
+}
+
+func (s *Service) releaseSlot(cfg core.RuntimeConfig, kind string) {
+	if cfg.ApplicationMode != "proactive" || !s.concurrent {
+		return
+	}
+	s.slotsMu.Lock()
+	defer s.slotsMu.Unlock()
+	if kind == "analysis" && s.analysisSlots > 0 {
+		s.analysisSlots--
+	}
+	if kind != "analysis" && s.executionSlots > 0 {
+		s.executionSlots--
+	}
 }
 
 func (s *Service) now() time.Time {
@@ -699,36 +736,55 @@ func (s *Service) tick(ctx context.Context, cfg core.RuntimeConfig, preset agent
 		s.emit(ctx, runlog.Event{RuntimeID: cfg.ID, Level: "info", Component: "intake", Event: "messages_synced", Status: "ready", Summary: fmt.Sprintf("发现 %d 条待分析消息", syncResult.Pending+syncResult.Revised)})
 	}
 	for n := 0; n < cfg.AnalysisConcurrency; n++ {
+		if !s.reserveSlot(cfg, "analysis") {
+			break
+		}
+		reservedAnalysis := cfg.ApplicationMode == "proactive" && s.concurrent
 		var batch core.RuntimeBatch
 		batchReady, err := core.RuntimeBatchReady(ctx, s.Store.DB, cfg.ID, s.now())
 		if err != nil {
+			if reservedAnalysis {
+				s.releaseSlot(cfg, "analysis")
+			}
 			s.emit(ctx, runlog.Event{RuntimeID: cfg.ID, Level: "error", Component: "analysis", Event: "claim_failed", ErrorCode: core.ErrorCode(err), Summary: "分析批次领取失败"})
 			return
 		}
 		if batchReady {
-			err = s.mutate(ctx, "global", "runtime.batch.claim", func(tx *core.Tx) (any, error) {
+			err = s.mutate(core.WithInMemoryCapacity(ctx), "global", "runtime.batch.claim", func(tx *core.Tx) (any, error) {
 				var e error
 				batch, e = tx.ClaimRuntimeBatch(ctx, cfg.ID, s.now())
 				return batch, e
 			})
 			if err != nil {
+				if reservedAnalysis {
+					s.releaseSlot(cfg, "analysis")
+				}
 				s.emit(ctx, runlog.Event{RuntimeID: cfg.ID, Level: "error", Component: "analysis", Event: "claim_failed", ErrorCode: core.ErrorCode(err), Summary: "分析批次领取失败"})
 				return
 			}
 		}
 		if batch.ID != "" {
 			if cfg.ApplicationMode == "direct" {
+				if reservedAnalysis {
+					s.releaseSlot(cfg, "analysis")
+				}
 				s.queueDirectTurn(ctx, cfg, batch)
 			} else if cfg.ApplicationMode == "proactive" && s.concurrent {
 				s.workers.Add(1)
 				go func(batch core.RuntimeBatch) {
 					defer s.workers.Done()
 					defer s.wakeWorker()
+					defer s.releaseSlot(cfg, "analysis")
 					s.analyze(ctx, cfg, batch)
 				}(batch)
 			} else {
 				s.analyze(ctx, cfg, batch)
+				if reservedAnalysis {
+					s.releaseSlot(cfg, "analysis")
+				}
 			}
+		} else if reservedAnalysis {
+			s.releaseSlot(cfg, "analysis")
 		}
 		if batch.ID == "" || cfg.ApplicationMode != "proactive" || !s.concurrent {
 			break
@@ -751,19 +807,29 @@ func (s *Service) tick(ctx context.Context, cfg core.RuntimeConfig, preset agent
 }
 
 func (s *Service) executeOneConfirmedAction(ctx context.Context, cfg core.RuntimeConfig, preset agent.Preset) bool {
+	if !s.reserveSlot(cfg, "execution") {
+		return false
+	}
+	reserved := cfg.ApplicationMode == "proactive" && s.concurrent
 	ready, err := core.RuntimeActionReady(ctx, s.Store.DB, cfg.ID)
 	if err != nil || !ready {
+		if reserved {
+			s.releaseSlot(cfg, "execution")
+		}
 		return false
 	}
 	attemptID := core.NewID()
 	var action core.RuntimePendingAction
 	var attempt core.RuntimeActionAttempt
-	err = s.mutate(ctx, "global", "runtime.action.claim", func(tx *core.Tx) (any, error) {
+	err = s.mutate(core.WithInMemoryCapacity(ctx), "global", "runtime.action.claim", func(tx *core.Tx) (any, error) {
 		var claimErr error
 		action, attempt, claimErr = tx.ClaimRuntimeAction(ctx, cfg.ID, attemptID, cfg.ExecutionModel)
 		return map[string]any{"action": action, "attempt": attempt}, claimErr
 	})
 	if err != nil || action.ID == "" {
+		if reserved {
+			s.releaseSlot(cfg, "execution")
+		}
 		return false
 	}
 	if cfg.ApplicationMode == "proactive" && s.concurrent {
@@ -771,6 +837,7 @@ func (s *Service) executeOneConfirmedAction(ctx context.Context, cfg core.Runtim
 		go func() {
 			defer s.workers.Done()
 			defer s.wakeWorker()
+			defer s.releaseSlot(cfg, "execution")
 			s.executeClaimedAction(ctx, cfg, preset, action, attempt)
 		}()
 	} else {
@@ -970,19 +1037,29 @@ func (s *Service) analyze(ctx context.Context, cfg core.RuntimeConfig, batch cor
 }
 
 func (s *Service) executeOne(ctx context.Context, cfg core.RuntimeConfig, preset agent.Preset) {
+	if !s.reserveSlot(cfg, "execution") {
+		return
+	}
+	reserved := cfg.ApplicationMode == "proactive" && s.concurrent
 	ready, err := core.RuntimeTaskReady(ctx, s.Store.DB, cfg.ID)
 	if err != nil || !ready {
+		if reserved {
+			s.releaseSlot(cfg, "execution")
+		}
 		return
 	}
 	attemptID := core.NewID()
 	var task core.RuntimeTask
 	var attempt core.RuntimeAttempt
-	err = s.mutate(ctx, "global", "runtime.task.claim", func(tx *core.Tx) (any, error) {
+	err = s.mutate(core.WithInMemoryCapacity(ctx), "global", "runtime.task.claim", func(tx *core.Tx) (any, error) {
 		var e error
 		task, attempt, e = tx.ClaimRuntimeTask(ctx, cfg.ID, attemptID, cfg.ExecutionModel, preset.Name, preset.Commit, "")
 		return map[string]any{"task": task, "attempt": attempt}, e
 	})
 	if err != nil || task.ID == "" {
+		if reserved {
+			s.releaseSlot(cfg, "execution")
+		}
 		return
 	}
 	if cfg.ApplicationMode == "proactive" && s.concurrent {
@@ -990,6 +1067,7 @@ func (s *Service) executeOne(ctx context.Context, cfg core.RuntimeConfig, preset
 		go func() {
 			defer s.workers.Done()
 			defer s.wakeWorker()
+			defer s.releaseSlot(cfg, "execution")
 			s.executeClaimed(ctx, cfg, preset, task, attempt)
 		}()
 		return

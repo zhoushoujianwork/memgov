@@ -200,8 +200,10 @@ func RuntimeBatchReady(ctx context.Context, q Queryer, value string, at time.Tim
 	if c.Status != "running" {
 		return false, nil
 	}
-	if available, e := PoolAvailable(ctx, q, c, "analysis"); e != nil || !available {
-		return false, e
+	if !inMemoryCapacity(ctx) {
+		if available, e := PoolAvailable(ctx, q, c, "analysis"); e != nil || !available {
+			return false, e
+		}
 	}
 	routes, e := eligibleAnalysisRoutes(ctx, q, c, at)
 	if e != nil {
@@ -276,8 +278,10 @@ func RuntimeActionReady(ctx context.Context, q Queryer, value string) (bool, err
 	if c.Status != "running" {
 		return false, nil
 	}
-	if available, e := PoolAvailable(ctx, q, c, "execution"); e != nil || !available {
-		return false, e
+	if !inMemoryCapacity(ctx) {
+		if available, e := PoolAvailable(ctx, q, c, "execution"); e != nil || !available {
+			return false, e
+		}
 	}
 	if active, activeErr := runtimeHasActiveExecution(ctx, q, c.ID); activeErr != nil || (active && c.ApplicationMode != "proactive") {
 		return false, activeErr

@@ -42,9 +42,10 @@ func (tx *Tx) ClaimRuntimeReview(ctx context.Context, c RuntimeConfig) (RuntimeR
 	if c.Status != "running" {
 		return r, nil
 	}
-	available, err := PoolAvailable(ctx, tx.Conn, c, "execution")
-	if err != nil || !available {
-		return r, err
+	if !inMemoryCapacity(ctx) {
+		if available, e := PoolAvailable(ctx, tx.Conn, c, "execution"); e != nil || !available {
+			return r, e
+		}
 	}
 	var busy int
 	err = tx.Conn.QueryRowContext(ctx, `SELECT

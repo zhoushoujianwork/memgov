@@ -27,24 +27,38 @@ func memoryFailure(err error) string {
 }
 
 func (s *Service) executeReview(ctx context.Context, cfg core.RuntimeConfig) {
-	ready, err := core.RuntimeReviewReady(ctx, s.Store.DB, cfg.ID)
-	if err != nil || !ready {
+	if !s.reserveSlot(cfg, "execution") {
 		return
 	}
-	available, err := core.PoolAvailable(ctx, s.Store.DB, cfg, "execution")
-	if err != nil || !available {
+	reserved := cfg.ApplicationMode == "proactive" && s.concurrent
+	ready, err := core.RuntimeReviewReady(ctx, s.Store.DB, cfg.ID)
+	if err != nil || !ready {
+		if reserved {
+			s.releaseSlot(cfg, "execution")
+		}
 		return
 	}
 	var job core.RuntimeReview
-	err = s.mutate(ctx, "global", "runtime.review.claim", func(tx *core.Tx) (any, error) { var e error; job, e = tx.ClaimRuntimeReview(ctx, cfg); return job, e })
+	err = s.mutate(core.WithInMemoryCapacity(ctx), "global", "runtime.review.claim", func(tx *core.Tx) (any, error) { var e error; job, e = tx.ClaimRuntimeReview(ctx, cfg); return job, e })
 	if err != nil || job.ID == "" {
+		if reserved {
+			s.releaseSlot(cfg, "execution")
+		}
 		return
 	}
 	if s.concurrent {
 		s.workers.Add(1)
-		go func() { defer s.workers.Done(); defer s.wakeWorker(); s.runReview(ctx, cfg, job) }()
+		go func() {
+			defer s.workers.Done()
+			defer s.wakeWorker()
+			defer s.releaseSlot(cfg, "execution")
+			s.runReview(ctx, cfg, job)
+		}()
 	} else {
 		s.runReview(ctx, cfg, job)
+		if reserved {
+			s.releaseSlot(cfg, "execution")
+		}
 	}
 }
 
