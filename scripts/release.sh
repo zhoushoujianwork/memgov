@@ -19,9 +19,10 @@ for release_os in darwin linux; do
       -o "dist/$package/memgov" ./cmd/memgov
     cp README.md "dist/$package/README.md"
     cp INSTALL.md "dist/$package/INSTALL.md"
+    cp LICENSE "dist/$package/LICENSE"
     cp config.local.yaml.example "dist/$package/config.local.yaml.example"
     cp -R docs "dist/$package/docs"
-    tar -czf "dist/$package.tar.gz" -C "dist/$package" memgov README.md INSTALL.md config.local.yaml.example docs
+    tar -czf "dist/$package.tar.gz" -C "dist/$package" memgov README.md INSTALL.md LICENSE config.local.yaml.example docs
   done
 done
 python3 - "$release_version" <<'PY'

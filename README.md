@@ -130,3 +130,7 @@ ln -s "$PWD/.agents/skills/memgov-memory" "${CODEX_HOME:-$HOME/.codex}/skills/me
 ```
 
 安装后可用 `$memgov-memory` 显式调用；其元数据也允许在符合描述的任务中自动触发。
+
+## License
+
+memgov is available under the [Apache License 2.0](LICENSE).
