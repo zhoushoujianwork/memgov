@@ -686,3 +686,19 @@ func TestGroupMentionRuntimeSharesOneReceiverAcrossTwoGroups(t *testing.T) {
 		t.Fatalf("expected exactly one receiver for a two-group runtime, got %d", receiver.starts)
 	}
 }
+
+func TestPrivateAndGroupTurnsDoNotPreloadMemgovMemory(t *testing.T) {
+	service := &Service{}
+	ctx := context.Background()
+	for _, mode := range []string{"direct", "group_mention"} {
+		cfg := core.RuntimeConfig{ApplicationMode: mode, AgentCapabilities: []string{"memory_read"}, MemoryScope: "conversation_published"}
+		memory, err := service.runtimeMemoryContext(ctx, cfg, core.RuntimeTask{Title: "should not query"}, core.Workspace{ID: "missing-workspace"})
+		if err != nil || memory != "" {
+			t.Fatalf("mode=%s memory context = %q, err=%v", mode, memory, err)
+		}
+		hotword, err := service.runtimeHotwordContext(ctx, cfg, core.RuntimeTask{}, core.Workspace{ID: "missing-workspace"})
+		if err != nil || hotword != "" {
+			t.Fatalf("mode=%s hotword context = %q, err=%v", mode, hotword, err)
+		}
+	}
+}

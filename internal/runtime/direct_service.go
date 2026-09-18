@@ -122,14 +122,9 @@ func (s *Service) executeDirectTurn(ctx context.Context, cfg core.RuntimeConfig,
 			fail(e)
 			return
 		}
+		// Private turns do not implicitly query memgov memory. The explicit
+		// memory skill remains available to the Agent when it is relevant.
 		hotwords := ""
-		if hasAgentCapability(policy.Capabilities, "memory_read") {
-			hotwords, e = core.HotwordContext(ctx, s.Store.DB, workspace.ID, nil, 4000)
-		}
-		if e != nil {
-			fail(e)
-			return
-		}
 		channelPrompt, e := s.runtimeChannelSystemPrompt(ctx, cfg, task)
 		if e != nil {
 			fail(e)

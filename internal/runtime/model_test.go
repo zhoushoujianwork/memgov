@@ -87,6 +87,33 @@ func TestProfileModelUsesAliasDefaultWithoutModelArgument(t *testing.T) {
 	}
 }
 
+func TestGroupAgentLoadsOnlyItsPersistentClaudeHome(t *testing.T) {
+	home := t.TempDir()
+	preset, err := agent.Enable(context.Background(), home, "claude", "claude-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentHome := filepath.Join(t.TempDir(), "group-agent")
+	otherHome := filepath.Join(t.TempDir(), "private-agent")
+	var args []string
+	c := &Claude{Run: func(_ context.Context, _ string, _ []byte, argv ...string) ([]byte, error) {
+		args = append([]string{}, argv...)
+		return claudeResult(t, map[string]any{"result": "ok", "summary": "", "artifacts": []string{}, "tool_kinds": []string{}, "pending_actions": []any{}}), nil
+	}}
+	_, err = c.Execute(context.Background(), ExecutionInput{WorkDir: t.TempDir(), AgentHome: agentHome, Preset: preset,
+		ApplicationMode: "group_mention", Capabilities: []string{"local_write"}, PolicyResolved: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--add-dir "+agentHome) {
+		t.Fatalf("group Agent did not load its home: %q", joined)
+	}
+	if strings.Contains(joined, otherHome) || !strings.Contains(joined, "Edit("+filepath.Join(agentHome, "CLAUDE.md")+")") {
+		t.Fatalf("group Agent home boundary was not preserved: %q", joined)
+	}
+}
+
 func TestGroupAgentExecutionDoesNotInheritOwnerTools(t *testing.T) {
 	home := t.TempDir()
 	preset, err := agent.Enable(context.Background(), home, "claude", "claude-default")

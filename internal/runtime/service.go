@@ -1301,9 +1301,11 @@ func (s *Service) executeClaimed(ctx context.Context, cfg core.RuntimeConfig, pr
 }
 
 func (s *Service) runtimeMemoryContext(ctx context.Context, cfg core.RuntimeConfig, task core.RuntimeTask, workspace core.Workspace) (string, error) {
-	// Agents choose when to query memory. Observations are evidence for a
-	// separate task, never a request to preload the owner's private history.
-	if cfg.ApplicationMode == "group_mention" || cfg.ApplicationMode == "proactive" {
+	// Agents choose when to query memory. Private and group turns must not
+	// preload memgov memory on every message; the explicit memory skill remains
+	// available when the Agent decides it is relevant. Observations are evidence
+	// for a separate task, never a request to preload the owner's private history.
+	if cfg.ApplicationMode == "direct" || cfg.ApplicationMode == "group_mention" || cfg.ApplicationMode == "proactive" {
 		return "", nil
 	}
 	if !hasAgentCapability(cfg.AgentCapabilities, "memory_read") {
@@ -1339,6 +1341,11 @@ func (s *Service) runtimeMemoryContext(ctx context.Context, cfg core.RuntimeConf
 }
 
 func (s *Service) runtimeHotwordContext(ctx context.Context, cfg core.RuntimeConfig, task core.RuntimeTask, workspace core.Workspace) (string, error) {
+	// Hotwords are also memgov memory. Do not perform an implicit lookup for
+	// private or group conversations; an Agent may use the explicit memory tool.
+	if cfg.ApplicationMode == "direct" || cfg.ApplicationMode == "group_mention" {
+		return "", nil
+	}
 	if !hasAgentCapability(cfg.AgentCapabilities, "memory_read") {
 		return "", nil
 	}
