@@ -344,6 +344,12 @@ func (c Collector) Receive(ctx context.Context, req core.Request, channelValue s
 					return renewed, err
 				})
 				if renewErr != nil {
+					// The parent or adapter may close the receiver while a renewal is
+					// in flight. That is a normal shutdown, not a lease failure.
+					if receiverCtx.Err() != nil {
+						renewDone <- nil
+						return
+					}
 					cancelReceiver()
 					renewDone <- renewErr
 					return

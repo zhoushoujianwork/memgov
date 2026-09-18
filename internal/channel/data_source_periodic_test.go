@@ -96,7 +96,16 @@ func TestDataSourcePeriodicReconcileKeepsHealthyLeaseAndInvalidatesFailedDiscove
 	service := DataSourceService{Store: collector.Store, Adapter: adapter, Tick: time.Millisecond, Now: func() time.Time { return time.Unix(0, clock.Load()) }}
 	done := make(chan error, 1)
 	go func() { done <- service.Run(ctx, d.ID) }()
-	sourceEventually(t, func() bool { _, reads, starts, _ := adapter.counts(); return reads == 1 && starts == 1 })
+	reconciledAt := ""
+	sourceEventually(t, func() bool {
+		source, e := core.ReadDataSource(ctx, collector.Store.DB, d.ID)
+		_, reads, starts, _ := adapter.counts()
+		if e == nil && reads == 1 && starts == 1 && source.LastReconciledAt != "" {
+			reconciledAt = source.LastReconciledAt
+			return true
+		}
+		return false
+	})
 	first, _ := core.ReadLease(ctx, collector.Store.DB, d.ChannelID)
 	initial, err := core.ReadSourceGroupDiscovery(ctx, collector.Store.DB, d.ID)
 	if err != nil || !initial.Valid {
@@ -108,7 +117,15 @@ func TestDataSourcePeriodicReconcileKeepsHealthyLeaseAndInvalidatesFailedDiscove
 	adapter.historyErr = core.Fail("unavailable", "fake history failure")
 	adapter.mu.Unlock()
 	clock.Add(int64(11 * time.Second))
-	sourceEventually(t, func() bool { clock.Add(int64(time.Second)); _, reads, _, _ := adapter.counts(); return reads >= 2 })
+	sourceEventually(t, func() bool {
+		source, e := core.ReadDataSource(ctx, collector.Store.DB, d.ID)
+		_, reads, _, _ := adapter.counts()
+		if e == nil && reads >= 2 && source.LastReconciledAt != reconciledAt {
+			reconciledAt = source.LastReconciledAt
+			return true
+		}
+		return false
+	})
 	lease, _ := core.ReadLease(ctx, collector.Store.DB, d.ChannelID)
 	if lease.Token != first.Token || !lease.Held {
 		t.Fatal("periodic history failure replaced live receiver")
@@ -122,7 +139,6 @@ func TestDataSourcePeriodicReconcileKeepsHealthyLeaseAndInvalidatesFailedDiscove
 	beforeFailure, _ := core.ReadSourceGroupDiscovery(ctx, collector.Store.DB, d.ID)
 	clock.Add(int64(11 * time.Second))
 	sourceEventually(t, func() bool {
-		clock.Add(int64(time.Second))
 		r, e := core.ReadSourceGroupDiscovery(ctx, collector.Store.DB, d.ID)
 		return e == nil && !r.Valid
 	})
@@ -130,7 +146,15 @@ func TestDataSourcePeriodicReconcileKeepsHealthyLeaseAndInvalidatesFailedDiscove
 	if receipt.ObservedAt != beforeFailure.ObservedAt {
 		t.Fatal("failed lookup refreshed receipt")
 	}
-	sourceEventually(t, func() bool { _, reads, _, _ := adapter.counts(); return reads > readsBeforeFailure })
+	sourceEventually(t, func() bool {
+		source, e := core.ReadDataSource(ctx, collector.Store.DB, d.ID)
+		_, reads, _, _ := adapter.counts()
+		if e == nil && reads > readsBeforeFailure && source.LastReconciledAt != reconciledAt {
+			reconciledAt = source.LastReconciledAt
+			return true
+		}
+		return false
+	})
 	_, reads, starts, peak := adapter.counts()
 	if starts != 1 || peak != 1 {
 		t.Fatalf("failure affected receive or history: reads=%d starts=%d peak=%d", reads, starts, peak)
@@ -144,9 +168,13 @@ func TestDataSourcePeriodicReconcileKeepsHealthyLeaseAndInvalidatesFailedDiscove
 	adapter.mu.Unlock()
 	clock.Add(int64(11 * time.Second))
 	sourceEventually(t, func() bool {
-		clock.Add(int64(time.Second))
+		source, e := core.ReadDataSource(ctx, collector.Store.DB, d.ID)
 		_, r, st, _ := adapter.counts()
-		return r >= readsBeforeFailure+1 && st == 2
+		if e == nil && r > reads && st == 2 && source.LastReconciledAt != reconciledAt {
+			reconciledAt = source.LastReconciledAt
+			return true
+		}
+		return false
 	})
 	adapter.mu.Lock()
 	scope := append([]string{}, adapter.scope...)
@@ -174,7 +202,6 @@ func TestDataSourcePeriodicReconcileKeepsHealthyLeaseAndInvalidatesFailedDiscove
 	}
 	clock.Add(int64(11 * time.Second))
 	sourceEventually(t, func() bool {
-		clock.Add(int64(time.Second))
 		source, e := core.ReadDataSource(ctx, collector.Store.DB, d.ID)
 		adapter.mu.Lock()
 		active := adapter.active
