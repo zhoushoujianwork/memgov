@@ -65,9 +65,13 @@ Schema 22 固定企业/profile/userId 及证据修订。配置变化期间到达
 
 范围以[主文档](dingtalk-integration-design.md)为准。本功能对应“事项闭环”的私聊背景补充；源码实现与离线测试不等于已安装或真实钉钉验收。
 
-`dingtalk_app/5` 从原始回调的 `text.isReplyMsg / text.repliedMsg` 提取引用类型、消息 ID 和内容，兼容文字内容为 `{text}`、`{content}`、字符串或 JSON 编码对象。引用 ID 优先使用 `repliedMsg.msgId`，缺失时使用 `originalMsgId`；缺少可读内容仍保留引用事实。聊天记录卡片只接收 `title / summary` 并标记 `summary_only`，不伪装为全文；不下载图片或文件，不解引用其他会话。
+`dingtalk_app/6` 从原始回调的 `text.isReplyMsg / text.repliedMsg` 提取引用类型、消息 ID 和内容，兼容文字内容为 `{text}`、`{content}`、字符串或 JSON 编码对象。引用 ID 优先使用 `repliedMsg.msgId`，缺失时使用 `originalMsgId`；缺少可读内容仍保留引用事实。聊天记录卡片只接收 `title / summary` 并标记 `summary_only`，不伪装为全文；不下载图片或文件，不解引用其他会话。
 
 本人正文保持原样，引用单独保存于消息修订的 JSON snapshot 与 Source 证据，不增加数据库迁移。引用变化参与去重及修订摘要。私聊当前输入和已投递轮次的恢复历史均携带引用，使用 JSON 编码明确标为不可信背景；引用变化使持久 Agent 上下文重建。原文最多 4000 字、标题最多 256 字，超限截断并提示；未知媒体或无法解析的内容明确提示不可读。引用与所属消息遵循同一可用性及原文保留规则，过期清理同时清除引用和缓存副本。
+
+DWS 个人通道的历史 `+chat-messages` 和实时 `+listen-im` 投影都读取 `quotedMessage`。文字引用优先使用 `text`，兼容 `content`；聊天记录只使用 `title / summary` 并标记为摘要。引用 ID 使用 `quotedMessage.messageId`，缺失时回退到 `quotedMessageId` 或 `originalMsgId`。本地实现不会根据 ID 再查询另一条消息来拼接正文；DWS 未返回正文时，Agent 会收到“内容不可读”的引用事实。引用内容同样执行长度限制和能力字段脱敏。
+
+2026-09-18 的本地 DWS 验收使用 profile `ding1b99eee8b9ef5edf` 和私聊会话 `OpenClaw小钉-周守健`：真实引用回复的 `+chat-messages` 返回了 `quotedMessage.text`，内容包含被引用机器人回复的完整文本；因此已确认平台字段可被解析。该验收消息与返回 ID 属于部署私有证据，不写入源码或公开日志。
 
 离线回归覆盖文字形态、卡片摘要、不可读类型、截断、嵌套媒体凭据脱敏、去重与引用变更修订、撤回和过期读屏障、私聊任务输入、历史恢复及持久进程后续轮次。未解决项：真实平台验收、已安装二进制升级、图片/文件内容读取、已收到卡片全文的受控补回；后两项不属于本期范围。
 

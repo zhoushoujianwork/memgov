@@ -13,7 +13,7 @@ import (
 // The installed DWS v1.0.61 (50eb73a0) parses timezone-less message times
 // using fixed CST+8 and exposes nextCursor as epoch milliseconds. See upstream
 // internal/shortcut/smart/{chat_messages,message_time_range}.go.
-const historyParseVersion = "dws-history/3"
+const historyParseVersion = "dws-history/4"
 
 var dwsMessageLocation = time.FixedZone("CST", 8*60*60)
 

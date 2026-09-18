@@ -27,7 +27,7 @@ import (
 
 // ParseVersion identifies this normalization. It is stored with every event so a
 // later parser change is distinguishable from a platform change.
-const ParseVersion = "dws/1"
+const ParseVersion = "dws/2"
 
 // Runner executes dws. Tests substitute it; production uses argv exec.
 type Runner func(ctx context.Context, args ...string) ([]byte, error)
@@ -390,14 +390,15 @@ func jsonContainsRobotCode(raw []byte, want string) bool {
 
 type historyPage struct {
 	Messages []struct {
-		ID         string `json:"messageId"`
-		Text       string `json:"text"`
-		Time       string `json:"time"`
-		CreateTime string `json:"createTime"`
-		SenderID   string `json:"senderId"`
-		SenderName string `json:"senderName"`
-		SenderType string `json:"senderIdType"`
-		QuotedID   string `json:"quotedMessageId"`
+		ID         string            `json:"messageId"`
+		Text       string            `json:"text"`
+		Time       string            `json:"time"`
+		CreateTime string            `json:"createTime"`
+		SenderID   string            `json:"senderId"`
+		SenderName string            `json:"senderName"`
+		SenderType string            `json:"senderIdType"`
+		QuotedID   string            `json:"quotedMessageId"`
+		Quoted     *dwsQuotedMessage `json:"quotedMessage"`
 	} `json:"messages"`
 	Complete        bool                 `json:"complete"`
 	HasMore         bool                 `json:"hasMore"`
@@ -512,8 +513,9 @@ func (a *Adapter) ReadWindow(ctx context.Context, cfg channel.Config, w channel.
 		if naiveTime {
 			e.HistoryPreviousSentAt = stamp.Add(8 * time.Hour).Format(time.RFC3339Nano)
 		}
-		if m.QuotedID != "" {
-			e.Relations = []core.Relation{{Kind: "quote", ProviderMessageID: m.QuotedID, Confidence: "provider"}}
+		e.Quote = dwsMessageQuote(m.QuotedID, m.Quoted)
+		if e.Quote != nil && e.Quote.ProviderMessageID != "" {
+			e.Relations = []core.Relation{{Kind: "quote", ProviderMessageID: e.Quote.ProviderMessageID, Confidence: "provider"}}
 		}
 		out.Events = append(out.Events, e)
 	}
@@ -596,6 +598,7 @@ type messagePayload struct {
 	Text             struct{ Content string } `json:"text"`
 	Content          struct{ Content string } `json:"content"`
 	OriginalMsgID    string                   `json:"originalMsgId"`
+	QuotedMessage    *dwsQuotedMessage        `json:"quotedMessage"`
 	RecalledMsgID    string                   `json:"recalledMsgId"`
 	IsInAtList       bool                     `json:"isInAtList"`
 }
@@ -665,8 +668,9 @@ func ParseEvent(cfg channel.Config, line []byte) (core.NormalizedEvent, error) {
 			idType = "unknown"
 		}
 		e.Sender = core.Sender{IDType: idType, IDValue: value, DisplayName: payload.SenderNick}
-		if payload.OriginalMsgID != "" {
-			e.Relations = []core.Relation{{Kind: "quote", ProviderMessageID: payload.OriginalMsgID, Confidence: "provider"}}
+		e.Quote = dwsMessageQuote(payload.OriginalMsgID, payload.QuotedMessage)
+		if e.Quote != nil && e.Quote.ProviderMessageID != "" {
+			e.Relations = []core.Relation{{Kind: "quote", ProviderMessageID: e.Quote.ProviderMessageID, Confidence: "provider"}}
 		}
 	default:
 		// Reactions, read receipts and unknown versions are isolated rather than
