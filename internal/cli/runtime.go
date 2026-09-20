@@ -236,11 +236,24 @@ func (a *app) runRuntimeWorker(ctx context.Context, value string, externalReceiv
 	if logger != nil {
 		defer logger.Close()
 	}
-	claude := runtimeengine.NewClaude(cfg.AnalysisModel, cfg.ExecutionModel)
-	claude.Profile = cfg.ClaudeProfile
+	harnessName := "claude"
+	if cfg.AgentPreset != "" {
+		preset, presetErr := agent.Status(ctx, a.home, cfg.AgentPreset)
+		if presetErr != nil {
+			return presetErr
+		}
+		harnessName = preset.Provider
+	}
+	bundle, harnessErr := runtimeengine.NewHarness(harnessName, cfg.AnalysisModel, cfg.ExecutionModel)
+	if harnessErr != nil {
+		return harnessErr
+	}
+	if profiled, ok := bundle.Executor.(interface{ SetProfile(string) }); ok {
+		profiled.SetProfile(cfg.ClaudeProfile)
+	}
 	service := runtimeengine.Service{
 		Home: a.home, Store: s, Adapter: adapter, ExternalReceiver: externalReceiver,
-		Analyzer: claude, Executor: claude, Reviewer: claude,
+		Analyzer: bundle.Analyzer, Executor: bundle.Executor, Actioner: bundle.Actioner, Reviewer: bundle.Reviewer,
 		Logger: logger, Diagnostic: a.errOut,
 	}
 	if externalReceiver && a.runtimeWake != nil {

@@ -8,8 +8,8 @@
 | --- | --- |
 | `cmd/memgov`、`internal/cli` | CLI 入口、JSON envelope、配置计划/应用、记忆和任务命令 |
 | `internal/core` | Source、Candidate、Review、Memory、任务、证据、版本、幂等和审计事务 |
-| `internal/channel` | DWS、应用机器人和群路由适配；保存入口身份与受众，不把平台字段写进记忆模型 |
-| `internal/runtime`、`internal/agent` | Personal Jarvis 根任务、子 Agent 调度、外部模型调用、工具边界、恢复和确认 |
+| `internal/channel` | 沟通平台适配；保存入口身份与受众，不把平台字段写进记忆模型 |
+| `internal/runtime`、`internal/agent` | Personal Jarvis 根任务、子 Agent 调度、harness 工厂、外部模型调用、工具边界、恢复和确认 |
 | `internal/sysprompt` | Owner、后台、群 Jarvis 等入口的基础身份和安全规则；不授予额外 capability |
 | `internal/service` | 单一服务生命周期、配置加载、模块监督、停止、重启和 macOS 托管 |
 | `internal/console`、`internal/observation`、`internal/runlog` | 本地查询、控制回调、健康/进展观测和有界脱敏日志 |
@@ -17,6 +17,8 @@
 | `memgov-memory` skill adapter | 将 Agent 的记忆请求映射到稳定 CLI/API 契约；不直接打开 SQLite |
 
 一个统一服务可托管 Personal Jarvis 和群 Jarvis，但必须按 `channel`、`conversation`、`application`、身份和策略隔离任务。共享进程或数据库不表示共享授权。
+
+平台适配器与 harness 适配器是两条独立边界。平台适配器只负责消息、附件、身份、会话和投递；harness 适配器只负责分析、执行、确认动作和记忆复核。两者都通过接口和注册表替换，不能直接拥有任务、记忆、受众或权限真相。当前内置 harness 为 Claude；其他 harness 必须注册完整的 `Analyzer`、`Executor`、`ActionExecutor` 和 `Reviewer` 契约后才能被运行时选择。
 
 ## 正式数据模型
 

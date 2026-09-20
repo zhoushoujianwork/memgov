@@ -8,7 +8,7 @@ memgov 由五层组成：
 
 1. **平台适配层**接收任意沟通平台的消息、附件和事件，并保留入口身份、会话和受众边界。
 2. **Personal Jarvis 层**把用户请求或本地主动任务组织为根任务，直接处理或派发有界 Agent，汇总结果并决定是否通知用户。
-3. **Agent Runtime 层**提供沙箱、Workspace、技能、工具和任务执行。
+3. **Agent Runtime 层**通过 harness 适配器提供沙箱、Workspace、技能、工具和任务执行；Claude、Codex、OpenClaw 或自建 harness 都不是核心依赖。
 4. **记忆与证据层**用 Source、Candidate、Review、Memory 管理原始材料、临时判断和可复用知识。
 5. **治理与运行层**控制配置、权限、工具调用、确认、恢复、投递和审计。
 

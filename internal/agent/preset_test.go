@@ -61,3 +61,16 @@ func TestPresetSyncCommitsPolicyAndRejectsCredentialLikeInput(t *testing.T) {
 		t.Fatalf("disable: %+v %v", disabled, err)
 	}
 }
+
+func TestPresetSupportsHarnessIndependentManifest(t *testing.T) {
+	p, err := Enable(context.Background(), t.TempDir(), "codex", "codex-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Provider != "codex" || !p.Clean {
+		t.Fatalf("unexpected harness preset: %+v", p)
+	}
+	if _, err := os.Stat(filepath.Join(p.Path, "AGENT.md")); err != nil {
+		t.Fatalf("generic harness policy entry missing: %v", err)
+	}
+}

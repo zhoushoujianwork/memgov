@@ -1,18 +1,18 @@
-# Agent preset 与 AI 运行时
+# Agent preset 与平台、harness 无关的 AI 运行时
 
 状态：运行时源码已完成 MVP SQLite 热写简化并通过离线检查；部署后的真实业务验收仍待完成。见[MVP 核心取舍](../architecture/best-practice-scenarios.md#mvp-核心取舍业务先顺畅运行)。实现协议与兼容规则见[详细稿](agent-runtime-design-detail.md)，接入方式见[钉钉主设计](dingtalk-integration-design.md)。
 
 ## 目标与使用方式
 
-DWS 后台观察和钉钉机器人交互使用同一套 Agent 能力，分别处理触发、权限与完成方式。业务验收对齐[最佳落地场景](../architecture/best-practice-scenarios.md)。
+Personal Jarvis 的平台入口和 Agent harness 使用同一套任务、权限与记忆能力，分别由可替换的适配器处理。飞书、钉钉或其他沟通平台可以替换；Claude、Codex、OpenClaw 或自建 harness 也可以替换。业务验收对齐[最佳落地场景](../architecture/best-practice-scenarios.md)。
 
 | 入口 | 如何工作 | 完成方式 |
 | --- | --- | --- |
-| DWS 后台观察 | Haiku 评估事项是否值得处理，再启动独立 Agent 调查和解决问题；缺少输入可以主动查证 | 仅记录任务、产物和操作结果，不经过主 Agent，不自动汇报 |
+| 本地主动观察 | 由配置的分析 harness 评估事项是否值得处理，再启动独立 Agent 调查和解决问题；缺少输入可以主动查证 | 按通知策略记录任务、产物和操作结果 |
 | Owner 私聊机器人 | 验证当前 DWS Owner 后直接进入持续 Agent 会话，不走 Haiku | 回复本人私聊；普通用户私聊不进入 Agent |
 | 群内有效 @ | 直接进入该机器人、该群选择的 Agent，不走 Haiku | 回复触发原群；即使 Owner 发起也使用群权限 |
 
-运行时以交互响应优先。空闲检查、未达到后台批处理阈值的消息、尚未收到口令的确认动作和已有执行中任务只做 SQLite 只读判断，不取得写锁，也不生成空审计记录；发现实际工作后仍在短写事务中重新校验并原子领取。管理台继续使用独立只读连接，不需要为避免后台阻塞而移除 Web 功能。事务边界与回归要求见[详细稿](agent-runtime-design-detail.md#空闲调度与写事务边界)。
+运行时以交互响应优先。空闲检查、未达到后台批处理阈值的消息、尚未收到口令的确认动作和已有执行中任务只做 SQLite 只读判断，不取得写锁，也不生成空审计记录；发现实际工作后仍在短写事务中重新校验并原子领取。管理台继续使用独立只读连接，不需要为避免后台阻塞而移除 Web 功能。平台适配器和 harness 适配器都只负责边界转换，不拥有任务、记忆或授权真相。事务边界与回归要求见[详细稿](agent-runtime-design-detail.md#空闲调度与写事务边界)。
 
 机器人通过 `applications.bots.<channel>` 声明默认 Agent、人设及 Owner 私聊、群助手覆盖。省略 Owner 私聊的 `agent` 时继承机器人默认人设和模型，并使用完整 Owner 权限；显式 Agent 可以收紧。机器人运行不要求启用 DWS 采集或历史导入，但 Owner 仍须由 DWS 身份核验。
 
@@ -33,7 +33,7 @@ Agent 规则、会话、任务和日志分开保存：
 <MEMGOV_HOME>/runtime/logs/        脱敏运行日志
 ```
 
-普通 `memgov init` 不创建 preset；显式执行 `memgov agent preset enable claude --name claude-default` 后才建立规则目录和初始提交。每次执行前检查 preset 启用、Git 工作树干净，并记录实际 commit。每个 Agent 可配置独立 home；Claude 通过 `--add-dir` 自动加载其中的 `CLAUDE.md`，缺省时按 Agent 名称创建。具备 `local_write` 的 Agent 只能更新该 home 下的 `CLAUDE.md`，不能借此扩大工具或消息权限。该文件用于持久化非敏感的日常处理事实，不保存凭据、原始私聊/群聊记录或猜测。memgov 长期记忆保持按需查询，不在每轮自动预取。默认使用当前 Claude CLI；可通过 `claude_profile` 选择已有接入和模型，运行时不执行 alias，也不持久化认证信息。
+普通 `memgov init` 不创建 preset；显式执行 `memgov agent preset enable <harness> --name <name>` 后才建立规则目录和初始提交。每次执行前检查 preset 启用、Git 工作树干净，并记录实际 commit。每个 Agent 可配置独立 home；当前 Claude harness 通过 `--add-dir` 自动加载其中的 `CLAUDE.md`，其他 harness 使用自己的规则入口。持久化规则不能借此扩大工具或消息权限。memgov 长期记忆保持按需查询，不在每轮自动预取。harness 的认证、模型和会话参数由各自适配器管理，不进入任务或记忆真相源。
 
 群 Agent 默认关闭 Bash，只提供已授权的同群上下文、共享记忆和产物目录。独立群 Agent 可以显式开启 Bash，但不能同时声明受控目录快照。Owner 声明目录时采用只读输入与独立副本，代码副本保留 Git 历史；受控目录模式不运行任意 Shell。权限和目录细节见[能力映射](agent-runtime-design-detail.md#会话-bash-与能力映射)。
 

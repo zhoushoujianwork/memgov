@@ -101,6 +101,10 @@ type Claude struct {
 	directSessions *directSessionManager
 }
 
+// SetProfile keeps the legacy Claude profile configurable without exposing
+// provider-specific fields to the runtime host.
+func (c *Claude) SetProfile(profile string) { c.Profile = profile }
+
 func NewClaude(analysisModel, executionModel string) *Claude {
 	return &Claude{Binary: "claude", AnalysisModel: analysisModel, ExecutionModel: executionModel}
 }
