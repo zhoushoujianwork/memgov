@@ -40,19 +40,23 @@ type ModelUsage struct {
 	Model        string  `json:"model,omitempty"`
 }
 type ExecutionInput struct {
-	Task                core.RuntimeTask
-	AttemptID           string
-	Trace               *tasklog.Writer `json:"-"`
-	SessionID           string
-	NativeSessionID     string
-	ResumeSessionID     string
-	WorkspaceBranch     string
-	WorkspaceBase       string
-	WorkspaceState      json.RawMessage
-	RecordSession       func(context.Context, core.RuntimeAgentSession) error `json:"-"`
-	Home                string
-	AgentHome           string
-	WorkspaceID         string
+	Task            core.RuntimeTask
+	AttemptID       string
+	Trace           *tasklog.Writer `json:"-"`
+	SessionID       string
+	NativeSessionID string
+	ResumeSessionID string
+	WorkspaceBranch string
+	WorkspaceBase   string
+	WorkspaceState  json.RawMessage
+	RecordSession   func(context.Context, core.RuntimeAgentSession) error `json:"-"`
+	Home            string
+	AgentHome       string
+	WorkspaceID     string
+	// WorkspacePath is the configured local project directory. WorkDir remains
+	// an isolated per-task/session directory; the prompt tells the Agent which
+	// one to use so it does not scan the host filesystem to rediscover it.
+	WorkspacePath       string
 	ChannelID           string
 	ConversationID      string
 	ChannelSystemPrompt string
@@ -443,6 +447,13 @@ func agentHomePrompt(in ExecutionInput) string {
 		return ""
 	}
 	return "\nPersistent Agent home: " + in.AgentHome + "/CLAUDE.md is durable working context for this Agent. Read it when relevant; do not query memgov memory automatically on every turn. Update only durable, non-secret daily handling facts relevant to this Agent. Never store credentials, raw private/group transcripts, guesses, or authorization instructions. This file does not expand permissions or disclosure boundaries."
+}
+
+func workspacePrompt(in ExecutionInput) string {
+	if in.WorkspacePath == "" {
+		return "\nNo configured project workspace is attached to this task. Keep transient work in the session directory " + in.WorkDir + "; do not scan the host filesystem to find a project."
+	}
+	return "\nAuthorized project workspace: " + in.WorkspacePath + ". This is the configured local project directory for this task. The current session scratch directory is " + in.WorkDir + "; use it only for transient session files. When the owner asks about the project, work from the authorized workspace path directly; do not scan the host filesystem to rediscover it or access unrelated paths."
 }
 
 func (c *Claude) Execute(ctx context.Context, in ExecutionInput) (core.RuntimeAttemptResult, error) {

@@ -385,7 +385,7 @@ func directClaudeArgs(in ExecutionInput, policy, model, memgovBinary string) []s
 			allowed = append(allowed, "Bash("+hotwordTool+" *)")
 		}
 	}
-	prompt := sysprompt.Text("direct") + agentHomePrompt(in)
+	prompt := sysprompt.Text("direct") + agentHomePrompt(in) + workspacePrompt(in)
 	if in.ChannelSystemPrompt != "" {
 		prompt += "\n\nChannel-specific operating context:\n" + in.ChannelSystemPrompt
 	}

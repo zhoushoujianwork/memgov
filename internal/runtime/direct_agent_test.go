@@ -325,6 +325,22 @@ func TestDirectAgentAppendsTrustedChannelSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestDirectAgentReceivesConfiguredWorkspacePath(t *testing.T) {
+	_, in, _ := directAgentFixture(t)
+	in.WorkspacePath = "/Users/mikas/github/memgov"
+	args := directClaudeArgs(in, "", "", "")
+	values := map[string]string{}
+	for i := 0; i+1 < len(args); i++ {
+		if strings.HasPrefix(args[i], "--") {
+			values[args[i]] = args[i+1]
+		}
+	}
+	prompt := values["--append-system-prompt"]
+	if !strings.Contains(prompt, "Authorized project workspace: /Users/mikas/github/memgov") || !strings.Contains(prompt, "do not scan the host filesystem") || !strings.Contains(prompt, in.WorkDir) {
+		t.Fatalf("workspace boundary was not explicit: %q", prompt)
+	}
+}
+
 func TestDirectAgentCancelledTurnClosesStream(t *testing.T) {
 	c, in, _ := directAgentFixture(t)
 	defer c.CloseDirectSessions()
