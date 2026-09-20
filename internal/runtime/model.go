@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/zhoushoujianwork/memgov/internal/agent"
@@ -144,6 +145,9 @@ func (c *Claude) invoke(ctx context.Context, dir string, input []byte, args ...s
 
 var aliasProfileName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]{0,63}$`)
 var aliasEnvironmentName = regexp.MustCompile(`^(ANTHROPIC_[A-Z0-9_]+|CLAUDE_CODE_[A-Z0-9_]+)$`)
+var shellAliasMu sync.Mutex
+
+const shellAliasResolveTimeout = 5 * time.Second
 
 // resolveShellAliasProfile reads, but never executes, a zsh alias. Only simple
 // ANTHROPIC_/CLAUDE_CODE_ export assignments are copied into the Claude child
@@ -156,6 +160,18 @@ func resolveShellAliasProfile(ctx context.Context, profile string) ([]string, er
 	if !aliasProfileName.MatchString(profile) {
 		return nil, core.Fail("invalid_input", "invalid Claude shell alias profile")
 	}
+	// ccswitch commonly writes a plain alias definition into ~/.zshrc. Read
+	// that definition without starting an interactive shell first: launchd has
+	// no terminal, and zsh startup plugins (for example compinit) can otherwise
+	// block a model invocation indefinitely.
+	shellAliasMu.Lock()
+	defer shellAliasMu.Unlock()
+	if raw, ok := readShellAliasDefinition(profile); ok {
+		env, err := parseAliasEnvironment(raw)
+		if err == nil && len(env) > 0 {
+			return env, nil
+		}
+	}
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/zsh"
@@ -164,9 +180,14 @@ func resolveShellAliasProfile(ctx context.Context, profile string) ([]string, er
 		return nil, core.Fail("unavailable", "Claude alias profiles currently require zsh")
 	}
 	script := `print -rn -- "${aliases[` + profile + `]}"`
-	cmd := exec.CommandContext(ctx, shell, "-lic", script)
-	raw, err := processtree.Output(ctx, cmd)
+	resolveCtx, cancel := context.WithTimeout(ctx, shellAliasResolveTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(resolveCtx, shell, "-lic", script)
+	raw, err := processtree.Output(resolveCtx, cmd)
 	if err != nil || len(raw) == 0 {
+		if resolveCtx.Err() == context.DeadlineExceeded {
+			return nil, core.Fail("unavailable", "Claude shell alias profile %q could not be read before the startup timeout", profile)
+		}
 		return nil, core.Fail("unavailable", "Claude shell alias profile %q was not found", profile)
 	}
 	env, err := parseAliasEnvironment(string(raw))
@@ -177,6 +198,47 @@ func resolveShellAliasProfile(ctx context.Context, profile string) ([]string, er
 		return nil, core.Fail("invalid_input", "Claude shell alias profile %q has no supported environment configuration", profile)
 	}
 	return env, nil
+}
+
+func readShellAliasDefinition(profile string) (string, bool) {
+	home := strings.TrimSpace(os.Getenv("HOME"))
+	if home == "" {
+		return "", false
+	}
+	zdot := strings.TrimSpace(os.Getenv("ZDOTDIR"))
+	if zdot == "" {
+		zdot = home
+	}
+	b, err := os.ReadFile(filepath.Join(zdot, ".zshrc"))
+	if err != nil || len(b) > 1<<20 {
+		return "", false
+	}
+	prefix := "alias " + profile + "="
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		if raw, ok := unwrapAliasDefinition(value); ok {
+			return raw, true
+		}
+	}
+	return "", false
+}
+
+func unwrapAliasDefinition(value string) (string, bool) {
+	if len(value) < 2 || (value[0] != '\'' && value[0] != '"') {
+		return "", false
+	}
+	quote := value[0]
+	for i := 1; i < len(value); i++ {
+		if value[i] != quote || (quote == '"' && i > 0 && value[i-1] == '\\') {
+			continue
+		}
+		return value[1:i], true
+	}
+	return "", false
 }
 
 func parseAliasEnvironment(value string) ([]string, error) {

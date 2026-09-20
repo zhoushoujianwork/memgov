@@ -87,6 +87,23 @@ func TestAliasProfileParserAcceptsCcswitchSemicolonSyntax(t *testing.T) {
 	}
 }
 
+func TestReadShellAliasDefinitionDoesNotExecuteZshStartup(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".zshrc"), []byte(`alias cc='export ANTHROPIC_BASE_URL="https://proxy.example/api"; export ANTHROPIC_MODEL="claude-sonnet"; exec claude'`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("ZDOTDIR", home)
+	raw, ok := readShellAliasDefinition("cc")
+	if !ok || !strings.Contains(raw, "ANTHROPIC_BASE_URL") || strings.Contains(raw, "alias cc=") {
+		t.Fatalf("alias definition was not read safely: ok=%v raw=%q", ok, raw)
+	}
+	env, err := parseAliasEnvironment(raw)
+	if err != nil || len(env) != 2 {
+		t.Fatalf("alias definition did not produce the expected environment: env=%v err=%v", env, err)
+	}
+}
+
 func TestProfileModelUsesAliasDefaultWithoutModelArgument(t *testing.T) {
 	var args []string
 	c := &Claude{Profile: "cc", AnalysisModel: "profile", Run: func(_ context.Context, _ string, _ []byte, argv ...string) ([]byte, error) {

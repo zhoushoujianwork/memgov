@@ -180,7 +180,7 @@ memgov runtime setup my-watcher \
   --execution-model profile
 ```
 
-memgov 只解析 alias 中简单的 `ANTHROPIC_*` 和 `CLAUDE_CODE_*` 环境变量，不执行 alias，也不继承其中的命令行参数。赋值之间使用 `&&` 或 `;` 均可，因此 ccswitch 切换后生成的常见 alias 仍可使用。SQLite 只保存 alias 名和模型选择；认证信息仅传给 Claude 子进程。
+memgov 只解析 alias 中简单的 `ANTHROPIC_*` 和 `CLAUDE_CODE_*` 环境变量，不执行 alias，也不继承其中的命令行参数。运行时优先静态读取 `ZDOTDIR/.zshrc`，找不到时才用带超时的 zsh 读取，避免 ccswitch 或 shell 启动插件卡住 Agent。赋值之间使用 `&&` 或 `;` 均可，因此 ccswitch 切换后生成的常见 alias 仍可使用。SQLite 只保存 alias 名和模型选择；认证信息仅传给 Claude 子进程。
 
 ## 3. 用统一 YAML 启动 Personal Jarvis 与群 Jarvis
 
