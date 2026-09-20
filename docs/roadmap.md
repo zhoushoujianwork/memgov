@@ -18,6 +18,8 @@
 
 第 5 项依赖目标企业权限、明确部署版本和真实业务样本；不在本次文档整理中预设未经配置的外部连接器或新增执行授权。
 
+本地验收记录（2026-09-20）：`2.0.0-harness-migration` 已安装并由 macOS launchd 启动，`runtime harness` 报告 Claude 的 analyzer、executor、actioner、reviewer 契约完整；真实 DWS Owner 私聊返回 `READY`。Claude CLI 环境修复后，失败场景也能在同一私聊现场显示安全错误代码和可行动原因。该记录只证明当前本地 profile、DWS 会话和 Claude harness，不能替代其他平台或 harness 的验收。
+
 ## 独立待办与后续范围
 
 - **系统提示真实模型安全验收：** 集中维护和输入分层已在源码实现；继续按[验证边界](design/agent-runtime-design-detail.md#统一系统提示与安全验证)，在隔离环境验证模型对注入、破坏、外传、记忆污染的识别及合法请求误拒情况，补齐多轮样例与部署版本证据。完整 Bash 的 OS 隔离仍是独立缺口，不能以 prompt 测试代替。
