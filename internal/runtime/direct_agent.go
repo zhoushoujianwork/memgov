@@ -327,7 +327,7 @@ func directPolicyDigest(in ExecutionInput, profile, model string) string {
 	capabilities := append([]string(nil), in.Capabilities...)
 	sort.Strings(capabilities)
 	return core.Digest(map[string]any{"preset_commit": in.Preset.Commit, "preset_path": in.Preset.Path,
-		"capabilities": capabilities, "workspace": in.WorkspaceID, "home": in.Home, "agent_home": in.AgentHome,
+		"capabilities": capabilities, "workspace": in.WorkspaceID, "workspace_path": in.WorkspacePath, "home": in.Home, "agent_home": in.AgentHome,
 		"workdir": in.WorkDir, "profile": profile, "model": model,
 		"bash": in.BashEnabled, "external_actions": in.ExternalActions,
 		"skills": in.Skills, "hotwords": core.Digest(in.HotwordContext),

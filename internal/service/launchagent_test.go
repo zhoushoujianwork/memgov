@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLaunchAgentDefinitionAndLifecycle(t *testing.T) {
@@ -102,5 +103,41 @@ func TestLaunchAgentUninstallPreservesDefinitionOnStopFailure(t *testing.T) {
 	}
 	if _, err := os.Stat(path); err != nil {
 		t.Fatal("removed definition after stop failed")
+	}
+}
+
+func TestLaunchAgentStartRetriesAsynchronousBootout(t *testing.T) {
+	home := t.TempDir()
+	m := &LaunchAgent{
+		Label:  "test.memgov",
+		Path:   filepath.Join(home, "test.plist"),
+		domain: "gui/501",
+		sleep:  func(time.Duration) {},
+	}
+	if err := os.WriteFile(m.Path, []byte("plist"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded := false
+	bootstrapAttempts := 0
+	m.run = func(_ context.Context, args ...string) error {
+		switch args[0] {
+		case "print":
+			if !loaded {
+				return errors.New("not loaded")
+			}
+		case "bootstrap":
+			bootstrapAttempts++
+			if bootstrapAttempts == 1 {
+				return errors.New("service still unloading")
+			}
+			loaded = true
+		}
+		return nil
+	}
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if bootstrapAttempts != 2 || !loaded {
+		t.Fatalf("start did not retry bootstrap: attempts=%d loaded=%v", bootstrapAttempts, loaded)
 	}
 }

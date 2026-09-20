@@ -147,6 +147,19 @@ func TestOwnerToolRulesConfineEditsAndDoNotExposeShell(t *testing.T) {
 	}
 }
 
+func TestExecutionWorkspacePathHidesIsolatedSourceDirectories(t *testing.T) {
+	workspace := core.Workspace{Path: "/owner/project"}
+	if got := workspacePathForExecution("direct", workspace, nil); got != workspace.Path {
+		t.Fatalf("direct owner lost workspace path: %q", got)
+	}
+	if got := workspacePathForExecution("group_mention", workspace, nil); got != "" {
+		t.Fatalf("group Agent received host workspace path: %q", got)
+	}
+	if got := workspacePathForExecution("proactive", workspace, &OwnerDirectoryWorkspace{}); got != "" {
+		t.Fatalf("directory-bounded Agent received source path: %q", got)
+	}
+}
+
 func TestOwnerDeclaredToolInvocationRefusesTestsAndProtectsGitControls(t *testing.T) {
 	ctx := context.Background()
 	preset, err := agent.Enable(ctx, ownerRoot(t), "claude", "claude-default")

@@ -1175,6 +1175,10 @@ func (s *Service) executeClaimed(ctx context.Context, cfg core.RuntimeConfig, pr
 		s.failTask(ctx, cfg, task, attempt, err)
 		return
 	}
+	// Group and declared-directory Agents work from isolated snapshots. Do not
+	// disclose the original project path to those processes: it is not mounted
+	// in their work directory and could become an accidental host path oracle.
+	executionWorkspacePath := workspacePathForExecution(cfg.ApplicationMode, workspace, declaredWorkspace)
 	taskConfig := cfg
 	taskConfig.AgentCapabilities, taskConfig.MemoryScope = policy.Capabilities, policy.MemoryScope
 	memoryContext, err := s.runtimeMemoryContext(ctx, taskConfig, task, workspace)
@@ -1220,7 +1224,7 @@ func (s *Service) executeClaimed(ctx context.Context, cfg core.RuntimeConfig, pr
 	}
 	execInput := ExecutionInput{Task: task, MemoryContext: memoryContext, MemoryScope: policy.MemoryScope, HotwordContext: hotwordContext, ConversationContext: conversationContext,
 		AttemptID: attempt.ID, NativeSessionID: attempt.ID, RecordSession: s.sessionRecorder(task, attempt), WorkspaceBranch: branch, WorkspaceBase: base, WorkspaceState: workspaceState, DirectoryPolicy: policy.Directories, AgentPolicyDigest: core.Digest(policy),
-		Home: s.Home, AgentHome: effectiveAgentHome(s.Home, policy.Home, policy.Agent), WorkspaceID: workspace.ID, WorkspacePath: workspace.Path, ChannelID: cfg.ChannelID, ConversationID: conversationID,
+		Home: s.Home, AgentHome: effectiveAgentHome(s.Home, policy.Home, policy.Agent), WorkspaceID: workspace.ID, WorkspacePath: executionWorkspacePath, ChannelID: cfg.ChannelID, ConversationID: conversationID,
 		WorkDir: workdir, Preset: preset, ApplicationMode: cfg.ApplicationMode, Capabilities: policy.Capabilities, BashEnabled: policy.BashEnabled, ExternalActions: policy.ExternalActions, DirectorySnapshots: snapshots, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile, DirectoryBounded: declaredWorkspace != nil, DirectoryWriteRoots: directoryWriteRoots, ChannelSystemPrompt: channelPrompt, Skills: policy.Skills}
 	if cfg.ApplicationMode == "proactive" {
 		roots := directoryWriteRoots
@@ -1304,6 +1308,13 @@ func (s *Service) executeClaimed(ctx context.Context, cfg core.RuntimeConfig, pr
 	if completed.Status == "completed" {
 		s.completionAcknowledgement(ctx, cfg, task.ID)
 	}
+}
+
+func workspacePathForExecution(applicationMode string, workspace core.Workspace, declared *OwnerDirectoryWorkspace) string {
+	if applicationMode == "group_mention" || declared != nil {
+		return ""
+	}
+	return workspace.Path
 }
 
 func (s *Service) runtimeMemoryContext(ctx context.Context, cfg core.RuntimeConfig, task core.RuntimeTask, workspace core.Workspace) (string, error) {

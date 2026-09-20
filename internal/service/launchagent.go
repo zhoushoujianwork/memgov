@@ -27,6 +27,7 @@ type LaunchAgent struct {
 	Loaded    bool   `json:"loaded"`
 	domain    string
 	run       func(context.Context, ...string) error
+	sleep     func(time.Duration)
 }
 
 func UserAgent(home string) (*LaunchAgent, error) {
@@ -46,6 +47,7 @@ func UserAgent(home string) (*LaunchAgent, error) {
 		}
 		return nil
 	}
+	m.sleep = time.Sleep
 	return m, nil
 }
 
@@ -58,8 +60,16 @@ func (m *LaunchAgent) Inspect(ctx context.Context) error {
 	}
 	m.Installed = err == nil
 	// print returns a nonzero status for a job that is not bootstrapped.
-	m.Loaded = m.run(ctx, "print", m.target()) == nil
-	return ctx.Err()
+	inspectCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	m.Loaded = m.run(inspectCtx, "print", m.target()) == nil
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := inspectCtx.Err(); err != nil {
+		return core.Fail("unavailable", "launchd status did not respond before the timeout")
+	}
+	return nil
 }
 
 type AgentOptions struct {
@@ -153,7 +163,69 @@ func (m *LaunchAgent) Start(ctx context.Context) error {
 	if m.Loaded {
 		return m.run(ctx, "kickstart", m.target())
 	}
-	return m.run(ctx, "bootstrap", m.domain, m.Path)
+	// launchd may finish bootout asynchronously. A bootstrap issued immediately
+	// after a stop can therefore fail even though the plist is valid. Retry the
+	// short transition window and re-inspect between attempts; this keeps the
+	// first start reliable instead of requiring the user to run start twice.
+	const retryWindow = 5 * time.Second
+	const retryInterval = 100 * time.Millisecond
+	deadline := time.Now().Add(retryWindow)
+	var lastErr error
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return lastErr
+		}
+		attemptTimeout := time.Second
+		if remaining < attemptTimeout {
+			attemptTimeout = remaining
+		}
+		attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
+		err := m.run(attemptCtx, "bootstrap", m.domain, m.Path)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		remaining = time.Until(deadline)
+		if remaining <= 0 {
+			return lastErr
+		}
+		inspectTimeout := 2 * time.Second
+		if remaining < inspectTimeout {
+			inspectTimeout = remaining
+		}
+		inspectCtx, inspectCancel := context.WithTimeout(ctx, inspectTimeout)
+		inspectErr := m.Inspect(inspectCtx)
+		inspectCancel()
+		if inspectErr == nil && m.Loaded {
+			return m.run(ctx, "kickstart", m.target())
+		}
+		if time.Now().After(deadline) {
+			return lastErr
+		}
+		wait := retryInterval
+		if remaining := time.Until(deadline); remaining < wait {
+			wait = remaining
+		}
+		if wait <= 0 {
+			return lastErr
+		}
+		if m.sleep != nil {
+			m.sleep(wait)
+		} else {
+			timer := time.NewTimer(wait)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
 }
 
 func (m *LaunchAgent) Stop(ctx context.Context) error {

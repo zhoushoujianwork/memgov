@@ -307,6 +307,13 @@ func TestDirectSessionPolicyFingerprintIncludesBashAndExternalActions(t *testing
 	if withChannelPrompt := directPolicyDigest(in, "", ""); base == withChannelPrompt {
 		t.Fatal("a channel system prompt change would reuse the old native process")
 	}
+	in.ChannelSystemPrompt = ""
+	in.WorkspacePath = "/tmp/project-a"
+	withWorkspace := directPolicyDigest(in, "", "")
+	in.WorkspacePath = "/tmp/project-b"
+	if withWorkspace == directPolicyDigest(in, "", "") {
+		t.Fatal("a configured workspace change would reuse the old native process")
+	}
 }
 
 func TestDirectAgentAppendsTrustedChannelSystemPrompt(t *testing.T) {
