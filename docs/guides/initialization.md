@@ -14,11 +14,11 @@ make install
 
 工作区优先级：`--workspace` → `MEMGOV_WORKSPACE` → 当前目录匹配的最长项目路径 → 配置的 default_workspace → global。显式指定 `--workspace global` 可脱离项目绑定。工作区是本机检索和写入作用域，不是多租户身份认证。
 
-配置文件：`--config` → `MEMGOV_CONFIG` → 数据根下 `config.yaml`。运行服务只认这一份活动配置：`~/.memgov/config.yaml`。若历史环境仍有 `config.dual.yaml`，先停止依赖它的 runtime，再把完整 Owner Assistant 声明合并到 `config.yaml`，预览并应用后重新启动统一服务；旧文件只保留为迁移备份，不再作为日常入口。
+配置文件：`--config` → `MEMGOV_CONFIG` → 数据根下 `config.yaml`。运行服务只认这一份活动配置：`~/.memgov/config.yaml`。若历史环境仍有 `config.dual.yaml`，先停止依赖它的 runtime，再把完整 Personal Jarvis 声明合并到 `config.yaml`，预览并应用后重新启动统一服务；旧文件只保留为迁移备份，不再作为日常入口。平台适配器和 Agent harness 均通过独立注册/配置选择，不把某个平台或执行器写入记忆模型。
 
 仓库内的 `config.local.yaml` 不会自动加载。它只作为开发环境入口链接，不能复制出第二份运行配置。首次初始化可将[完整示例](../../config.local.yaml.example)合并到 `~/.memgov/config.yaml`，或在开发环境显式使用 `--config config.local.yaml`；服务安装和 launchd 始终保存 `~/.memgov/config.yaml`。
 
-Owner Assistant 使用 `applications.owner_private` 与 `applications.proactive` 组织同一套根任务模型：Owner 私聊创建根任务，DWS 发现事项也创建根任务，根任务可以直接处理或派发有界 Agent。新的主动值守任务按“有实质结果、阻塞或需要确认时通知 Owner”运行；历史 `record_only` 任务继续兼容并保持只记录。新建默认后台 Agent 使用 `owner_delegated`，已有显式 Agent 的限制保留，权限扩张仍需预览和显式应用。`applications.bots` 继续按 channel 声明群 Jarvis 的默认人设及私聊/群覆盖；群 Jarvis 的现有能力和回复通道不因 Owner Assistant 重构而削减。详见[Owner Assistant 主设计](../design/owner-assistant-design.md)、[配置兼容](../design/dingtalk-integration-design-detail.md#完成与配置兼容)。源码、安装和真实平台验收分别以[交付状态](../implementation-status.md)为准。
+Personal Jarvis 使用 `applications.owner_private` 与 `applications.proactive` 组织同一套根任务模型：平台消息和本地主动发现都可以创建根任务，根任务可以直接处理或派发有界 Agent。新的主动值守任务按“有实质结果、阻塞或需要确认时通知用户”运行；历史 `record_only` 任务继续兼容并保持只记录。新建默认后台 Agent 使用 `owner_delegated`，已有显式 Agent 的限制保留，权限扩张仍需预览和显式应用。`applications.bots` 继续按 channel 声明群 Jarvis 的默认人设及私聊/群覆盖；群 Jarvis 的现有能力和回复通道不因 Personal Jarvis 重构而削减。详见[Personal Jarvis 主设计](../design/owner-assistant-design.md)、[配置兼容](../design/dingtalk-integration-design-detail.md#完成与配置兼容)。源码、安装和真实平台验收分别以[交付状态](../implementation-status.md)为准。
 
 目前支持以下配置：
 
@@ -29,7 +29,7 @@ Owner Assistant 使用 `applications.owner_private` 与 `applications.proactive`
 | `logging` | 值守日志保留时间、总大小和单文件大小；下次 `runtime start` 生效 |
 | `runtime_setup` | dws profile、机器人 Code、忽略群、项目目录、Claude 配置档与模型、触发阈值；用于新建值守实例 |
 | `channels` | DWS 个人通道或钉钉应用机器人、密钥引用和会话路由；用 `config apply` 显式写入 SQLite |
-| `data_sources`、`agents`、`applications` | Owner Assistant 的来源、Agent preset/能力、Owner 私聊、主动值守和群 Jarvis 声明；用 `config plan` 检查后以 `config apply-runtime` 应用 |
+| `data_sources`、`agents`、`applications` | Personal Jarvis 的来源、Agent preset/能力、Owner 私聊、主动值守和群 Jarvis 声明；用 `config plan` 检查后以 `config apply-runtime` 应用 |
 
 示例列出系统配置字段，以及两种通道的常用参数和注释。未知字段、旧配置字段及错误类型会报 `invalid_input`，不会悄悄忽略。`--home` / `MEMGOV_HOME` 仍负责选择数据根，不能在 YAML 中改变。
 

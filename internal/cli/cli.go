@@ -57,7 +57,13 @@ type app struct {
 	// against a fake platform instead of a real account.
 	dwsAdapter, appAdapter channel.Adapter
 	adapterMu              sync.Mutex
-	runtimeWake            *runtimeengine.WakeBus
+	// adapterRegistry is the composition boundary between the CLI/runtime and
+	// concrete platform packages. The default registry contains the historical
+	// DWS and DingTalk application adapters; embedders can provide another
+	// registry with any platform-neutral channel kind.
+	adapterRegistry  *channel.Registry
+	adapterInstances map[string]channel.Adapter
+	runtimeWake      *runtimeengine.WakeBus
 }
 
 func Run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer) int {

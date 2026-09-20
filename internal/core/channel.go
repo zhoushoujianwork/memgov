@@ -50,6 +50,8 @@ type ChannelInput struct {
 	SchemaVersion int             `json:"schema_version,omitempty" yaml:"schema_version,omitempty"`
 	Name          string          `json:"name" yaml:"name"`
 	Kind          string          `json:"kind" yaml:"kind"`
+	Provider      string          `json:"provider,omitempty" yaml:"provider,omitempty"`
+	Tenant        string          `json:"tenant,omitempty" yaml:"tenant,omitempty"`
 	Identity      ChannelIdentity `json:"identity" yaml:"identity"`
 	CredentialRef string          `json:"credential_ref,omitempty" yaml:"credential_ref,omitempty"`
 	Transport     string          `json:"transport,omitempty" yaml:"transport,omitempty"`
@@ -105,6 +107,8 @@ type Capabilities struct {
 
 var identifier = regexp.MustCompile(`^[A-Za-z0-9._:$+=/-]{1,200}$`)
 var channelName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+var channelKind = regexp.MustCompile(`^[a-z][a-z0-9_.-]{1,62}$`)
+var providerName = regexp.MustCompile(`^[a-z][a-z0-9_.-]{1,62}$`)
 
 // A credential reference names a secret held by the OS keychain or an equally
 // restricted store. An inline secret is refused so SQLite never holds one.
@@ -147,16 +151,38 @@ func normalizeChannel(in ChannelInput) (Channel, error) {
 	if !channelName.MatchString(in.Name) {
 		return Channel{}, Fail("invalid_input", "channel name must be lowercase letters, digits and dashes")
 	}
-	if !contains([]string{ChannelDwsPersonal, ChannelDingTalkApp}, in.Kind) {
-		return Channel{}, Fail("invalid_input", "channel kind must be %s or %s", ChannelDwsPersonal, ChannelDingTalkApp)
-	}
-	if !identifier.MatchString(in.Identity.ExpectedCorpID) {
-		return Channel{}, Fail("invalid_input", "identity.expected_corp_id is required")
+	if !channelKind.MatchString(in.Kind) {
+		return Channel{}, Fail("invalid_input", "channel kind is invalid")
 	}
 	if err := validateCredentialRef(in.CredentialRef); err != nil {
 		return Channel{}, err
 	}
-	c := Channel{ID: NewID(), Name: in.Name, Kind: in.Kind, Provider: "dingtalk", Tenant: in.Identity.ExpectedCorpID,
+	provider := strings.TrimSpace(in.Provider)
+	tenant := strings.TrimSpace(in.Tenant)
+	if contains([]string{ChannelDwsPersonal, ChannelDingTalkApp}, in.Kind) {
+		provider = "dingtalk"
+		if !identifier.MatchString(in.Identity.ExpectedCorpID) {
+			return Channel{}, Fail("invalid_input", "identity.expected_corp_id is required")
+		}
+		tenant = in.Identity.ExpectedCorpID
+	} else {
+		if provider == "" {
+			provider = in.Kind
+		}
+		if !providerName.MatchString(provider) {
+			return Channel{}, Fail("invalid_input", "provider is invalid")
+		}
+		if tenant == "" {
+			tenant = in.Identity.ExpectedCorpID
+			if tenant == "" {
+				tenant = in.Identity.Profile
+			}
+		}
+		if !identifier.MatchString(tenant) {
+			return Channel{}, Fail("invalid_input", "generic channel requires tenant or identity.profile")
+		}
+	}
+	c := Channel{ID: NewID(), Name: in.Name, Kind: in.Kind, Provider: provider, Tenant: tenant,
 		Identity: in.Identity, CredentialRef: in.CredentialRef, ConfigVersion: 1, Status: "configured",
 		Capabilities: Capabilities{Verified: map[string]bool{}, Unverified: []string{}}, CreatedAt: Now(), UpdatedAt: Now()}
 	switch in.Kind {
@@ -205,6 +231,12 @@ func normalizeChannel(in ChannelInput) (Channel, error) {
 		}
 		c.AuthNamespace = "app:" + in.Identity.ClientID
 		c.IDNamespace = "app:" + in.Identity.ExpectedCorpID + ":" + in.Identity.ClientID
+	default:
+		if in.Transport != "" && !identifier.MatchString(in.Transport) {
+			return c, Fail("invalid_input", "generic channel transport is invalid")
+		}
+		c.AuthNamespace = provider + ":" + tenant
+		c.IDNamespace = provider + ":" + tenant
 	}
 	if in.Subscription != nil {
 		if in.Kind != ChannelDwsPersonal {

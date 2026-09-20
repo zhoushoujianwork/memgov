@@ -23,6 +23,15 @@ func (a *app) runtimeCommands() {
 	root := &cobra.Command{Use: "runtime", Short: "钉钉 AI 值守运行时"}
 	root.AddCommand(a.runtimeMessageCmd())
 	root.AddCommand(a.runtimeSetupCommand())
+	root.AddCommand(a.simple("harness [name]", "查看已注册 Agent harness 及其运行契约", cobra.MaximumNArgs(1), func(_ context.Context, args []string) (any, error) {
+		// Diagnostics intentionally use the same registry and factory path as
+		// runtime startup. They do not open the database or invoke a model, so
+		// this command remains useful before the first runtime is configured.
+		if len(args) == 1 {
+			return runtimeengine.DiagnoseHarness(args[0], "", ""), nil
+		}
+		return runtimeengine.DiagnoseHarnesses("", ""), nil
+	}))
 	root.AddCommand(a.write("configure", "创建或更新值守配置", cobra.NoArgs, func(ctx context.Context, tx *core.Tx, _ []string, raw json.RawMessage) (any, error) {
 		var in core.RuntimeConfigInput
 		if err := decode(raw, &in); err != nil {

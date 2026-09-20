@@ -14,30 +14,72 @@ import (
 	"github.com/zhoushoujianwork/memgov/internal/core"
 )
 
-// adapterFor selects the adapter that matches the stored channel kind. A channel
-// is never served by another kind's adapter, because that would mean using a
-// different identity and permission set than the one it was configured with.
+// ensureAdapterRegistry installs the built-in factories at the composition
+// root. channel itself stays platform-neutral; replacing this registry is
+// enough for an embedding binary to select another platform implementation.
+func (a *app) ensureAdapterRegistry() *channel.Registry {
+	a.adapterMu.Lock()
+	defer a.adapterMu.Unlock()
+	if a.adapterRegistry != nil {
+		return a.adapterRegistry
+	}
+	r := channel.NewRegistry()
+	// These factories preserve the historical defaults. They are registered
+	// here, rather than in channel, so importing the contract never imports a
+	// platform SDK.
+	_ = r.Register(core.ChannelDwsPersonal, func() channel.Adapter { return dws.New() })
+	_ = r.Register(core.ChannelDingTalkApp, func() channel.Adapter { return dingtalkapp.New() })
+	a.adapterRegistry = r
+	return r
+}
+
+// adapterFor selects the adapter that matches the stored channel kind. A
+// channel is never served by another kind's adapter, because that would mean
+// using a different identity and permission set than the one it was
+// configured with. Instances are cached per kind so callback-scoped platform
+// state (for example a reply webhook) remains shared by receiver and workers.
 func (a *app) adapterFor(c core.Channel) (channel.Adapter, error) {
-	switch c.Kind {
-	case core.ChannelDwsPersonal:
-		if a.dwsAdapter != nil {
-			return a.dwsAdapter, nil
-		}
-		return dws.New(), nil
-	case core.ChannelDingTalkApp:
+	// Keep the existing injection points for offline tests and callers that need
+	// to replace one of the built-in adapters without replacing the registry.
+	if c.Kind == core.ChannelDwsPersonal && a.dwsAdapter != nil {
+		return a.dwsAdapter, nil
+	}
+	if c.Kind == core.ChannelDingTalkApp {
 		a.adapterMu.Lock()
-		defer a.adapterMu.Unlock()
 		if a.appAdapter != nil {
-			return a.appAdapter, nil
+			adapter := a.appAdapter
+			a.adapterMu.Unlock()
+			return adapter, nil
 		}
-		// Receiver and runtime workers must share callback-scoped reply
-		// capabilities. Cache keys include the channel and exact source message,
-		// so separate application bots remain isolated in the shared process.
-		a.appAdapter = dingtalkapp.New()
-		return a.appAdapter, nil
-	default:
+		a.adapterMu.Unlock()
+	}
+
+	r := a.ensureAdapterRegistry()
+	factory, ok := r.Lookup(c.Kind)
+	if !ok {
 		return nil, core.Fail("invalid_input", "unsupported channel kind %q", c.Kind)
 	}
+
+	a.adapterMu.Lock()
+	defer a.adapterMu.Unlock()
+	if c.Kind == core.ChannelDingTalkApp && a.appAdapter != nil {
+		return a.appAdapter, nil
+	}
+	if a.adapterInstances == nil {
+		a.adapterInstances = make(map[string]channel.Adapter)
+	}
+	if adapter := a.adapterInstances[c.Kind]; adapter != nil {
+		return adapter, nil
+	}
+	adapter := factory()
+	if adapter == nil {
+		return nil, core.Fail("unavailable", "adapter factory for %q returned nil", c.Kind)
+	}
+	a.adapterInstances[c.Kind] = adapter
+	if c.Kind == core.ChannelDingTalkApp {
+		a.appAdapter = adapter
+	}
+	return adapter, nil
 }
 
 // collector opens the store and resolves the adapter for one channel. Contacting

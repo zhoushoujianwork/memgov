@@ -1,6 +1,6 @@
 # CLI 契约 v1
 
-本文是 Owner Assistant 的 CLI/API 运维契约。默认活动配置只有 `~/.memgov/config.yaml`；仓库内 `config.local.yaml` 只作为开发入口链接，历史 `config.dual.yaml` 只用于迁移备份。CLI、管理台和 `memgov-memory` skill 共享同一 SQLite `state.db`，不建立第二套任务或记忆存储。
+本文是 Personal Jarvis 的 CLI/API 运维契约。默认活动配置只有 `~/.memgov/config.yaml`；仓库内 `config.local.yaml` 只作为开发入口链接，历史 `config.dual.yaml` 只用于迁移备份。CLI、管理台和 `memgov-memory` skill 共享同一 SQLite `state.db`，不建立第二套任务或记忆存储。沟通平台适配器和 Agent harness 都是可替换的运行边界。
 
 这里的 v1 指 JSON 输出契约，不是数据库版本或旧产品模型。现行对象为 Source、Candidate、Review、Memory 及其证据、版本和操作记录；使用总览见 [README](../../README.md)。旧版的原子、卡片、战斗及索引导入命令不属于本契约。
 
@@ -26,13 +26,13 @@ Schema 23 源码增量：`runtime setup` 与声明式 `applications.proactive` �
 
 ## YAML 配置
 
-`config show` 显示解析后的系统默认值、`runtime_setup`、`logging`、`channels` 以及 Owner Assistant 的 `data_sources`、`agents`、`applications` 声明，不解析密钥引用。`config validate` 离线检查字段、系统参数与通道身份；路由策略和工作区在应用事务中校验。两者均不初始化数据库。未知字段、重复键、多文档 YAML 和错误类型返回 `invalid_input`。
+`config show` 显示解析后的系统默认值、`runtime_setup`、`logging`、`channels` 以及 Personal Jarvis 的 `data_sources`、`agents`、`applications` 声明，不解析密钥引用。`config validate` 离线检查字段、系统参数与通道身份；路由策略和工作区在应用事务中校验。两者均不初始化数据库。未知字段、重复键、多文档 YAML 和错误类型返回 `invalid_input`。
 
 `config apply NAME` 从所选 YAML 的 `channels` 中读取一项，事务内写入 SQLite，不访问平台；该命令不接受 `--input`。已有通道要求 `--expected-version`（`config_version`）和 `--reason`；包含已有路由时另需 `--expected-route-version`。不能改变通道所属企业、个人账号或应用身份。配置内容参与幂等摘要，更新会清空能力记录、使旧草稿失效。完整字段和使用方式见[初始化与配置](../guides/initialization.md)。
 
 ## 配置计划与独立数据源
 
-`config plan` 预览统一 Owner Assistant YAML 的声明、已应用版本、披露边界及自动挂载，`config apply-runtime` 绑定计划摘要与版本执行应用；保存 YAML 不等于配置已生效。计划输出必须能说明 `ready:true`、Owner 身份与权限边界已确认、没有 unmanaged conflict、没有重复 runtime、没有未授权权限扩张。应用前停止依赖中的 runtime，应用后再启动统一服务。具体输入与授权沿用[接入详细稿](../design/dingtalk-integration-design-detail.md#双模式-yaml-声明与受限应用)。
+`config plan` 预览统一 Personal Jarvis YAML 的声明、已应用版本、披露边界及自动挂载，`config apply-runtime` 绑定计划摘要与版本执行应用；保存 YAML 不等于配置已生效。计划输出必须能说明 `ready:true`、Owner 身份与权限边界已确认、没有 unmanaged conflict、没有重复 runtime、没有未授权权限扩张。应用前停止依赖中的 runtime，应用后再启动统一服务。具体输入与授权沿用[接入详细稿](../design/dingtalk-integration-design-detail.md#双模式-yaml-声明与受限应用)。
 
 `data-source status/start/pause/resume/stop` 管理独立采集；`data-source history create/list/show/cancel/retry` 查询和推进可恢复历史导入。逐实例启动是兼容诊断入口，统一服务运行时不能再并行启动同目录独立实例。查询及七天保留边界见[保留设计](../design/direct-message-retention-design.md)。
 
@@ -123,13 +123,13 @@ create 省略 target_id/expected_version。Memory 内不得指定 id/version。a
 
 ## AI 值守运行时
 
-`agent preset enable claude --name NAME` 显式创建受控 Git 规则目录；`status/sync/disable` 分别检查、提交规则副本和停用。普通 `init` 不创建 preset。
+`agent preset enable <harness> --name NAME` 显式创建受控 Git 规则目录；`status/sync/disable` 分别检查、提交规则副本和停用。普通 `init` 不创建 preset。`runtime harness [name]` 只读显示已注册 harness 的契约状态，不初始化数据库、不调用模型。
 
-`runtime configure --input -` 输入 name、channel、route_ids 和 owner，可选 Agent 策略、claude_profile、模型、preset 与调度参数。Owner Assistant proactive 任务使用 Owner 私聊结果通知策略；历史 `record_only` 任务继续只记录。direct/group_mention 派生为 `reply_to_trigger`，并核验对应私聊/原群出站路由。group_mention 的 context_channel 可省略；提供时仍要求同企业同群。owner 必须是 DWS 已验证稳定身份。修改已有配置需要 expected version，running 状态不能修改。claude_profile 只读取受支持的本机 alias 环境配置，模型 profile 跟随该配置。群 Jarvis 仍保留其独立 Agent、技能、工具、记忆范围和原群回复路径。
+`runtime configure --input -` 输入 name、channel、route_ids 和 owner，可选 Agent 策略、claude_profile、模型、preset 与调度参数。Personal Jarvis proactive 任务使用配置的结果通知策略；历史 `record_only` 任务继续只记录。direct/group_mention 派生为 `reply_to_trigger`，并核验对应私聊/原群出站路由。group_mention 的 context_channel 可省略；提供时仍要求同企业同群。owner 必须是 DWS 已验证稳定身份。修改已有配置需要 expected version，running 状态不能修改。harness 和平台适配器由运行时注册表选择，群 Jarvis 仍保留其独立 Agent、技能、工具、记忆范围和原群回复路径。
 
 `runtime start ID` 是持续前台命令，输出 `schema_version=1` 的 JSONL 日志；它不使用普通 JSON envelope。统一服务提供提交后即时唤醒，独立前台入口仍以默认 1 秒扫描消费。`runtime pause/resume/stop` 修改持久状态。`runtime restart ID` 先写入 stopped 状态，等待当前机器上同名的旧 `memgov runtime start` 或 `memgov runtime restart` 进程退出，再由当前命令以前台流模式启动；等待超过全局 `--timeout` 时失败且不启动并行进程。pause 和日志 degraded 状态继续采集消息，但不创建新 AI 任务。
 
-DWS 来源独立采集并评估后台事项，值得处理即可创建 Owner 根任务并启动有界 Agent；新 Owner Assistant 任务在有实质结果、阻塞或需要确认时向已核验 Owner 私聊通知，`record_only` 历史任务仍只记录。机器人仅已核验 Owner 私聊及有效群 @ 直接进入相应 Agent，不走 Haiku。任务以独立 Outbox 记录“已接收”“处理中”“有结果/被阻塞/等待确认/已完成/已失败”等状态；通知正文包含任务摘要、已完成动作、证据和产物、未完成动作、决策项、外部回执、根/子任务关系、幂等键和投递结果。阶段平台调用在有序旁路队列执行，不作为 Agent 启动前置条件。`awaiting_confirmation` 保持处理中，服务启动按任务真相补齐未开始的阶段。群任务继续以原群 Jarvis 的身份、受众、能力和路由回复；Owner 在群里也不继承私聊授权。普通用户私聊拒绝进入 Owner Agent。
+DWS 来源独立采集并评估后台事项，值得处理即可创建 Owner 根任务并启动有界 Agent；新 Personal Jarvis 任务在有实质结果、阻塞或需要确认时向已核验 Owner 私聊通知，`record_only` 历史任务仍只记录。机器人仅已核验 Owner 私聊及有效群 @ 直接进入相应 Agent，不走 Haiku。任务以独立 Outbox 记录“已接收”“处理中”“有结果/被阻塞/等待确认/已完成/已失败”等状态；通知正文包含任务摘要、已完成动作、证据和产物、未完成动作、决策项、外部回执、根/子任务关系、幂等键和投递结果。阶段平台调用在有序旁路队列执行，不作为 Agent 启动前置条件。`awaiting_confirmation` 保持处理中，服务启动按任务真相补齐未开始的阶段。群任务继续以原群 Jarvis 的身份、受众、能力和路由回复；Owner 在群里也不继承私聊授权。普通用户私聊拒绝进入 Owner Agent。
 
 `runtime task list/show/cancel/retry/resume` 使用普通 envelope。`runtime task confirm ACTION --input -` 接受 `{"message_id":"本地消息 UUID"}`，卡片已展示的动作拒绝此命令绕过按钮；旧口令流程从 SQLite 验证该消息确实来自任务原群的所有者（群助手）或绑定 owner direct route（其他模式）、晚于动作且正文完整匹配确认口令；平台已核验的群 @ 可带一个开头 `@名称 `；不接受自报 sender 或 origin。
 
@@ -143,7 +143,7 @@ Schema 25 增加独立记忆结果 `memory_status/memory_error_code`，状态列
 
 ### 后台 Agent 沟通工具
 
-`runtime message send <task-id> --input <JSON-file>` 在当前 running proactive task/attempt、owner_delegated 策略与 DWS Owner 身份下执行独立沟通；`runtime message list <task-id>` 查询审计。输入包含 attempt_id、idempotency_key、target_type（group/user）、稳定原生 target_id、content、reason、evidence_message_ids。目标、实际披露证据及当前配置均复核；固定绑定 profile、本人与 AI 标识。同键同正文返回已有记录，改正文重用键冲突；失败或未知也不盲目重发。结果记录于 runtime_message_actions，和任务完成通知分离。默认 Owner Assistant 通知走已核验 Owner 私聊；群 Jarvis 的结果仍走原群路由。完整协议见[独立沟通工具](../design/dingtalk-integration-design-detail.md#独立沟通工具)。源码、安装和真实平台状态以[交付状态](../implementation-status.md)为准。
+`runtime message send <task-id> --input <JSON-file>` 在当前 running proactive task/attempt、owner_delegated 策略与 DWS Owner 身份下执行独立沟通；`runtime message list <task-id>` 查询审计。输入包含 attempt_id、idempotency_key、target_type（group/user）、稳定原生 target_id、content、reason、evidence_message_ids。目标、实际披露证据及当前配置均复核；固定绑定 profile、本人与 AI 标识。同键同正文返回已有记录，改正文重用键冲突；失败或未知也不盲目重发。结果记录于 runtime_message_actions，和任务完成通知分离。默认 Personal Jarvis 通知走已核验 Owner 私聊；群 Jarvis 的结果仍走原群路由。完整协议见[独立沟通工具](../design/dingtalk-integration-design-detail.md#独立沟通工具)。源码、安装和真实平台状态以[交付状态](../implementation-status.md)为准。
 
 ## 检索与输出预算
 

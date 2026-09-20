@@ -64,6 +64,29 @@ func TestApplicationAdapterIsSharedByReceiverAndRuntimeWorkers(t *testing.T) {
 	}
 }
 
+func TestAdapterRegistrySupportsASecondPlatformWithoutCLIChanges(t *testing.T) {
+	a := &app{adapterRegistry: channel.NewRegistry()}
+	var constructed int
+	fake := &stubAdapter{}
+	if err := a.adapterRegistry.Register("matrix", func() channel.Adapter {
+		constructed++
+		return fake
+	}); err != nil {
+		t.Fatal(err)
+	}
+	one, err := a.adapterFor(core.Channel{Kind: "matrix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := a.adapterFor(core.Channel{Kind: "matrix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if one != fake || two != fake || one != two || constructed != 1 {
+		t.Fatalf("custom platform adapter was not shared: one=%T two=%T constructed=%d", one, two, constructed)
+	}
+}
+
 // invokeWith runs the CLI with an injected adapter, which is the only way a
 // platform call happens in a test.
 func invokeWith(t *testing.T, adapter channel.Adapter, home, input string, args ...string) (int, map[string]any) {

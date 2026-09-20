@@ -1,10 +1,10 @@
 # 实施路线
 
-状态：以[Owner Assistant 主设计](design/owner-assistant-design.md)和[最佳落地场景](architecture/best-practice-scenarios.md)为实施顺序；这是工作安排，不是交付承诺。已有能力与可复现验证见[实现状态](implementation-status.md)。群挂载 Jarvis 是并行接入通道，本路线不以削减其现有能力换取 Owner Assistant 能力。
+状态：以[Personal Jarvis 主设计](design/owner-assistant-design.md)和[最佳落地场景](architecture/best-practice-scenarios.md)为实施顺序；这是工作安排，不是交付承诺。已有能力与可复现验证见[实现状态](implementation-status.md)。平台适配器和 Agent harness 都是可替换的并行边界；群挂载 Jarvis 是独立接入通道，本路线不以削减其现有能力换取 Personal Jarvis 能力。
 
 ## 主线：完成一条可核验的工作闭环
 
-当前优先把 Owner 私聊、DWS proactive、任务委派、结果通知和记忆治理串成一条可核验闭环，同时保持群 Jarvis 的原有接入、能力和回复通道。既有精细机制可以保留兼容读取，但不再作为高频调度热路径。范围见[MVP 核心取舍](architecture/best-practice-scenarios.md#mvp-核心取舍业务先顺畅运行)。
+当前优先把平台消息、本地主动值守、任务委派、结果通知和记忆治理串成一条可核验闭环，同时保持群 Jarvis 的原有接入、能力和回复通道。平台和 harness 适配器必须可独立替换；既有精细机制可以保留兼容读取，但不再作为高频调度热路径。范围见[MVP 核心取舍](architecture/best-practice-scenarios.md#mvp-核心取舍业务先顺畅运行)。
 
 实施 SQLite 热写简化后，应在部署者自有的隔离环境中验证延迟、真实业务和经验复用。公开仓库只保留可复现测试与脱敏结论。
 
@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | 1 | **已实施**：简化 SQLite 热写路径：调度槽位和普通活动状态留在内存，移除高频续租、phase、空轮询及逐次内部审计写入；任务只用短条件更新保存关键业务状态 | 满足[MVP SQLite 验收](architecture/best-practice-scenarios-detail.md#mvp-验收)：空闲零周期写，8/4 后台负载不阻塞交互，数据库等待不因一次续租失败取消 Agent，重启不重复外部副作用 |
 | 2 | **进行中**：统一 `~/.memgov/config.yaml`，清理重复 runtime，建立 Owner 根任务/子 Agent 关系和环境上下文快照 | `config plan` 明确 `ready:true`、Owner 边界、无冲突、无重复 runtime、无未授权扩权；Owner 私聊和 DWS 发现能关联到同一任务图；旧 `config.dual.yaml` 只作为迁移备份 |
-| 3 | **进行中**：[Owner Assistant 通知与恢复](design/owner-assistant-design.md)：实质结果、阻塞和确认请求回到 Owner，支持暂停、继续、取消、紧急停止和幂等投递；历史 `record_only` 保持兼容 | 离线验收覆盖直接回答、复杂委派、多 Agent 汇总、重启继续、通知失败恢复和危险操作确认；真实模型与平台回执仍需部署者验收 |
+| 3 | **进行中**：[Personal Jarvis 通知与恢复](design/owner-assistant-design.md)：实质结果、阻塞和确认请求回到原平台入口，支持暂停、继续、取消、紧急停止和幂等投递；历史 `record_only` 保持兼容 | 离线验收覆盖直接回答、复杂委派、多 Agent 汇总、重启继续、通知失败恢复和危险操作确认；真实模型、具体 harness 与平台回执仍需部署者验收 |
 | 4 | **并行保持**：[群挂载 Jarvis](design/dingtalk-integration-design.md)继续使用原有机器人、群路由、Agent、技能、工具、记忆范围和原群回复，不继承 Owner 私聊权限 | 群内 `@` 回答、确认、共享记忆和失败恢复回到原群；Owner 在群里不会升权；任何后续限制另行设计、迁移和验收 |
 | 5 | **下一步**：让其他 Agent 通过 `memgov-memory` skill 完成 Source/Candidate/Review/Memory 全治理，并贯通一条真实 Owner 事项从发现到经验复用 | 记录 Agent/workspace/actor/request/idempotency/evidence/version；完成 Owner 验收和受众隔离证据，不能用工具数量替代业务结果 |
 

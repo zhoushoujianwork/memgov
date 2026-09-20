@@ -60,7 +60,6 @@ func TestChannelIdentityAndDefaultsAreRestrictive(t *testing.T) {
 		{Name: "secret", Kind: ChannelDwsPersonal, Identity: ChannelIdentity{ExpectedCorpID: "corp1", ExpectedUserID: "u"}, CredentialRef: "keychain://x?token=abc"},
 		{Name: "plain", Kind: ChannelDwsPersonal, Identity: ChannelIdentity{ExpectedCorpID: "corp1", ExpectedUserID: "u"}, CredentialRef: "AK123SECRET"},
 		{Name: "Bad_Name", Kind: ChannelDwsPersonal, Identity: ChannelIdentity{ExpectedCorpID: "corp1", ExpectedUserID: "u"}},
-		{Name: "wrong-kind", Kind: "telegram", Identity: ChannelIdentity{ExpectedCorpID: "corp1"}},
 	} {
 		_, err := s.Mutate(ctx, Request{Scope: "global", Command: "channel.add", Key: bad.Name}, func(tx *Tx) (any, error) {
 			return tx.AddChannel(ctx, bad)
@@ -89,6 +88,34 @@ func TestChannelIdentityAndDefaultsAreRestrictive(t *testing.T) {
 	}
 	if report.(map[string]any)["healthy"] != false {
 		t.Fatal("a channel with no verified capability is not healthy")
+	}
+}
+
+func TestGenericChannelKindIsPlatformNeutral(t *testing.T) {
+	in := ChannelInput{
+		Name:      "matrix-main",
+		Kind:      "matrix",
+		Provider:  "matrix",
+		Tenant:    "workspace-1",
+		Identity:  ChannelIdentity{Profile: "account-1"},
+		Transport: "sync",
+	}
+	if err := ValidateChannelInput(in); err != nil {
+		t.Fatal(err)
+	}
+	c, err := normalizeChannel(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Provider != "matrix" || c.Tenant != "workspace-1" || c.AuthNamespace != "matrix:workspace-1" || c.IDNamespace != "matrix:workspace-1" {
+		t.Fatalf("generic channel namespaces were not derived independently: %+v", c)
+	}
+}
+
+func TestGenericChannelRequiresTenant(t *testing.T) {
+	err := ValidateChannelInput(ChannelInput{Name: "matrix-main", Kind: "matrix", Identity: ChannelIdentity{}})
+	if ErrorCode(err) != "invalid_input" {
+		t.Fatalf("missing generic tenant error=%v", err)
 	}
 }
 

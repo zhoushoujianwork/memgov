@@ -1,13 +1,13 @@
-# memgov Owner Assistant 运行手册
+# memgov Personal Jarvis 运行手册
 
 Cyber 并发增量见[运行时设计](../design/agent-runtime-design.md#cyber-并发与可靠性2026-09-18)：配置显式启用分析 8、执行 4、30 秒聚合与 120/900/120 秒截止。完整 Agent 使用运行账户权限，不是沙箱；破坏性操作先在管理台展示目标、影响、恢复方式，Owner 核对后在已绑定机器人私聊发送该提案的完整口令。等待确认释放槽位，历史或引用消息不能批准。业务完成与记忆审查结果分别展示；未知外部动作必须先核验，历史失败不会自动重跑。
 
-本文说明 Owner Assistant 的当前配置与使用。Owner 私聊和 DWS 主动值守统一进入 Owner 根任务：简单事项直接回答，复杂事项可派发有界 Agent，根任务负责汇总、继续、取消和最终通知。群内挂载的 Jarvis 仍是独立接入通道，保留原有群路由、Agent、技能、工具、记忆范围和回复能力；Owner Assistant 不把 Owner 私聊历史或私有授权注入群。源码实现、离线验证、安装状态和真实平台验收分别见[交付状态](../implementation-status.md)。详见[Owner Assistant 主设计](../design/owner-assistant-design.md)、[接入主设计](../design/dingtalk-integration-design.md)与[协议](../design/dingtalk-integration-design-detail.md#后台观察与机器人交互)。
+本文说明 Personal Jarvis 的当前配置与使用。任意已接入平台的消息和本地主动值守统一进入个人根任务：简单事项直接回答，复杂事项可派发有界 Agent，根任务负责汇总、继续、取消和最终通知。平台适配器与 Agent harness 可以独立替换；群内挂载的 Jarvis 仍是独立接入通道，保留原有群路由、Agent、技能、工具、记忆范围和回复能力。源码实现、离线验证、安装状态和真实平台验收分别见[交付状态](../implementation-status.md)。详见[Personal Jarvis 主设计](../design/owner-assistant-design.md)、[接入主设计](../design/dingtalk-integration-design.md)与[协议](../design/dingtalk-integration-design-detail.md#后台观察与机器人交互)。
 
 macOS 长期运行使用唯一活动配置 `memgov service install --config ~/.memgov/config.yaml`，由系统托管 Owner 私聊、DWS 值守、群 Jarvis 和管理台；进程退出或二进制替换后自动恢复。`service status/stop/start` 查看、停止或恢复整个服务；未安装托管时 start/restart 仍为前台模式。默认一并启动管理台；下文按实例启动的低层命令保留用于兼容和诊断。`config.dual.yaml` 只保留为迁移备份。详见[统一本地服务](../design/unified-service-design.md)。
-后台观察通过 DWS 采集，Haiku 评估是否属于 Owner 的工作；命中后创建 Owner 根任务，按配置直接执行或派发 Agent。新的 Owner Assistant proactive 任务只在有实质结果、阻塞或需要确认时私聊通知，状态包括已接收、处理中、有结果、被阻塞、等待确认、外部结果未知、已完成和已失败；历史 `record_only` 任务继续兼容并保持只记录。后台沟通仍是独立、可审计的能力，不改变群 Jarvis 的原群回复路径。
+后台观察通过 DWS 采集，Haiku 评估是否属于 Owner 的工作；命中后创建 Owner 根任务，按配置直接执行或派发 Agent。新的 Personal Jarvis proactive 任务只在有实质结果、阻塞或需要确认时私聊通知，状态包括已接收、处理中、有结果、被阻塞、等待确认、外部结果未知、已完成和已失败；历史 `record_only` 任务继续兼容并保持只记录。后台沟通仍是独立、可审计的能力，不改变群 Jarvis 的原群回复路径。
 
-值守 Owner 可以像聊天一样私聊机器人。普通文字进入同一个 Owner 根任务，追问、补充、继续和自然语言取消由任务状态处理；复杂请求可以派发 `owner-executor`、`researcher`、`verifier` 或 `communicator` 子任务，根任务汇总结果。上下文按当前消息、Owner 私聊历史、DWS 观察、任务进度、本机与项目环境、Source/Candidate/Review/Memory、已配置 skill 和工具的顺序组装；历史有缺口时会明确标记，不能把空结果解释为没有历史。群内通过钉钉 @ 选中机器人后，每条有效 @ 继续直接交给原群 Agent，包括“在吗”等问候，不经过 Owner 权限升级。普通非 @ 群消息只作为原有采集和上下文。群任务继续使用原有阶段标记、确认卡片、回复身份和记忆可见范围，服务重启时按其任务状态恢复；本次 Owner Assistant 改造不会把群结果转到 Owner 私聊，也不会削减群 Jarvis 已配置的能力。
+值守 Owner 可以像聊天一样私聊机器人。普通文字进入同一个 Owner 根任务，追问、补充、继续和自然语言取消由任务状态处理；复杂请求可以派发 `owner-executor`、`researcher`、`verifier` 或 `communicator` 子任务，根任务汇总结果。上下文按当前消息、Owner 私聊历史、DWS 观察、任务进度、本机与项目环境、Source/Candidate/Review/Memory、已配置 skill 和工具的顺序组装；历史有缺口时会明确标记，不能把空结果解释为没有历史。群内通过钉钉 @ 选中机器人后，每条有效 @ 继续直接交给原群 Agent，包括“在吗”等问候，不经过 Owner 权限升级。普通非 @ 群消息只作为原有采集和上下文。群任务继续使用原有阶段标记、确认卡片、回复身份和记忆可见范围，服务重启时按其任务状态恢复；本次 Personal Jarvis 改造不会把群结果转到 Owner 私聊，也不会削减群 Jarvis 已配置的能力。
 
 直接 Agent 单轮最长运行 30 分钟。到达上限会明确失败；服务恢复时，遗留运行中任务和尝试收口为 `failed/runtime_restarted`，未知外部操作与投递收口为 `unknown` 且不自动重放。已确认接收的 Owner 私聊会收到一次机器人身份的幂等失败通知，不会只停留在“已收到”。
 
@@ -73,7 +73,7 @@ applications:
 
 1. [准备](#1-准备)
 2. [一键接入](#2-一键接入)
-3. [用统一 YAML 启动 Owner Assistant 与群 Jarvis](#3-用统一-yaml-启动-owner-assistant-与群-jarvis)
+3. [用统一 YAML 启动 Personal Jarvis 与群 Jarvis](#3-用统一-yaml-启动-owner-assistant-与群-jarvis)
 4. [启动](#4-启动)
 5. [切换到正式参数](#5-切换到正式参数)
 6. [查看和管理任务](#6-查看和管理任务)
@@ -146,7 +146,7 @@ memgov runtime setup my-watcher \
 | --- | --- | --- |
 | `--ignore` | 无 | 标记不采集、不分析的群；可重复传入 |
 | `--profile` | 当前 dws profile | 指定另一个已登录企业身份 |
-| `--delivery-conversation` | 兼容参数 | 新 Owner Assistant 任务使用已核验 Owner 私聊通知；历史 `record_only` 任务仍不投递 |
+| `--delivery-conversation` | 兼容参数 | 新 Personal Jarvis 任务使用已核验 Owner 私聊通知；历史 `record_only` 任务仍不投递 |
 | `--robot-name` | 不筛选机器人 | 与显式 robot-code 配合，限定机器人所在群 |
 | `--workspace-path` | 当前目录 | 指定代码任务目录 |
 | `--workspace-name` | runtime 名称 | 指定 memgov 工作区名称 |
@@ -182,7 +182,7 @@ memgov runtime setup my-watcher \
 
 memgov 只解析 alias 中简单的 `ANTHROPIC_*` 和 `CLAUDE_CODE_*` 环境变量，不执行 alias，也不继承其中的命令行参数。SQLite 只保存 alias 名和模型选择；认证信息仅传给 Claude 子进程。
 
-## 3. 用统一 YAML 启动 Owner Assistant 与群 Jarvis
+## 3. 用统一 YAML 启动 Personal Jarvis 与群 Jarvis
 
 [配置示例](../../config.local.yaml.example)支持 channels、data_sources、agents、applications。复制或合并到 `~/.memgov/config.yaml` 后，Owner 私聊、DWS proactive 和群 Jarvis 共用这一份声明；仓库内 `config.local.yaml` 只作为开发入口链接。后台来源不要求绑定机器人；机器人按 applications.bots.<channel> 配置默认人设及 Owner 私聊/群覆盖，无需启用 DWS 采集或历史导入。Owner 身份仍须通过 DWS 核验；群若显式绑定 source 才读对应同群历史。新建通道仍需核验其实际使用的收发能力。
 
@@ -333,7 +333,7 @@ memgov runtime task retry TASK_ID
 
 确认无误后，群任务由所有者在任务原群通过钉钉 @ 功能选中机器人并发送整行口令；其他模式在绑定的机器人单聊回复。只有已核验所有者、动作生成后的新消息和完整匹配的口令有效。群任务不接受其他群或私聊确认。运行结果未知的外部动作不会被盲目重试。
 
-旧主动值守通过机器人私聊确认的配置由 `record_only` 兼容模式承接，不再作为新 Owner Assistant 的后台必需入口。现有 `record_only` 实例继续只记录；要启用新主动结果通知，需在统一 `config.yaml` 中声明 Owner 私聊通知路由并重新 plan/apply。机器人 `identity.history_channel` 可用于 DWS Owner 身份核验，不要求启动采集进程。
+旧主动值守通过机器人私聊确认的配置由 `record_only` 兼容模式承接，不再作为新 Personal Jarvis 的后台必需入口。现有 `record_only` 实例继续只记录；要启用新主动结果通知，需在统一 `config.yaml` 中声明 Owner 私聊通知路由并重新 plan/apply。机器人 `identity.history_channel` 可用于 DWS Owner 身份核验，不要求启动采集进程。
 
 值守 Owner 应使用经过 DWS 认证核验的 `user_id`。旧配置若写 `staff_id`，不能仅因值相同就视为已核验：先通过认证 DWS profile 核验本人，再将值守 Owner 改为该 `user_id` 并重新 plan/apply。机器人消息若使用另一种 ID 类型，还需已核验的 identity link。配置缺失或存在多个可用机器人/私聊入口时，系统不自动接受跨通道确认。错误群聊、其他人的回复、过期或撤回消息均无效。确认口令不会作为新的私聊任务调用模型。
 

@@ -83,3 +83,36 @@ func TestAgentPresetCommandsCreateCommittedRules(t *testing.T) {
 		t.Fatalf("status: %d %+v", code, value)
 	}
 }
+
+func TestRuntimeHarnessDiagnosticsDoNotRequireDatabase(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	code, value := invoke(t, home, "", "runtime", "harness")
+	if code != 0 {
+		t.Fatalf("harness diagnostics: %d %+v", code, value)
+	}
+	data, ok := value["data"].([]any)
+	if !ok || len(data) == 0 {
+		t.Fatalf("unexpected diagnostics payload: %+v", value)
+	}
+	foundClaude := false
+	for _, raw := range data {
+		item, ok := raw.(map[string]any)
+		if !ok || item["name"] != "claude" {
+			continue
+		}
+		foundClaude = true
+		if item["available"] != true || item["analyzer"] != true || item["executor"] != true || item["reviewer"] != true {
+			t.Fatalf("claude contract is not healthy: %+v", item)
+		}
+	}
+	if !foundClaude {
+		t.Fatalf("claude harness missing from diagnostics: %+v", data)
+	}
+	code, value = invoke(t, home, "", "runtime", "harness", "missing-harness")
+	if code != 0 {
+		t.Fatalf("unknown harness diagnostic should be inspectable: %d %+v", code, value)
+	}
+	if item, ok := value["data"].(map[string]any); !ok || item["available"] != false || item["error"] == "" {
+		t.Fatalf("unknown harness result: %+v", value)
+	}
+}
