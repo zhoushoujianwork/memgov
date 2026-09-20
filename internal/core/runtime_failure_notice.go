@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -177,17 +178,23 @@ func runtimeFailureNotice(task RuntimeTask) string {
 			}
 		}
 	}
+	details := runtimeFailureDetails(task)
 	if result == "" {
+		base := ""
 		switch task.Status {
 		case "action_unknown":
-			return "服务恢复后发现刚才的外部操作结果无法确认，任务已标记为结果未知。请先检查目标系统，不要直接重试。"
+			base = "服务恢复后发现刚才的外部操作结果无法确认，任务已标记为结果未知。请先检查目标系统，不要直接重试。"
 		case "action_failed":
-			return "刚才的外部操作未完成，任务已标记为失败。请检查后再决定是否重试。"
+			base = "刚才的外部操作未完成，任务已标记为失败。请检查后再决定是否重试。"
 		}
-		if task.ErrorCode == "runtime_restarted" {
-			return "刚才服务中断，任务未能完成。服务现已恢复，这个任务已标记为失败；请重新发送原请求。"
+		if base == "" {
+			if task.ErrorCode == "runtime_restarted" {
+				base = "刚才服务中断，任务未能完成。服务现已恢复，这个任务已标记为失败；请重新发送原请求。"
+			} else {
+				base = "这次处理未能完成，任务已标记为失败。请重新发送原请求；系统不会自动重试，以避免重复执行。"
+			}
 		}
-		return "这次处理未能完成，任务已标记为失败。请重新发送原请求；系统不会自动重试，以避免重复执行。"
+		return details + "\n\n" + base
 	}
 	status := ""
 	switch task.Status {
@@ -202,5 +209,59 @@ func runtimeFailureNotice(task RuntimeTask) string {
 			status = "这次处理未完整完成。以上是本次已经得到的结果；系统不会自动重试，以避免重复执行。"
 		}
 	}
-	return result + "\n\n" + status
+	return result + "\n\n" + details + "\n\n" + status
+}
+
+// runtimeFailureDetails gives the owner a useful, non-sensitive diagnosis.
+// Error messages from an Agent, provider SDK, or subprocess are deliberately
+// not persisted in RuntimeTask, because they can contain credentials or
+// request payloads. The stable error code and this safe category are enough to
+// explain what happened in the conversation and to correlate it with logs.
+func runtimeFailureDetails(task RuntimeTask) string {
+	code := safeRuntimeErrorCode(task.ErrorCode)
+	reason := map[string]string{
+		"unavailable":       "Agent、模型或本地运行进程当前不可用，可能是连接失败、连接被拒绝、超时或进程异常退出。",
+		"timeout":           "处理超过允许的时间上限。",
+		"deadline_exceeded": "处理超过允许的时间上限。",
+		"context_deadline":  "处理超过允许的时间上限。",
+		"denied":            "请求被当前运行策略或权限拒绝。",
+		"invalid_input":     "请求或 Agent 返回的数据格式未通过校验。",
+		"conflict":          "任务状态在处理期间发生变化，系统为避免重复执行而停止。",
+		"runtime_restarted": "服务在处理期间重启，未能完成本次任务。",
+		"internal":          "运行时发生内部错误。",
+		"cancelled":         "任务被取消，未能完成。",
+		"action_failed":     "确认后的外部操作执行失败。",
+		"action_unknown":    "确认后的外部操作结果无法确认。",
+	}[code]
+	if reason == "" {
+		reason = "运行时返回了未分类错误，请提供此错误代码以便排查。"
+	}
+	return fmt.Sprintf("错误代码：`%s`\n错误原因：%s", code, reason)
+}
+
+// safeRuntimeErrorCode allows only the compact code vocabulary used in task
+// state. Anything else becomes internal so arbitrary provider text never
+// reaches an owner chat.
+func safeRuntimeErrorCode(code string) string {
+	code = strings.ToLower(strings.TrimSpace(code))
+	if code == "" || len(code) > 64 {
+		return "internal"
+	}
+	for _, r := range code {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' && r != '-' && r != '.' {
+			return "internal"
+		}
+	}
+	if _, ok := map[string]struct{}{
+		"access_token": {}, "analysis_timeout": {}, "cancelled": {}, "conflict": {},
+		"context_deadline": {}, "deadline_exceeded": {}, "denied": {},
+		"evidence_unavailable": {}, "forbidden": {}, "history_cursor_stalled": {},
+		"internal": {}, "invalid_input": {}, "not_found": {},
+		"owner_rejected": {}, "process_cleanup_failed": {}, "rate_limited": {},
+		"resource_busy": {}, "runtime_restarted": {}, "timeout": {}, "unavailable": {},
+		"action_failed": {}, "action_unknown": {},
+	}[code]; !ok {
+		return "internal"
+	}
+	return code
 }
