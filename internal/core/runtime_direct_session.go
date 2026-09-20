@@ -133,25 +133,20 @@ WHERE dt.task_id=? AND s.id=? AND s.runtime_id=? AND s.route_id=? AND s.closed_a
 	if admitted != 1 {
 		return nil, Fail("denied", "direct history requires the current task session")
 	}
-	epoch := ""
-	if source, bound, sourceErr := RuntimeContextDataSource(ctx, q, c); sourceErr != nil {
-		return nil, sourceErr
-	} else if bound {
-		epoch, sourceErr = DataSourceRetentionEpoch(ctx, q, source)
-		if sourceErr != nil {
-			return nil, sourceErr
-		}
-	}
+	// The application-bot conversation is the durable user-facing session.
+	// The personal DWS retention epoch governs source evidence, not accepted
+	// bot turns; applying it here would silently break private-chat resumption
+	// when the seven-day source cleanup boundary advances.
 	rows, err := q.QueryContext(ctx, `SELECT m.id,m.sent_at,m.current_revision,mr.body,rt.result FROM runtime_direct_turns dt
 JOIN runtime_tasks rt ON rt.id=dt.task_id JOIN runtime_task_messages tm ON tm.task_id=rt.id
 JOIN messages m ON m.id=tm.message_id JOIN message_revisions mr ON mr.message_id=m.id AND mr.revision=m.current_revision
 JOIN channels ch ON ch.id=m.channel_id
 JOIN identity_aliases ia ON ia.tenant=ch.tenant AND ia.id_type=m.sender_id_type AND ia.id_value=m.sender_id_value AND ia.verified=1 AND ia.principal_id=m.sender_principal
 WHERE dt.session_id=? AND dt.command='' AND rt.runtime_id=? AND rt.route_id=? AND rt.status IN ('completed','awaiting_confirmation','action_failed','action_unknown')
-AND m.availability='available' AND m.current_revision=tm.revision AND m.sender_principal=? AND m.self_authored=0 AND rt.created_at>=?
+AND m.availability='available' AND m.current_revision=tm.revision AND m.sender_principal=? AND m.self_authored=0
 AND dt.sequence<(SELECT sequence FROM runtime_direct_turns WHERE task_id=?)
 AND EXISTS(SELECT 1 FROM outbox o WHERE o.job_id=rt.id AND o.state='accepted' AND o.reason NOT IN ('runtime_receipt','runtime_processing_receipt','runtime_completion_receipt','runtime_failure_receipt') AND o.route_id=?)
-ORDER BY dt.sequence`, sessionID, c.ID, t.RouteID, c.OwnerPrincipalID, epoch, t.ID, c.DeliveryRouteID)
+ORDER BY dt.sequence`, sessionID, c.ID, t.RouteID, c.OwnerPrincipalID, t.ID, c.DeliveryRouteID)
 	if err != nil {
 		return nil, err
 	}
