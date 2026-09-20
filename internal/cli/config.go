@@ -42,6 +42,7 @@ type RuntimeSetupConfig struct {
 	WorkspaceName        string   `yaml:"workspace_name" json:"workspace_name,omitempty"`
 	ChannelName          string   `yaml:"channel_name" json:"channel_name,omitempty"`
 	AgentPreset          string   `yaml:"agent_preset" json:"agent_preset,omitempty"`
+	AgentHarness         string   `yaml:"agent_harness" json:"agent_harness,omitempty"`
 	ClaudeProfile        string   `yaml:"claude_profile" json:"claude_profile,omitempty"`
 	AnalysisModel        string   `yaml:"analysis_model" json:"analysis_model,omitempty"`
 	ExecutionModel       string   `yaml:"execution_model" json:"execution_model,omitempty"`
@@ -247,7 +248,7 @@ func (c RuntimeSetupConfig) apply(cmd *cobra.Command) error {
 	values := map[string]string{
 		"profile": c.Profile, "robot-code": c.RobotCode, "robot-name": c.RobotName, "delivery-conversation": c.DeliveryConversation,
 		"workspace-path": c.WorkspacePath, "workspace-name": c.WorkspaceName, "channel-name": c.ChannelName,
-		"agent-preset": c.AgentPreset, "claude-profile": c.ClaudeProfile,
+		"agent-preset": c.AgentPreset, "agent-harness": c.AgentHarness, "claude-profile": c.ClaudeProfile,
 		"analysis-model": c.AnalysisModel, "execution-model": c.ExecutionModel,
 		"pilot": strconv.FormatBool(c.Pilot), "item-threshold": strconv.Itoa(c.ItemThreshold),
 		"max-wait-seconds": strconv.Itoa(c.MaxWaitSeconds), "reconcile-seconds": strconv.Itoa(c.ReconcileSeconds),

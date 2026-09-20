@@ -151,7 +151,8 @@ memgov runtime setup my-watcher \
 | `--workspace-path` | 当前目录 | 指定代码任务目录 |
 | `--workspace-name` | runtime 名称 | 指定 memgov 工作区名称 |
 | `--channel-name` | `<runtime>-dingtalk` | 指定本地通道名称 |
-| `--agent-preset` | `claude-default` | 指定受控 Agent preset |
+| `--agent-harness` | `claude` | Registered Agent harness; inspect available adapters with `runtime harness` |
+| `--agent-preset` | `<agent-harness>-default` | Controlled Agent preset |
 | `--claude-profile` | 无 | 读取指定 zsh alias 中的 Claude 环境和默认模型 |
 | `--analysis-model` | `haiku` | 指定分析模型；`profile` 表示沿用 alias 默认模型 |
 | `--execution-model` | Claude 默认值 | 指定执行模型；`profile` 表示沿用 alias 默认模型 |
@@ -162,6 +163,8 @@ memgov runtime setup my-watcher \
 运行期间每个对账周期重新读取群列表，只有正向活跃证据且符合可选机器人过滤的新群才成为 collect；已有 ignore 路由保持排除。
 
 `setup` 只读核验钉钉身份和范围，不发送测试消息，也不启用自动结果投递。
+
+`runtime setup --agent-harness NAME` selects a registered harness independently of the DWS platform. It rejects an unavailable or incomplete adapter before platform discovery or local state changes, and creates `<NAME>-default` when `--agent-preset` is omitted. A non-Claude harness requires an explicit `--analysis-model` and rejects `--claude-profile`; each adapter owns its credentials and execution behavior. The same selection is available as `runtime_setup.agent_harness` in YAML. A preset alone does not install a harness adapter.
 
 ### 2.1 使用本机 Claude alias
 

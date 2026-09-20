@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/zhoushoujianwork/memgov/internal/core"
 )
 
 // HarnessBundle is the execution contract used by Personal Jarvis. A harness
@@ -21,6 +23,33 @@ type HarnessBundle struct {
 // HarnessFactory creates one isolated harness for a runtime. Factories must
 // not own channel routing or memory state; those belong to the host runtime.
 type HarnessFactory func(analysisModel, executionModel string) (HarnessBundle, error)
+
+// HarnessProfileSetter opts one harness component into the runtime's profile.
+// SetProfile must be idempotent: a bundle may share one component across roles.
+type HarnessProfileSetter interface {
+	SetProfile(string)
+}
+
+// ConfigureProfile applies the same authentication profile to every role.
+// Validate all roles first so a split harness cannot silently analyze or review
+// using the ambient account while only its executor receives the profile.
+func (b HarnessBundle) ConfigureProfile(profile string) error {
+	components := []any{b.Analyzer, b.Executor, b.Reviewer}
+	if b.Actioner != nil {
+		components = append(components, b.Actioner)
+	}
+	for _, component := range components {
+		if _, ok := component.(HarnessProfileSetter); !ok && profile != "" {
+			return core.Fail("invalid_input", "harness %q does not support profile configuration for every role", b.Name)
+		}
+	}
+	for _, component := range components {
+		if setter, ok := component.(HarnessProfileSetter); ok {
+			setter.SetProfile(profile)
+		}
+	}
+	return nil
+}
 
 // HarnessDiagnostic is a side-effect-free summary of one registered harness.
 // It intentionally reports only contract capabilities: model names and
@@ -131,6 +160,11 @@ func NewHarness(name, analysisModel, executionModel string) (HarnessBundle, erro
 	}
 	if bundle.Analyzer == nil || bundle.Executor == nil || bundle.Reviewer == nil {
 		return HarnessBundle{}, fmt.Errorf("harness %q returned an incomplete adapter", name)
+	}
+	if bundle.Actioner == nil {
+		if _, ok := bundle.Executor.(ActionExecutor); !ok {
+			return HarnessBundle{}, fmt.Errorf("harness %q does not provide confirmed-action execution", name)
+		}
 	}
 	return bundle, nil
 }

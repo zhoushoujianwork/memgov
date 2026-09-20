@@ -42,7 +42,17 @@ func (s *Service) resolveTaskAgent(ctx context.Context, cfg core.RuntimeConfig, 
 	if preset.Status != "enabled" || !preset.Clean {
 		return policy, preset, core.Fail("denied", "task Agent preset must be enabled and clean")
 	}
+	if err = s.checkPresetHarness(preset); err != nil {
+		return policy, preset, err
+	}
 	return policy, preset, nil
+}
+
+func (s *Service) checkPresetHarness(preset agent.Preset) error {
+	if s.HarnessName != "" && preset.Provider != s.HarnessName {
+		return core.Fail("invalid_input", "Agent preset harness %q differs from runtime harness %q; use a runtime configured for the selected harness", preset.Provider, s.HarnessName)
+	}
+	return nil
 }
 func (s *Service) checkTaskAgent(ctx context.Context, cfg core.RuntimeConfig, task core.RuntimeTask, policy core.RuntimeAgentPolicy, preset agent.Preset) error {
 	current, currentPreset, err := s.resolveTaskAgent(ctx, cfg, task)

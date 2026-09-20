@@ -34,10 +34,13 @@ type Service struct {
 	Executor         Executor
 	Actioner         ActionExecutor
 	Reviewer         Reviewer
-	Logger           *runlog.Logger
-	Diagnostic       io.Writer
-	Tick             time.Duration
-	Now              func() time.Time
+	// HarnessName binds every selected task preset to the adapter instantiated
+	// at startup. Empty is reserved for hosts injecting their own components.
+	HarnessName string
+	Logger      *runlog.Logger
+	Diagnostic  io.Writer
+	Tick        time.Duration
+	Now         func() time.Time
 	// Wake is signaled after the shared receiver durably commits an event.
 	// The one-second ticker remains a recovery fallback.
 	Wake <-chan struct{}
@@ -151,6 +154,9 @@ func (s *Service) Run(ctx context.Context, value string) error {
 	}
 	if preset.Status != "enabled" || !preset.Clean {
 		return core.Fail("denied", "agent preset must be enabled and clean before runtime start")
+	}
+	if err = s.checkPresetHarness(preset); err != nil {
+		return err
 	}
 	channelValue, err := core.ReadChannel(ctx, s.Store.DB, config.ChannelID)
 	if err != nil {

@@ -199,3 +199,23 @@ func TestGroupServiceExecutesSelectedPresetAndRecordsActualAttempt(t *testing.T)
 		t.Fatalf("group response not sent: %d", adapter.sends)
 	}
 }
+
+func TestServiceRejectsDifferentHarnessBeforeTaskExecution(t *testing.T) {
+	service, cfg, preset, models, _ := setupService(t)
+	service.HarnessName = "alternative"
+	ctx := context.Background()
+	_, err := service.Store.Mutate(ctx, core.Request{Scope: "global", Command: "test.harness.message"}, func(tx *core.Tx) (any, error) {
+		return tx.Intake(ctx, cfg.ChannelID, core.NormalizedEvent{Kind: core.EventMessage, Adapter: "fake", ParseVersion: "1", Origin: "stream", ProviderMessageID: "harness-mismatch", ConversationID: "watch", Tenant: "corp", Sender: core.Sender{IDType: "user_id", IDValue: "alice"}, Body: "please answer", SentAt: time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.tick(ctx, cfg, preset)
+	if models.analyses != 1 || models.executes != 0 {
+		t.Fatalf("wrong harness executed task: analysis=%d execution=%d", models.analyses, models.executes)
+	}
+	tasks, err := core.RuntimeTaskList(ctx, service.Store.DB, cfg.ID, "failed", 10)
+	if err != nil || len(tasks) != 1 || tasks[0].ErrorCode != "invalid_input" {
+		t.Fatalf("mismatched task was not safely failed: %+v %v", tasks, err)
+	}
+}

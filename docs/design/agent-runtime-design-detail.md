@@ -54,6 +54,10 @@
 
 新建默认策略为完整能力、Bash、执行器技能与 `external_actions=owner_delegated`，只适用于 proactive。显式 Agent 的限制仍生效；旧配置不自动获得更多能力。Agent 的独立沟通行为通过 `runtime message send` 保存目标、理由、证据和幂等回执，完成结果与沟通记录分别管理，详见[独立沟通工具](dingtalk-integration-design-detail.md#独立沟通工具)。
 
+`runtime setup --agent-harness NAME` (or YAML `runtime_setup.agent_harness`) resolves the registered harness before DWS discovery, preset creation, or database changes. It rejects unavailable or incomplete adapters. An omitted preset becomes `<NAME>-default`; startup still resolves the adapter from that preset's provider. Non-Claude setup requires an explicit analysis model and rejects a Claude alias profile, avoiding an accidental Haiku or Claude credential fallback. Offline setup tests cover an alternative registered adapter, model forwarding, and rejection before side effects.
+
+运行时启动时将已注册 harness 的名称绑定到 Service，并把同一个 profile 传给分析、执行、确认动作和复核组件。harness 若只提供执行器而没有确认动作实现，会在诊断和启动前被拒绝。任务选择的 preset provider 必须与启动 harness 相同；这避免用 Claude 执行器静默运行另一种 harness 的规则目录。替换 harness 时应先注册适配器，再为它创建匹配 provider 的 preset 并重新启动 runtime。
+
 后台与 Owner 私聊共享执行能力，不共享授权入口。Owner 私聊的 `owner_request` 只接受已核验本人的请求；群 @ 不论发起人是谁都解析群策略。所有路径按当前配置、task/attempt、来源可用性复核。验收见[矩阵](../architecture/best-practice-scenarios-detail.md#后台观察与机器人交互验收)。
 
 ## 目录与 preset

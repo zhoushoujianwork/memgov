@@ -10,6 +10,19 @@ import (
 
 type harnessTestModel struct{}
 
+type profiledHarnessModel struct {
+	harnessTestModel
+	profile string
+}
+
+func (m *profiledHarnessModel) SetProfile(profile string) { m.profile = profile }
+
+type executorWithoutActions struct{}
+
+func (executorWithoutActions) Execute(context.Context, ExecutionInput) (core.RuntimeAttemptResult, error) {
+	return core.RuntimeAttemptResult{}, nil
+}
+
 func (harnessTestModel) Analyze(context.Context, core.RuntimeBatch) (core.RuntimeAnalysis, ModelUsage, error) {
 	return core.RuntimeAnalysis{}, ModelUsage{}, nil
 }
@@ -43,6 +56,55 @@ func TestHarnessRegistryAllowsAlternativeAdapter(t *testing.T) {
 func TestHarnessRegistryRejectsUnknownAdapter(t *testing.T) {
 	if _, err := NewHarness("missing-harness", "", ""); err == nil {
 		t.Fatal("expected unknown harness error")
+	}
+}
+
+func TestHarnessConfiguresProfileAcrossSeparateComponents(t *testing.T) {
+	analyzer, executor, actioner, reviewer := &profiledHarnessModel{}, &profiledHarnessModel{}, &profiledHarnessModel{}, &profiledHarnessModel{}
+	bundle := HarnessBundle{Name: "split", Analyzer: analyzer, Executor: executor, Actioner: actioner, Reviewer: reviewer}
+	if err := bundle.ConfigureProfile("selected-account"); err != nil {
+		t.Fatal(err)
+	}
+	for role, component := range map[string]*profiledHarnessModel{"analyzer": analyzer, "executor": executor, "actioner": actioner, "reviewer": reviewer} {
+		if component.profile != "selected-account" {
+			t.Errorf("%s used profile %q", role, component.profile)
+		}
+	}
+	if err := bundle.ConfigureProfile(""); err != nil {
+		t.Fatal(err)
+	}
+	if analyzer.profile != "" || executor.profile != "" || actioner.profile != "" || reviewer.profile != "" {
+		t.Fatal("clearing a profile left a component on the previous account")
+	}
+}
+
+func TestHarnessRejectsPartiallySupportedProfileWithoutChangingComponents(t *testing.T) {
+	executor := &profiledHarnessModel{profile: "previous"}
+	bundle := HarnessBundle{Name: "mixed", Analyzer: harnessTestModel{}, Executor: executor, Reviewer: harnessTestModel{}}
+	if err := bundle.ConfigureProfile("selected-account"); core.ErrorCode(err) != "invalid_input" {
+		t.Fatalf("unsupported profile accepted: %v", err)
+	}
+	if executor.profile != "previous" {
+		t.Fatal("failed profile configuration partially changed the harness")
+	}
+	if err := bundle.ConfigureProfile(""); err != nil {
+		t.Fatalf("native harness authentication should remain available: %v", err)
+	}
+}
+
+func TestHarnessRegistryRequiresConfirmedActionExecution(t *testing.T) {
+	name := "no-action-harness"
+	model := harnessTestModel{}
+	if err := RegisterHarness(name, func(string, string) (HarnessBundle, error) {
+		return HarnessBundle{Analyzer: model, Executor: executorWithoutActions{}, Reviewer: model}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewHarness(name, "", ""); err == nil {
+		t.Fatal("harness without confirmed-action execution was accepted")
+	}
+	if diagnostic := DiagnoseHarness(name, "", ""); diagnostic.Available {
+		t.Fatalf("unstartable harness was reported available: %+v", diagnostic)
 	}
 }
 
