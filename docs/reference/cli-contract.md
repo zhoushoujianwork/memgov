@@ -123,7 +123,7 @@ create 省略 target_id/expected_version。Memory 内不得指定 id/version。a
 
 ## AI 值守运行时
 
-`agent preset enable <harness> --name NAME` 显式创建受控 Git 规则目录；`status/sync/disable` 分别检查、提交规则副本和停用。普通 `init` 不创建 preset。`runtime harness [name]` 只读显示已注册 harness 的契约状态，不初始化数据库、不调用模型。
+`agent preset enable <harness> [--name NAME]` 显式创建受控 Git 规则目录；省略名称时使用 `<harness>-default`，同名目录不能跨 harness 复用。`status/sync/disable` 分别检查、提交规则副本和停用；`sync --from-policy FILE` 适用于任意 harness，`--from-claude-md` 是 Claude 兼容入口。普通 `init` 不创建 preset。`runtime harness [name]` 只读显示已注册 harness 的契约状态，不初始化数据库、不调用模型。
 
 `runtime configure --input -` 输入 name、channel、route_ids 和 owner，可选 Agent 策略、claude_profile、模型、preset 与调度参数。Personal Jarvis proactive 任务使用配置的结果通知策略；历史 `record_only` 任务继续只记录。direct/group_mention 派生为 `reply_to_trigger`，并核验对应私聊/原群出站路由。group_mention 的 context_channel 可省略；提供时仍要求同企业同群。owner 必须是 DWS 已验证稳定身份。修改已有配置需要 expected version，running 状态不能修改。harness 和平台适配器由运行时注册表选择，群 Jarvis 仍保留其独立 Agent、技能、工具、记忆范围和原群回复路径。
 

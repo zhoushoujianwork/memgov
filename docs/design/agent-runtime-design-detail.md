@@ -62,9 +62,9 @@
 
 ## 目录与 preset
 
-`memgov agent preset enable <harness>` 在 `<MEMGOV_HOME>/agents/<name>` 创建独立 Git 仓库，文件权限为 `0600`，目录权限为 `0700`。受控规则入口由 harness 决定（Claude 为 `CLAUDE.md`，其他 harness 使用通用 `AGENT.md`），并统一包含 `agent.yaml`、`policy/memgov.md`、`README.md` 和 `.gitignore`；`runtime/` 被排除。
+`memgov agent preset enable <harness>` 在 `<MEMGOV_HOME>/agents/<name>` 创建独立 Git 仓库，文件权限为 `0600`，目录权限为 `0700`。省略 `--name` 时使用 `<harness>-default`；同名 preset 若已经属于另一个 harness 会拒绝复用。受控规则入口由 harness 决定（Claude 为 `CLAUDE.md`，其他 harness 使用通用 `AGENT.md`），并统一包含 `agent.yaml`、`policy/memgov.md`、`README.md` 和 `.gitignore`；`runtime/` 被排除。
 
-`agent.yaml` 的格式版本为 1，记录名称、provider、规则入口、运行目录和 enabled/disabled 状态。`status` 检查清单、受控文件是否被 Git 跟踪、`HEAD` commit 和工作树状态。`sync` 只接受不超过 1 MiB 的普通文件，拒绝明显包含 API key 或 token 的内容，并提交受控副本。
+`agent.yaml` 的格式版本为 1，记录名称、provider、规则入口、运行目录和 enabled/disabled 状态。`status` 检查清单、受控文件是否被 Git 跟踪、`HEAD` commit 和工作树状态。`sync --from-policy FILE` 按当前 preset 的入口导入不超过 1 MiB 的普通文件；`--from-claude-md` 保留为 Claude 兼容别名。两者都会拒绝明显包含 API key 或 token 的内容，并提交受控副本；同一内容重复导入不会产生空提交。
 
 ## 模型阶段
 

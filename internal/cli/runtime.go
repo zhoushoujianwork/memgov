@@ -258,12 +258,13 @@ func (a *app) runRuntimeWorker(ctx context.Context, value string, externalReceiv
 	if harnessErr != nil {
 		return harnessErr
 	}
-	if profiled, ok := bundle.Executor.(interface{ SetProfile(string) }); ok {
-		profiled.SetProfile(cfg.ClaudeProfile)
+	if err := bundle.ConfigureProfile(cfg.ClaudeProfile); err != nil {
+		return err
 	}
 	service := runtimeengine.Service{
 		Home: a.home, Store: s, Adapter: adapter, ExternalReceiver: externalReceiver,
-		Analyzer: bundle.Analyzer, Executor: bundle.Executor, Actioner: bundle.Actioner, Reviewer: bundle.Reviewer,
+		HarnessName: bundle.Name,
+		Analyzer:    bundle.Analyzer, Executor: bundle.Executor, Actioner: bundle.Actioner, Reviewer: bundle.Reviewer,
 		Logger: logger, Diagnostic: a.errOut,
 	}
 	if externalReceiver && a.runtimeWake != nil {

@@ -91,6 +91,9 @@ func Enable(ctx context.Context, home, provider, name string) (Preset, error) {
 	if _, err = os.Stat(root); err == nil {
 		p, e := Status(ctx, home, name)
 		if e == nil && p.Status == "enabled" && p.Clean {
+			if p.Provider != provider {
+				return Preset{}, core.Fail("conflict", "preset %q belongs to harness %q, not %q", name, p.Provider, provider)
+			}
 			return p, nil
 		}
 		return Preset{}, core.Fail("conflict", "preset directory already exists but is not an enabled clean preset")
@@ -128,7 +131,7 @@ func Enable(ctx context.Context, home, provider, name string) (Preset, error) {
 			return Preset{}, err
 		}
 	}
-	if _, err = runGit(ctx, root, "-c", "user.name=memgov", "-c", "user.email=memgov@local", "commit", "-m", "Initialize Claude runtime preset"); err != nil {
+	if _, err = runGit(ctx, root, "-c", "user.name=memgov", "-c", "user.email=memgov@local", "commit", "-m", "Initialize "+provider+" runtime preset"); err != nil {
 		return Preset{}, err
 	}
 	return Status(ctx, home, name)
@@ -200,28 +203,37 @@ func Disable(ctx context.Context, home, name string) (Preset, error) {
 }
 
 func SyncClaudeMD(ctx context.Context, home, name, source string) (Preset, error) {
+	return syncPolicy(ctx, home, name, source, true)
+}
+
+// SyncPolicy imports a controlled policy copy using the preset's own entry.
+func SyncPolicy(ctx context.Context, home, name, source string) (Preset, error) {
+	return syncPolicy(ctx, home, name, source, false)
+}
+
+func syncPolicy(ctx context.Context, home, name, source string, claudeOnly bool) (Preset, error) {
 	p, err := Status(ctx, home, name)
 	if err != nil {
 		return p, err
 	}
-	if p.Provider != "claude" {
+	if claudeOnly && p.Provider != "claude" {
 		return p, core.Fail("invalid_input", "CLAUDE.md can only be synced to a claude harness preset")
 	}
 	if !p.Clean {
 		return p, core.Fail("conflict", "preset worktree is dirty")
 	}
 	if strings.TrimSpace(source) == "" {
-		return p, core.Fail("invalid_input", "--from-claude-md is required")
+		return p, core.Fail("invalid_input", "a policy source is required (--from-policy or --from-claude-md)")
 	}
 	info, err := os.Lstat(source)
 	if err != nil {
 		return p, err
 	}
 	if !info.Mode().IsRegular() {
-		return p, core.Fail("invalid_input", "CLAUDE.md source must be a regular file")
+		return p, core.Fail("invalid_input", "policy source must be a regular file")
 	}
 	if info.Size() > 1<<20 {
-		return p, core.Fail("invalid_input", "CLAUDE.md source exceeds 1 MiB")
+		return p, core.Fail("invalid_input", "policy source exceeds 1 MiB")
 	}
 	b, err := os.ReadFile(source)
 	if err != nil {
@@ -230,14 +242,23 @@ func SyncClaudeMD(ctx context.Context, home, name, source string) (Preset, error
 	if strings.Contains(strings.ToLower(string(b)), "api_key") || strings.Contains(strings.ToLower(string(b)), "auth_token") {
 		return p, core.Fail("denied", "imported policy appears to contain credentials")
 	}
-	target := filepath.Join(p.Path, "policy", "imported-claude.md")
+	imported := "imported-policy.md"
+	if claudeOnly {
+		imported = "imported-claude.md"
+	}
+	entry := policyEntry(p.Provider)
+	target := filepath.Join(p.Path, "policy", imported)
 	if err = write(target, string(b), 0600); err != nil {
 		return p, err
 	}
-	if err = write(filepath.Join(p.Path, "CLAUDE.md"), "@policy/memgov.md\n@policy/imported-claude.md\n", 0600); err != nil {
+	if err = write(filepath.Join(p.Path, entry), "@policy/memgov.md\n@policy/"+imported+"\n", 0600); err != nil {
 		return p, err
 	}
-	if err = updateAndCommit(ctx, p.Path, fmt.Sprintf("Sync imported Claude policy %s", core.Hash(b)[:12]), "CLAUDE.md", "policy/imported-claude.md"); err != nil {
+	unchanged, err := Status(ctx, home, name)
+	if err != nil || unchanged.Clean {
+		return unchanged, err
+	}
+	if err = updateAndCommit(ctx, p.Path, fmt.Sprintf("Sync imported %s policy %s", p.Provider, core.Hash(b)[:12]), entry, "policy/"+imported); err != nil {
 		return p, err
 	}
 	return Status(ctx, home, name)

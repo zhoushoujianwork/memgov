@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/zhoushoujianwork/memgov/internal/core"
@@ -72,5 +73,50 @@ func TestPresetSupportsHarnessIndependentManifest(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(p.Path, "AGENT.md")); err != nil {
 		t.Fatalf("generic harness policy entry missing: %v", err)
+	}
+}
+
+func TestPresetCannotBeReusedByAnotherHarness(t *testing.T) {
+	ctx, home := context.Background(), t.TempDir()
+	p, err := Enable(ctx, home, "claude", "shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Enable(ctx, home, "codex", p.Name); core.ErrorCode(err) != "conflict" {
+		t.Fatalf("mismatched harness was accepted: %v", err)
+	}
+	after, err := Status(ctx, home, p.Name)
+	if err != nil || after.Provider != p.Provider || after.Commit != p.Commit || !after.Clean {
+		t.Fatalf("existing preset changed: %+v %v", after, err)
+	}
+}
+
+func TestGenericPolicySyncUsesHarnessEntryAndIsIdempotent(t *testing.T) {
+	ctx, home := context.Background(), t.TempDir()
+	p, err := Enable(ctx, home, "codex", "codex-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(t.TempDir(), "rules.md")
+	if err := os.WriteFile(source, []byte("Verify work before reporting completion.\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SyncClaudeMD(ctx, home, p.Name, source); core.ErrorCode(err) != "invalid_input" {
+		t.Fatalf("Claude compatibility import accepted another harness: %v", err)
+	}
+	next, err := SyncPolicy(ctx, home, p.Name, source)
+	if err != nil || !next.Clean || next.Commit == p.Commit {
+		t.Fatalf("generic sync: %+v %v", next, err)
+	}
+	entry, err := os.ReadFile(filepath.Join(p.Path, "AGENT.md"))
+	if err != nil || !strings.Contains(string(entry), "@policy/imported-policy.md") {
+		t.Fatalf("generic rule entry: %s %v", entry, err)
+	}
+	if _, err := os.Stat(filepath.Join(p.Path, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Fatalf("generic import created a Claude entry: %v", err)
+	}
+	again, err := SyncPolicy(ctx, home, p.Name, source)
+	if err != nil || !again.Clean || again.Commit != next.Commit {
+		t.Fatalf("identical policy import was not idempotent: %+v %v", again, err)
 	}
 }
