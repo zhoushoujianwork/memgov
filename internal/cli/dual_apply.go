@@ -44,6 +44,9 @@ func (a *app) dualApplyCommand() *cobra.Command {
 		return applied, nil
 	})
 	cmd.PreRunE = func(_ *cobra.Command, _ []string) error {
+		if err := a.requireCanonicalConfig("config apply-runtime"); err != nil {
+			return err
+		}
 		if a.input != "" {
 			return core.Fail("invalid_input", "config apply-runtime reads --config; --input is not supported")
 		}

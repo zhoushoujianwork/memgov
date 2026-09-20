@@ -1,4 +1,5 @@
-# 复制到 ~/.memgov/config.yaml，或通过 --config / MEMGOV_CONFIG 指定。
+# 这是 Owner Assistant 的完整开发示例。首次使用请合并到唯一活动配置 ~/.memgov/config.yaml；
+# config.local.yaml 只作为开发环境入口链接，不能作为第二份运行配置。
 # 仓库内的 config.local.yaml 不会自动加载。完整说明：docs/guides/initialization.md
 # 未列出的字段会报错，旧 store / index / skill 配置已失效。
 default_workspace: global
@@ -19,7 +20,8 @@ runtime_setup:
   # robot_code: your-robot-code    # 可选：限定观察范围为该机器人所在群
   # robot_name: your-robot-name    # 显式机器人范围过滤时提供准确名称
   ignore: []                      # 不参与值守的群名或会话 ID
-  # 后台完成仅记录，不配置自动投递目标。
+  # Owner Assistant proactive 默认把实质结果、阻塞和确认请求交给已核验 Owner 私聊；
+  # 历史 record_only 任务继续只记录。旧版本可保留该字段作为兼容声明。
   # workspace_path: /absolute/project
   # workspace_name: my-project
   # channel_name: my-watcher-dingtalk
@@ -125,7 +127,7 @@ channels: []
 #     execution_timeout_seconds: 900
 #     review_timeout_seconds: 120
 #     analysis_model: haiku
-#     delivery: record_only          # 完成仅记录；独立工具沟通另记审计
+#     delivery: record_only          # 兼容旧任务；新 Owner Assistant 通知由 Owner 私聊路由承接
 #   bots:
 #     app-main:                      # 应用机器人 channel 名，每个 bot 独立配置
 #       default_agent: group-helper
@@ -143,6 +145,7 @@ channels: []
 #         #   agent: specialized-group-helper
 #
 # 兼容旧 applications.owner_private / group_mention，但不可与 bots 对同一机器人或 runtime 冲突。
-# 旧 proactive delivery: owner_direct 会归一化为 record_only 并提示；不会恢复旧自动通知。
+# 旧 proactive delivery: owner_direct 会归一化为 record_only 并提示；迁移后由 Owner Assistant
+# 的已核验私聊通知策略承接新任务。群 Jarvis 的 group_mention 声明保持原有能力和原群回复路由。
 # 显式 Agent 省略 bash 仍默认 false；owner_request 仅 Owner 私聊，owner_delegated 仅后台。
 # 新/变更权限须通过 plan 预览与显式应用；已有受限 Agent 不会自动扩权。

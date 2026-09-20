@@ -173,6 +173,9 @@ func (a *app) serviceStatus(ctx context.Context) (any, error) {
 }
 
 func (a *app) installService(ctx context.Context, noUI bool, port int) error {
+	if err := a.requireCanonicalConfig("service install"); err != nil {
+		return err
+	}
 	m, err := localservice.UserAgent(a.home)
 	if err != nil {
 		return err
@@ -336,6 +339,9 @@ func (a *app) stopLegacyModules(ctx context.Context) (returnErr error) {
 	}
 }
 func (a *app) runUnifiedOnce(ctx context.Context, noUI bool, port int, open, migrate, managed bool, restart func(context.Context, console.RestartRequest) (func(), error)) error {
+	if err := a.requireCanonicalConfig("service run"); err != nil {
+		return err
+	}
 	a.out = &serviceWriter{w: a.out}
 	a.errOut = &serviceWriter{w: a.errOut}
 	a.runtimeWake = runtimeengine.NewWakeBus()

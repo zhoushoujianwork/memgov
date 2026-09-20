@@ -75,6 +75,66 @@ func TestConfigDefaultsPrecedenceAndOfflineReads(t *testing.T) {
 	}
 }
 
+func TestLegacyDualConfigRequiresExplicitMigration(t *testing.T) {
+	home := t.TempDir()
+	legacy := filepath.Join(home, "config.dual.yaml")
+	raw := []byte("timeout: 11s\nagents:\n  group-helper:\n    preset: claude-default\n    memory_scope: conversation_published\napplications:\n  bots:\n    app-main:\n      default_agent: group-helper\n      group_mention:\n        enabled: false\n")
+	if err := os.WriteFile(legacy, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, value := invoke(t, home, "", "config", "show")
+	if code != 0 {
+		t.Fatalf("show: %d %+v", code, value)
+	}
+	shown := data(t, value)
+	if shown["config_status"] != "canonical_missing_legacy_present" || shown["legacy_config_path"] != legacy {
+		t.Fatalf("legacy status was not explicit: %+v", shown)
+	}
+	if shown["config_path"] != canonicalConfigPath(home) || shown["timeout"] != "2m0s" {
+		t.Fatalf("legacy file was implicitly loaded: %+v", shown)
+	}
+	if code, value = invoke(t, home, "", "config", "validate"); code != 3 {
+		t.Fatalf("validate did not require migration: %d %+v", code, value)
+	}
+
+	code, value = invoke(t, home, "", "config", "migrate-legacy")
+	if code != 0 || data(t, value)["migrated"] != true {
+		t.Fatalf("migration failed: %d %+v", code, value)
+	}
+	migrated, err := os.ReadFile(canonicalConfigPath(home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(migrated) != string(raw) {
+		t.Fatalf("migration changed declaration bytes: %q", migrated)
+	}
+	if _, err := os.Stat(legacy); err != nil {
+		t.Fatalf("migration removed the recovery source: %v", err)
+	}
+	code, value = invoke(t, home, "", "config", "show")
+	if code != 0 || data(t, value)["config_status"] != "canonical" || data(t, value)["timeout"] != "11s" {
+		t.Fatalf("canonical config was not activated: %d %+v", code, value)
+	}
+	if code, value = invoke(t, home, "", "config", "migrate-legacy"); code != 3 {
+		t.Fatalf("migration overwrote canonical config: %d %+v", code, value)
+	}
+}
+
+func TestLegacyDualConfigMigrationRejectsInvalidSource(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "config.dual.yaml"), []byte("unknown: value\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	code, value := invoke(t, home, "", "config", "migrate-legacy")
+	if code != 2 {
+		t.Fatalf("invalid legacy config was migrated: %d %+v", code, value)
+	}
+	if _, err := os.Stat(canonicalConfigPath(home)); !os.IsNotExist(err) {
+		t.Fatalf("invalid migration created canonical config: %v", err)
+	}
+}
+
 func TestConfigRejectsIgnoredFieldsAndBadValues(t *testing.T) {
 	for _, raw := range []string{
 		"store: legacy\n", "timeout: 0s\n", "format: xml\n", "logging:\n  retention: 0h\n",

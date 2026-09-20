@@ -9,7 +9,7 @@
 先按现有接入流程验证通道并应用配置。macOS 长期运行安装一次系统托管：
 
 ```bash
-memgov service install --config ~/.memgov/config.dual.yaml
+memgov service install --config ~/.memgov/config.yaml
 memgov service status
 memgov service restart  # 系统后台重启，命令完成后返回
 memgov service stop     # 停止并关闭自动拉起；service start 恢复

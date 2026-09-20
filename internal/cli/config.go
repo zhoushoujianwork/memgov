@@ -171,6 +171,78 @@ func (a *app) applyConfigDefaults() error {
 	return nil
 }
 
+func (a *app) configStatus() string {
+	if a.legacyConfigPath != "" {
+		return "canonical_missing_legacy_present"
+	}
+	if a.configPath == canonicalConfigPath(a.home) {
+		if _, err := os.Stat(a.configPath); err == nil {
+			return "canonical"
+		}
+		return "canonical_missing"
+	}
+	return "explicit"
+}
+
+// migrateLegacyConfig performs an explicit, validated one-way copy from the
+// old dual-mode filename to the sole implicit runtime filename.  The source is
+// retained as a recovery copy; an existing destination is never overwritten.
+func (a *app) migrateLegacyConfig() (any, error) {
+	destination := canonicalConfigPath(a.home)
+	if _, err := os.Stat(destination); err == nil {
+		return nil, core.Fail("conflict", "canonical config already exists at %s; refusing to overwrite it", destination)
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	source := a.legacyConfigPath
+	if source == "" {
+		source = legacyConfigPath(a.home)
+	}
+	raw, err := os.ReadFile(source)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, core.Fail("not_found", "legacy config not found at %s", source)
+		}
+		return nil, err
+	}
+	// Parse and normalize before creating the destination.  This prevents a
+	// malformed or unsafe legacy file from becoming the new active authority.
+	candidate := &app{configPath: source}
+	if err := candidate.loadConfig(raw); err != nil {
+		return nil, core.Fail("invalid_input", "legacy config cannot be migrated: %s", err)
+	}
+	if err := os.MkdirAll(a.home, 0700); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		if os.IsExist(err) {
+			return nil, core.Fail("conflict", "canonical config appeared during migration; refusing to overwrite it")
+		}
+		return nil, err
+	}
+	ok := false
+	defer func() {
+		_ = f.Close()
+		if !ok {
+			_ = os.Remove(destination)
+		}
+	}()
+	if _, err := f.Write(raw); err != nil {
+		return nil, err
+	}
+	if err := f.Sync(); err != nil {
+		return nil, err
+	}
+	if err := f.Close(); err != nil {
+		return nil, err
+	}
+	ok = true
+	a.configPath = destination
+	a.legacyConfigPath = source
+	return map[string]any{"migrated": true, "source": source, "destination": destination, "source_retained": true}, nil
+}
+
 func (c RuntimeSetupConfig) apply(cmd *cobra.Command) error {
 	values := map[string]string{
 		"profile": c.Profile, "robot-code": c.RobotCode, "robot-name": c.RobotName, "delivery-conversation": c.DeliveryConversation,
@@ -202,17 +274,27 @@ func (c RuntimeSetupConfig) apply(cmd *cobra.Command) error {
 func (a *app) configCommands() {
 	root := &cobra.Command{Use: "config", Short: "YAML 系统默认值与消息通道配置"}
 	root.AddCommand(a.simple("show", "显示配置和生效的系统默认值（不读取密钥）", cobra.NoArgs, func(context.Context, []string) (any, error) {
-		return map[string]any{"home": a.home, "db_path": a.dbPath(), "config_path": a.configPath,
+		result := map[string]any{"home": a.home, "db_path": a.dbPath(), "config_path": a.configPath, "config_status": a.configStatus(),
 			"default_workspace": a.cfg.DefaultWorkspace, "timeout": a.timeout.String(), "format": a.format, "actor": a.actor,
 			"runtime_setup": a.cfg.RuntimeSetup, "logging": a.cfg.Logging, "channels": a.cfg.Channels,
-			"data_sources": a.cfg.DataSources, "agents": a.cfg.Agents, "applications": a.cfg.Applications}, nil
+			"data_sources": a.cfg.DataSources, "agents": a.cfg.Agents, "applications": a.cfg.Applications}
+		if a.legacyConfigPath != "" {
+			result["legacy_config_path"] = a.legacyConfigPath
+		}
+		return result, nil
 	}))
 	root.AddCommand(a.simple("validate", "离线检查 YAML 字段、系统参数与通道身份；路由在 apply 时校验", cobra.NoArgs, func(context.Context, []string) (any, error) {
+		if err := a.requireCanonicalConfig("config validate"); err != nil {
+			return nil, err
+		}
 		v, err := NormalizeDualModeConfig(a.cfg)
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"valid": true, "config_path": a.configPath, "channel_count": len(a.cfg.Channels), "route_validation": "on_apply", "declaration": v.Declaration, "diagnostics": v.Diagnostics, "unresolved_references": v.UnresolvedReferences, "application_status": "not_applied"}, nil
+		return map[string]any{"valid": true, "config_path": a.configPath, "config_status": a.configStatus(), "channel_count": len(a.cfg.Channels), "route_validation": "on_apply", "declaration": v.Declaration, "diagnostics": v.Diagnostics, "unresolved_references": v.UnresolvedReferences, "application_status": "not_applied"}, nil
+	}))
+	root.AddCommand(a.simple("migrate-legacy", "验证并复制旧 config.dual.yaml 到唯一的 config.yaml（保留源文件）", cobra.NoArgs, func(context.Context, []string) (any, error) {
+		return a.migrateLegacyConfig()
 	}))
 	root.AddCommand(a.dualPlanCommand())
 	root.AddCommand(a.dualApplyCommand())
@@ -222,6 +304,9 @@ func (a *app) configCommands() {
 		return tx.ApplyChannelConfig(ctx, a.prepared.(core.ChannelInput), a.expected, expectedRoute, reason)
 	})
 	apply.PreRunE = func(_ *cobra.Command, args []string) error {
+		if err := a.requireCanonicalConfig("config apply"); err != nil {
+			return err
+		}
 		if a.input != "" {
 			return core.Fail("invalid_input", "config apply reads --config; --input is not supported")
 		}

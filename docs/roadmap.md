@@ -1,21 +1,22 @@
 # 实施路线
 
-状态：沿用[最佳落地场景](architecture/best-practice-scenarios.md)的实施顺序；这是工作安排，不是交付承诺。已有能力与可复现验证见[实现状态](implementation-status.md)。
+状态：以[Owner Assistant 主设计](design/owner-assistant-design.md)和[最佳落地场景](architecture/best-practice-scenarios.md)为实施顺序；这是工作安排，不是交付承诺。已有能力与可复现验证见[实现状态](implementation-status.md)。群挂载 Jarvis 是并行接入通道，本路线不以削减其现有能力换取 Owner Assistant 能力。
 
 ## 主线：完成一条可核验的工作闭环
 
-当前优先简化 SQLite 单写热路径与运行时控制面，让真实业务顺畅运行；既有精细机制可以保留兼容读取，但不再作为高频调度热路径。范围见[MVP 核心取舍](architecture/best-practice-scenarios.md#mvp-核心取舍业务先顺畅运行)。
+当前优先把 Owner 私聊、DWS proactive、任务委派、结果通知和记忆治理串成一条可核验闭环，同时保持群 Jarvis 的原有接入、能力和回复通道。既有精细机制可以保留兼容读取，但不再作为高频调度热路径。范围见[MVP 核心取舍](architecture/best-practice-scenarios.md#mvp-核心取舍业务先顺畅运行)。
 
 实施 SQLite 热写简化后，应在部署者自有的隔离环境中验证延迟、真实业务和经验复用。公开仓库只保留可复现测试与脱敏结论。
 
 | 顺序 | 下一步与依赖 | 完成条件 |
 | --- | --- | --- |
 | 1 | **已实施**：简化 SQLite 热写路径：调度槽位和普通活动状态留在内存，移除高频续租、phase、空轮询及逐次内部审计写入；任务只用短条件更新保存关键业务状态 | 满足[MVP SQLite 验收](architecture/best-practice-scenarios-detail.md#mvp-验收)：空闲零周期写，8/4 后台负载不阻塞交互，数据库等待不因一次续租失败取消 Agent，重启不重复外部副作用 |
-| 2 | [后台观察与机器人交互分离](design/dingtalk-integration-design.md)：保留 record_only、独立完整 Agent、Owner 预设授权沟通、多机器人、群人设及交互即时唤醒；在简化构建上完成目标环境验收 | [验收矩阵](architecture/best-practice-scenarios-detail.md#后台观察与机器人交互验收)验证后台无自动汇报、缺输入可调查、Owner 私聊独占、群内不升权，并取得真实模型、平台业务与端到端延迟证据 |
-| 3 | 选定一条真实事项贯通发现、背景核实、自主处理、结果记录、必要沟通、验收与下次复用；依赖第 2 项、目标企业权限和明确部署版本 | 分别记录执行结果、工具平台回执、用户验收与经验复用；补齐群 @ 的真实业务证据与受众隔离验证，不能用离线测试替代 |
-| 4 | 补齐跨入口事项关联、阻塞后的实质补充处理和记忆修订。依赖真实闭环暴露的具体缺口；实施前按专项主设计确定范围 | 补充不重复建任务，纠正使旧结果失效；有证据的经验可在适用条件内复用，反例通过新版本修订 |
+| 2 | **进行中**：统一 `~/.memgov/config.yaml`，清理重复 runtime，建立 Owner 根任务/子 Agent 关系和环境上下文快照 | `config plan` 明确 `ready:true`、Owner 边界、无冲突、无重复 runtime、无未授权扩权；Owner 私聊和 DWS 发现能关联到同一任务图；旧 `config.dual.yaml` 只作为迁移备份 |
+| 3 | **进行中**：[Owner Assistant 通知与恢复](design/owner-assistant-design.md)：实质结果、阻塞和确认请求回到 Owner，支持暂停、继续、取消、紧急停止和幂等投递；历史 `record_only` 保持兼容 | 离线验收覆盖直接回答、复杂委派、多 Agent 汇总、重启继续、通知失败恢复和危险操作确认；真实模型与平台回执仍需部署者验收 |
+| 4 | **并行保持**：[群挂载 Jarvis](design/dingtalk-integration-design.md)继续使用原有机器人、群路由、Agent、技能、工具、记忆范围和原群回复，不继承 Owner 私聊权限 | 群内 `@` 回答、确认、共享记忆和失败恢复回到原群；Owner 在群里不会升权；任何后续限制另行设计、迁移和验收 |
+| 5 | **下一步**：让其他 Agent 通过 `memgov-memory` skill 完成 Source/Candidate/Review/Memory 全治理，并贯通一条真实 Owner 事项从发现到经验复用 | 记录 Agent/workspace/actor/request/idempotency/evidence/version；完成 Owner 验收和受众隔离证据，不能用工具数量替代业务结果 |
 
-第 4 项是方向性后续工作，尚未有完整专项方案；不在本次文档整理中预设协议、日期或新增执行授权。
+第 5 项依赖目标企业权限、明确部署版本和真实业务样本；不在本次文档整理中预设未经配置的外部连接器或新增执行授权。
 
 ## 独立待办与后续范围
 

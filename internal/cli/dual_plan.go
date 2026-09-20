@@ -67,6 +67,9 @@ type DualConfigPlan struct {
 
 func (a *app) dualPlanCommand() *cobra.Command {
 	return a.simple("plan", "只读比较双模式配置与当前数据库，生成可复核的变更摘要", cobra.NoArgs, func(ctx context.Context, _ []string) (any, error) {
+		if err := a.requireCanonicalConfig("config plan"); err != nil {
+			return nil, err
+		}
 		if a.input != "" {
 			return nil, core.Fail("invalid_input", "config plan reads --config; --input is not supported")
 		}

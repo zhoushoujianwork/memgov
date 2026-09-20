@@ -34,7 +34,7 @@ Web 统一服务的「任务」页选择失败任务，在详情点击「继续�
 make install
 memgov service stop
 memgov init
-memgov service start --config ~/.memgov/config.dual.yaml --open
+memgov service start --config ~/.memgov/config.yaml --open
 ```
 
 路径沿用自己的 `--home` 与 `--config`。数据库升级不会由 Web 重启按钮自动执行。

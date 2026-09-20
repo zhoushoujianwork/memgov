@@ -1,12 +1,12 @@
 # 本地管理台使用说明
 
-Cyber 运行页分别显示共享分析/执行/审查槽位、队列与覆盖缺口；任务详情显示阶段、截止、控制心跳和实际模型输出时间。心跳不代表模型有进展，“业务完成”也不代表记忆已应用。记忆失败单独显示原因；具体破坏性操作显示提案和 Owner 确认口令，不自动群发进展。
+Owner Assistant 运行页分别显示根任务、子 Agent、共享分析/执行/审查槽位、队列与覆盖缺口；任务详情显示阶段、截止、控制心跳、上下文来源、权限版本和实际模型输出时间。心跳不代表模型有进展，“业务完成”也不代表记忆已应用。记忆失败单独显示原因；具体破坏性操作显示提案和 Owner 确认口令。Owner proactive 只在有结果、阻塞或需要确认时通知；群 Jarvis 的任务与投递仍留在原群。
 
 轻量 Web 管理台提供记忆卡片、任务执行记录、统一服务模块和数据源查询，并可编辑、删除 YAML Agent 声明，不需要安装前端运行环境。实现方案见[主设计](../design/local-console-design.md)，Desktop 外壳属于后续范围。
 
 ## 启动
 
-macOS 长期运行推荐 `memgov service install --config ~/.memgov/config.dual.yaml`，由系统托管采集、Agent 和管理台；随后访问本机 8787 端口。关闭浏览器或终端不会停止托管服务；`service stop` 停止并关闭自动拉起，`service start` 恢复。前台调试仍可使用 `service start --config ~/.memgov/config.dual.yaml --open`。详见[统一本地服务](../design/unified-service-design.md)。
+macOS 长期运行使用唯一活动配置 `memgov service install --config ~/.memgov/config.yaml`，由系统托管 Owner Assistant、群 Jarvis 和管理台；随后访问本机 8787 端口。关闭浏览器或终端不会停止托管服务；`service stop` 停止并关闭自动拉起，`service start` 恢复。前台调试仍可使用 `service start --config ~/.memgov/config.yaml --open`。`config.dual.yaml` 只保留为迁移备份。详见[统一本地服务](../design/unified-service-design.md)。
 
 更新、启动和进程迁移步骤统一见[服务说明](../design/unified-service-design.md#使用)；数据库升级见[任务继续说明](../design/task-continuation.md#首次更新)。
 
@@ -14,14 +14,14 @@ macOS 长期运行推荐 `memgov service install --config ~/.memgov/config.dual.
 
 重启中断的任务可在「任务」页选择失败记录并点击「继续任务」：恢复原会话或检查原请求及已有进度后继续，同时恢复所属运行模块。原文失效或存在未知外部结果时不提供可执行按钮。此入口已在源码实现；本次 Cyber owner 需要 Schema 26，数据库升级沿用显式迁移流程，详见[中断后继续任务](../design/task-continuation.md)。
 
-Cyber owner 任务分别查看执行结果与「Agent 沟通记录」。后台完成而未发送消息是正常行为；沟通记录列出本人身份、对象、理由及投递状态。平台受理不等于确认送达，未知结果应先核对回执。机器人私聊与群 @ 的答复仍显示为原会话交付。
+Owner 根任务分别查看直接结果、子 Agent 汇总与「Agent 沟通记录」。沟通记录列出身份、上下文来源、权限版本、对象、理由及投递状态；平台受理不等于确认送达，未知结果应先核对回执。群 Jarvis 的回答和确认仍显示为原群交付，不转发到 Owner 私聊。
 
 下面的 `ui` 是单独启动管理台的兼容诊断入口。
 构建最新源码后：
 
 ```bash
 make install
-.memgov/bin/memgov --home ~/.memgov --config ~/.memgov/config.dual.yaml ui --open
+.memgov/bin/memgov --home ~/.memgov --config ~/.memgov/config.yaml ui --open
 ```
 
 `--home` 与 `--config` 使用你已有实例的路径；未使用双模式配置时可省略 `--config`。命令不初始化或迁移数据库，不启动采集和 Agent。数据库版本不匹配时，需要先按错误提示单独处理，不能把打开页面当作数据库升级。

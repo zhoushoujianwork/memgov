@@ -33,20 +33,26 @@ type Envelope struct {
 }
 type app struct {
 	home, workspace, format, input, key, actor, configPath string
-	human                                                  bool
-	timeout                                                time.Duration
-	expected                                               int
-	requestID                                              string
-	in                                                     io.Reader
-	out, errOut                                            io.Writer
-	cfg                                                    Config
-	root                                                   *cobra.Command
-	prepared                                               any
-	payloadRead                                            bool
-	cachedPayload                                          json.RawMessage
-	resolved                                               string
-	streamMode                                             bool
-	streamRuntimeID                                        string
+	// legacyConfigPath is populated only when the implicit canonical config is
+	// missing and the pre-Owner-Assistant dual config is still present.  We do
+	// not silently load it: doing so would make two files possible sources of
+	// runtime authority.  The explicit migration command is the only path that
+	// copies it into the canonical location.
+	legacyConfigPath string
+	human            bool
+	timeout          time.Duration
+	expected         int
+	requestID        string
+	in               io.Reader
+	out, errOut      io.Writer
+	cfg              Config
+	root             *cobra.Command
+	prepared         any
+	payloadRead      bool
+	cachedPayload    json.RawMessage
+	resolved         string
+	streamMode       bool
+	streamRuntimeID  string
 	// Adapters are injectable so the command surface can be exercised offline
 	// against a fake platform instead of a real account.
 	dwsAdapter, appAdapter channel.Adapter
@@ -186,12 +192,13 @@ func (a *app) configure() error {
 		return err
 	}
 	explicit := a.configPath != ""
+	a.legacyConfigPath = ""
 	if a.configPath == "" {
 		a.configPath = os.Getenv("MEMGOV_CONFIG")
 		explicit = a.configPath != ""
 	}
 	if a.configPath == "" {
-		a.configPath = filepath.Join(a.home, "config.yaml")
+		a.configPath = canonicalConfigPath(a.home)
 	}
 	if raw, err := os.ReadFile(a.configPath); err == nil {
 		if err = a.loadConfig(raw); err != nil {
@@ -199,6 +206,16 @@ func (a *app) configure() error {
 		}
 	} else if explicit || !errors.Is(err, os.ErrNotExist) {
 		return err
+	} else {
+		// A legacy dual-mode file must never be selected implicitly.  Keep its
+		// path available for an explicit, validated migration and for actionable
+		// diagnostics in config show / service startup.
+		legacy := legacyConfigPath(a.home)
+		if _, legacyErr := os.Stat(legacy); legacyErr == nil {
+			a.legacyConfigPath = legacy
+		} else if !errors.Is(legacyErr, os.ErrNotExist) {
+			return legacyErr
+		}
 	}
 	if err := a.applyConfigDefaults(); err != nil {
 		return err
@@ -219,6 +236,20 @@ func (a *app) configure() error {
 		return core.Fail("invalid_input", "unsupported format %q", a.format)
 	}
 	return nil
+}
+
+// canonicalConfigPath is the one implicit runtime configuration location.
+// Callers may still pass --config (or MEMGOV_CONFIG) for isolated development
+// and tests, but a managed service never invents or probes another default.
+func canonicalConfigPath(home string) string { return filepath.Join(home, "config.yaml") }
+
+func legacyConfigPath(home string) string { return filepath.Join(home, "config.dual.yaml") }
+
+func (a *app) requireCanonicalConfig(operation string) error {
+	if a.legacyConfigPath == "" {
+		return nil
+	}
+	return core.Fail("conflict", "%s requires the canonical config at %s; legacy config %s is present but is not loaded; run `memgov config migrate-legacy` first", operation, a.configPath, a.legacyConfigPath)
 }
 func (a *app) dbPath() string { return filepath.Join(a.home, "state.db") }
 func (a *app) scope(ctx context.Context, s *core.Store) (string, error) {

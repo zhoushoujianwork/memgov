@@ -1,11 +1,11 @@
-# memgov v2
+# memgov Owner Assistant
 
-供人、Shell 和外部 Agent 使用的本机记忆系统。采集工作记录，提出候选，核对证据，检索召回，再通过版本与审计进行修订治理。
+面向 DWS Owner 的托管式 Owner Assistant 平台。托管机器人接收 Owner 私聊和 DWS 主动值守事项，组织消息、历史、本机环境与受治理记忆，直接处理或派发 Agent，执行已授权工作，并通过消息反馈结果。Source、Candidate、Review、Memory 是这套服务的长期记忆与证据底座；其他 Agent 可通过 `memgov-memory` skill 接入同一套治理能力。
 
-**CLI + 可选本地管理台。SQLite 是唯一真相源。** 新库位于 `~/.memgov/state.db`。记忆核心不直接调用模型；值守运行时通过外部 Claude CLI 执行模型任务；Go 二进制不保存模型 API Key，不包含 MCP 服务或通用 Skill 执行器。`memgov ui` 在本机提供任务执行记录、记忆卡片、运行与设置页面，支持预览、编辑和删除 YAML Agent 声明，统一服务另提供显式重启与失败任务继续入口，静态资源随二进制发布，无需 Node；使用说明见[本地管理台](docs/guides/local-console-user-guide.md)。已安装版本的能力请以 `memgov ui --help` 为准。
+**私聊机器人是日常入口，CLI 和本地管理台是运维入口，SQLite 是唯一真相源。** 新库位于 `~/.memgov/state.db`。记忆核心不直接调用模型；值守运行时通过外部 Claude CLI 执行模型任务；Go 二进制不保存模型 API Key，不包含通用 Skill 执行器。`memgov ui` 在本机提供任务、记忆、运行和配置审计页面，统一服务另提供重启与失败任务继续入口；使用说明见[本地管理台](docs/guides/local-console-user-guide.md)。已安装版本的能力请以 `memgov ui --help` 为准。
 
 
-macOS 长期运行使用 `memgov service install --config ~/.memgov/config.dual.yaml`，由系统托管采集、本人私聊、群内 @、主动值守和管理台；登录后启动，进程退出或二进制替换后自动恢复。前台调试仍可使用 `memgov service start`。参见[统一本地服务](docs/design/unified-service-design.md)。
+macOS 长期运行使用唯一活动配置 `memgov service install --config ~/.memgov/config.yaml`，由系统托管 Owner 私聊、DWS 主动值守、群挂载 Jarvis 和管理台；登录后启动，进程退出或二进制替换后自动恢复。前台调试仍可使用 `memgov service start`。`config.dual.yaml` 只作为迁移备份，不再作为运行入口。参见[统一本地服务](docs/design/unified-service-design.md)。
 当前使用四类概念：**来源 Source** 保存工作材料与证据，**候选 Candidate** 表达新建或修订建议，**复核 Review** 记录核对结果，**正式记忆 Memory** 用于日常召回。记忆有版本和历史，可以表达事实、偏好、约束、决定、操作方法或经验教训。
 
 “记忆原子、卡片、战斗、三轴”只属于[旧版存档](docs/archive/decisions/README.md)，不再是现行模型。管理台的“记忆卡片”仅是现行 Memory 的展示方式。Markdown/JSON 用于交换，`index rebuild` 只重建检索索引，不能代替数据库备份。
@@ -70,7 +70,7 @@ memgov memory history MEMORY_ID
 
 全局参数：`--home`、`--workspace`、`--config`、`--format`、`--timeout`、`--input 文件或-`、`--idempotency-key`、`--actor`、`--expected-version`。用 `memgov version` 确认正在运行的版本，用 `memgov COMMAND --help` 查询该版本的具体参数。
 
-[配置示例](config.local.yaml.example) 支持系统默认值、日志、值守初始化参数、dws 与钉钉应用机器人。默认读取 `~/.memgov/config.yaml`；本地文件用 `--config` 指定。通道通过 `config apply NAME` 显式入库，详见[配置说明](docs/guides/initialization.md)。
+[配置示例](config.local.yaml.example) 支持系统默认值、Owner Assistant、DWS 与钉钉应用机器人。默认读取 `~/.memgov/config.yaml`；仓库内 `config.local.yaml` 仅作为开发入口链接，不复制另一份运行配置。通道通过 `config apply NAME` 显式入库，详见[配置说明](docs/guides/initialization.md)。
 
 默认 stdout 为 JSON envelope：`schema_version / request_id / ok / data / error`，诊断写 stderr。退出码：0 成功，1 内部错误，2 输入错误，3 冲突，4 未找到，5 暂时不可用/超时，6 被规则拒绝。帮助和补全输出对应的文本。
 
@@ -110,13 +110,13 @@ make release VERSION=2.0.0-rc1
 
 更多说明：[初始化](docs/guides/initialization.md) · [架构](docs/architecture/architecture.md) · [常见问题](docs/architecture/positioning.md#检索定位) · [CLI 协议](docs/reference/cli-contract.md) · [旧设计存档](docs/archive/decisions/README.md)。
 
-钉钉后台观察与机器人交互分开运行：DWS 采集后评估处理价值，再启动独立的完整 Agent 调查和解决问题，完成只记录、不自动汇报。机器人仅接受已核验 Owner 私聊，群内有效 @ 直接交给该机器人/群的人设 Agent；Owner 在群内也不升权。新默认后台 Agent 使用 Owner 预设授权，已有显式权限限制保留；主动沟通是单独可审计工具。详见[接入主设计](docs/design/dingtalk-integration-design.md)、[运行时设计](docs/design/agent-runtime-design.md)和[用户手册](docs/guides/runtime-user-guide.md)。本轮源码实现、离线验证已通过，尚未安装新二进制或真实发送。
+钉钉后台观察和 Owner 私聊统一进入 Owner Assistant 根任务；简单事项直接回答，复杂事项可派发 `owner-executor`、`researcher`、`verifier` 或 `communicator`，结果、阻塞和确认请求按通知策略回到 Owner。历史 `record_only` 任务继续兼容。群内挂载的另一个 Jarvis 保持原有机器人、群路由、preset、技能、工具、记忆可见范围和回复通道，不因本次重构停用或削减；它不会自动继承 Owner 私聊历史或 Owner 私有授权。详见[接入主设计](docs/design/dingtalk-integration-design.md)、[Owner Assistant 主设计](docs/design/owner-assistant-design.md)、[运行时设计](docs/design/agent-runtime-design.md)和[用户手册](docs/guides/runtime-user-guide.md)。本轮源码实现、离线验证和真实平台验收分别记录在[交付状态](docs/implementation-status.md)中。
 
 运行日志位于 `<MEMGOV_HOME>/runtime/logs/<runtime-id>/`，同时以 NDJSON 输出到 stdout。结构化运行日志不保存聊天原文、完整模型输入输出或凭据；独立的只读过程输出保存经过脱敏的公开文字与工具事件，按来源可用性控制展示，见[实时终端](docs/design/task-terminal.md)。首期代码与离线故障测试已完成，真实企业账号的权限、收发和业务任务仍需在部署环境验收。
 
 ## Agent Skill
 
-仓库提供 [memgov-memory](.agents/skills/memgov-memory/SKILL.md) Skill，把工作区隔离、任务前召回、来源降级查询、证据核验、候选复核及并发保护固化为 Agent 约束。它不会把普通对话自动写入记忆；只有用户明确要求记住、保存、更新或维护记忆时，才进入写入流程。
+仓库提供正式的 [memgov-memory](.agents/skills/memgov-memory/SKILL.md) 跨 Agent 接入协议。获准的 Agent 可以通过稳定 CLI/API 契约查询和读取 Source，创建与修订 Candidate，提交与读取 Review，应用、修订、退休和恢复 Memory，并查看证据、版本和操作历史；每次操作记录 Agent 身份、workspace、actor、request ID、幂等键和证据。Skill 的“全部权限”只指 memgov 数据治理能力，不自动授予本机 shell、DWS 发消息、云平台或生产权限；这些仍由宿主 Agent 的 capability 配置决定。普通对话仍不会自动写入长期记忆，写入需有明确任务授权并经过证据与复核流程。
 
 技能唯一维护副本在 `.agents/skills/`。仓库根的 `CLAUDE.md` 是指向 `AGENTS.md` 的符号链接，`.claude/skills` 是指向 `.agents/skills` 的符号链接，Claude Code 在本仓库内可直接发现并加载该技能，无需额外安装。
 

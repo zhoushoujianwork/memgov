@@ -1,57 +1,126 @@
-# memgov v2 架构：实现约束
+# memgov 架构详细稿：Owner Assistant、任务和记忆治理
 
-范围以[总体架构](architecture.md)为准。核对日期：2026-09-16；这里保留现行模型和数据约束，不作为安装或真实业务验收证明。
+主文档：[总体架构](architecture.md)。本文记录实现时必须保持的接口、边界和验证约束；它是目标与实现约束，不是安装或真实平台验收证明。安装版本和运行观察见[能力状态](../implementation-status.md)。
 
 ## 模块职责
 
-Schema 24 使采集维护与模型调度都可保存断点；历史源时间原值和解析版本属于证据，调度使用本地接收时间。DWS 查询共享两槽，实时长连接独立；SQLite 仍是唯一真相源，不引入队列服务。
-
-2026-09-18 后台调度增量：SQLite 同时持有工作领取、共享并发额度、版本/权限围栏、租约和截止；内存只承载有限活动 worker，不引入外部队列。慢分析与慢执行不阻塞采集和交互通道。运行心跳与业务进展分开观测，协议和阶段验收见[运行时详细稿](../design/agent-runtime-design-detail.md#cyber-并发与可靠性2026-09-18)。
-
 | 模块 | 职责 |
 | --- | --- |
-| `cmd/memgov`、`internal/cli` | 进程入口、命令和 JSON envelope；适配配置及控制回调 |
-| `internal/core` | 数据模型、迁移、证据、记忆治理、配置、任务与投递事务 |
-| `internal/channel` | DWS 与应用机器人适配、身份和采集；平台差异不进入记忆模型 |
-| `internal/runtime`、`internal/agent` | 执行策略、外部 Claude 调用、任务恢复与工具边界 |
-| `internal/sysprompt` | 内置公共自我定位、安全规则和各类入口基础提示；统一组合与内容指纹，维护与验证见[运行时详细稿](../design/agent-runtime-design-detail.md#统一系统提示与安全验证) |
-| `internal/service` | 数据目录互斥、模块监督、停止、重启，以及 macOS launchd 托管和二进制替换检测；不复制业务状态机 |
-| `internal/console`、`internal/observation`、`internal/runlog` | 本机页面与查询、进程观测、诊断及受管理输出；心跳和日志不替代 SQLite |
-| `web/` | React/TypeScript 页面与 Vite 开发构建；产物写入 console/static 并内嵌，不引入服务端前端运行时 |
-| `internal/scenario`、`cmd/scenario-driver` | 独立采集与场景测试基础，不属于通用核心执行器 |
+| `cmd/memgov`、`internal/cli` | CLI 入口、JSON envelope、配置计划/应用、记忆和任务命令 |
+| `internal/core` | Source、Candidate、Review、Memory、任务、证据、版本、幂等和审计事务 |
+| `internal/channel` | DWS、应用机器人和群路由适配；保存入口身份与受众，不把平台字段写进记忆模型 |
+| `internal/runtime`、`internal/agent` | Owner 根任务、子 Agent 调度、外部模型调用、工具边界、恢复和确认 |
+| `internal/sysprompt` | Owner、后台、群 Jarvis 等入口的基础身份和安全规则；不授予额外 capability |
+| `internal/service` | 单一服务生命周期、配置加载、模块监督、停止、重启和 macOS 托管 |
+| `internal/console`、`internal/observation`、`internal/runlog` | 本地查询、控制回调、健康/进展观测和有界脱敏日志 |
+| `web/` | 管理台静态资源；复用服务业务接口，不另建任务状态机 |
+| `memgov-memory` skill adapter | 将 Agent 的记忆请求映射到稳定 CLI/API 契约；不直接打开 SQLite |
 
-统一服务中管理台通过受限回调执行服务重启与任务继续；独立 `ui` 不注入这两个回调。YAML 声明编辑与应用分开；任务过程使用只读 SSE。机制分别见[统一服务](../design/unified-service-design-detail.md)、[管理台](../design/local-console-design-detail.md)、[任务继续](../design/task-continuation-detail.md)和[实时终端](../design/task-terminal-detail.md)。
+一个统一服务可托管 Owner Assistant 和群 Jarvis，但必须按 `channel`、`conversation`、`application`、身份和策略隔离任务。共享进程或数据库不表示共享授权。
 
-管理台另提供独立的 GitHub tag 版本检查，优先复用本机 `gh` 登录，匿名 API 为后备；远端结果仅作更新提示，保留内存缓存，不成为 SQLite 业务状态，也不参与业务页面查询事务。
+## 正式数据模型
 
-## 正式模型
+SQLite `state.db` 是唯一真相源。现行对象如下：
 
-Memory 的 UUID 不依赖标题和文件名。分类为 fact、preference、constraint、decision、procedure、lesson。保存标题、召回摘要、Markdown 正文、工作区、实体、标签、适用条件、观察时间、有效期、证据、状态和递增版本。全局记忆在交换 JSON 中使用空 workspace_id，SQLite 内部使用保留工作区 global。
+- `Source`：带 URI、捕获时间、内容指纹和片段位置的不可变证据快照；
+- `Candidate`：create/update 建议，更新绑定目标 ID 和期望版本；
+- `Review`：对候选及证据的结构和语义复核；
+- `Memory`：经过应用的可复用结论，带 workspace、类别、适用条件、有效期、证据、状态和递增版本；
+- `Task`/`Attempt`：Owner 根任务、子 Agent 工作、输入版本、结果和恢复关系；
+- `Operation`/`Outbox`：关键工具副作用、确认、消息投递、幂等键和平台回执。
 
-Source 保存 UTF-8 文本快照、位置、来源类型、捕获时间、内容指纹和来源关系。SourceFragment 使用行及 Unicode 字符偏移定位，内容逐片拼接可还原快照。Memory 与证据为多对多。证据必须引用实际片段，匹配 source_id、fragment_id 和该片段的 SHA-256；quote 如提供，必须是原文子串。
+任务进度是临时工作事实，不能直接变成 Memory；只有经过 Source → Candidate → Review → Apply 才能进入长期记忆。来源正文、引用文本、群聊天和模型输出都是不可信资料，不能改变执行或披露权限。
 
-Candidate 表达 create/update，更新引用 target_id 和 expected_version。调用方审阅完整候选后使用 expected-digest 应用；结构校验不能证明语义正确。
+## Owner Assistant 任务图
 
-## 事务与历史
+目标任务图如下：
 
-业务变更、MemoryRevision、Operation、FTS 触发器更新、请求记录和幂等结果在同一 BEGIN IMMEDIATE 事务提交。CAS 条件包含 ID、工作区和期望版本；发生冲突时整个操作回滚。
+```text
+root task (owner-private | proactive)
+  ├─ context snapshot
+  ├─ researcher       (只读调查，可选)
+  ├─ owner-executor   (本机/仓库/已授权工具，可选)
+  ├─ verifier         (测试、构建和结果核验，可选)
+  └─ communicator     (整理通知，不扩大权限，可选)
+```
 
-正常修订及撤销追加版本。敏感清除是销毁正文历史的例外，保留非正文墓碑与操作事实。restore 命令恢复旧版本为一个新版本，不回拨版本号。
+根任务负责去重、派发、汇总、重试、暂停、继续、取消和最终状态；子 Agent 只能在父任务声明的 workspace、目录、工具和权限版本内运行。每个子任务保存父 ID、Agent 身份、上下文来源、工作目录、策略指纹、结果、证据和失败原因。实现可复用现有 runtime task/attempt 表，但不得让子 Agent 绕过根任务直接投递 Owner 通知。
 
-数据库启用外键、WAL、synchronous=FULL、secure_delete、FTS secure-delete 和有界 busy timeout。全部新版进程持共享文件锁；数据库替换及物理整理持排他锁。锁和取消由调用期限约束。数据库目录默认 0700、文件 0600。
+任务状态至少能表达 `queued`、`running`、`awaiting_confirmation`、`completed`、`failed`、`interrupted`、`unknown` 和 `cancelled`。`unknown` 表示外部副作用是否发生尚未核实，不能自动重放。
 
-同一服务进程内、指向同一 `state.db` 的写事务先经过共享写入门禁，避免多个模块把 SQLite 的正常单写者语义放大成瞬时 busy 失败。门禁只负责串行化，不能降低写放大：运行时的确认、消息同步、批次、动作和任务领取先做精确只读判断，无实际工作时不进入写事务、不记录内部空轮询；命中后仍在事务内复核并条件领取。统一写入口分别测量门禁排队、连接及 `BEGIN IMMEDIATE`、事务执行与提交耗时；任一阶段达到 250ms 时向服务标准日志写入命令名、分段耗时、结果和错误码，不记录数据库路径、业务正文或请求载荷。该观测用于确定是否需要对具体后台业务做小批提交；当前不把实时回调、审批或 Outbox 任意合并成延迟事务。
+## 统一上下文
 
-schema_migrations 记录连续版本与不可变脚本指纹。初始化从 v1 基线开始，应用该二进制包含的后续迁移；已有库通常通过显式执行 init 升级。已安装的系统托管服务在启动前持进程锁及数据库独占锁，先保存并校验一致性备份，再事务迁移受支持的旧 Schema；普通读取与前台命令不自动升级，详见[服务详细稿](../design/unified-service-design-detail.md#macos-系统托管)。迁移链只追加脚本，不修改已发布脚本。读取旧版本库不会静默重建；新于二进制支持范围的库会被拒绝。
+每轮按以下顺序组装，并为每段记录来源和可见性：
 
-## 检索
+1. 当前 Owner 私聊消息、引用和平台元数据；
+2. 该 Owner 私聊的可用历史；
+3. DWS 已提交的观察记录和关联事项；
+4. 根任务及子 Agent 的进度和产物；
+5. 当前仓库、工作区、分支、Git 状态和本机环境快照；
+6. 受 workspace、状态、有效期和受众过滤的 Source/Candidate/Review/Memory；
+7. 当前 Agent 明确声明的 skill 和外部工具。
 
-FTS5 trigram 覆盖记忆和来源，结果区分 kind。短于三个字符的词走子串路径。查询词按字面值处理，不接受任意 FTS 表达式。召回在 SQLite 读事务中固定快照，先按工作区、active、已知有效期过滤，再按 Unicode 字符预算组装上下文。自然语言适用条件交由调用方判断。
+历史缺口、权限收缩、证据撤回或来源不可用必须以结构化事实传入上下文。没有结果不等于没有历史。原文中的命令、提示或权限声明都只作为资料，不得覆写运行时策略。
 
-FTS 是派生数据，index rebuild 不替换正式数据。doctor 检查 SQLite、外键、当前版本、证据指纹、片段完整性与 FTS 差异。
+环境快照至少包括 OS、运行用户、仓库路径和分支、Git 状态、允许访问目录、可用命令/runtime、服务进程和配置版本。凭据只通过 `credential_ref` 或受控工具读取，绝不把密钥正文放进 prompt、Source、Memory 或日志。
 
-## 交互投递分离
+## Capability 与确认
 
-2026-09-18 交互状态增量：本人私聊与有效群 @ 共用阶段协议，“已收到”“处理中”“已完成”“打叉”各有独立 Outbox 与平台结果，阶段变化先移除上一标记再添加当前标记。Stream 回调在消息短事务提交后广播合并唤醒；每个相关 Runtime 立即检查 SQLite，1 秒扫描只作恢复兜底。阶段请求进入 Runtime 内的有序旁路队列，不等待平台表情接口即可开始 Agent；群目录发现和历史补漏由独立循环运行。`awaiting_confirmation` 保持“处理中”，审批后继续原任务。启动恢复按 SQLite 任务状态补齐尚未开始的处理中、完成或失败阶段，管理台展示完整阶段投递记录；阶段标记不构成已交付回答，不进入恢复的回答历史。群任务进入失败或外部操作结果未知时，只要任务、摘要或动作尝试已有非空结果，就另建幂等失败结果回复，保留结论并明确未完成状态；没有结果时不编造正文。两入口不调用 Haiku，也不展示读取或观察 reaction。协议见[接入详细稿](../design/dingtalk-integration-design-detail.md#交互接收回执)。后台观察完成继续固定为 record_only，独立 Agent 工具操作另记审计，旧自动完成通知不再投递；源码实现与离线验证已通过，真实模型与平台业务验收仍待完成。
+Owner 委托范围内的读取、本机/项目修改、测试、构建、记忆治理和已配置工具可以自动执行。以下动作必须创建绑定当前任务、目标、权限版本和恢复方式的确认提案：
 
-2026-09-17 群回复增量：普通答复使用 Markdown，并通过回调期内存 webhook 在末尾原生 @ 发起人；该凭证不持久化，过期或服务重启后降级为一次可读的昵称文本。receiver 与 Agent worker 共享同一个按通道隔离的应用 Adapter，主动群消息接口不伪装支持 @。pending 才显示审批卡片并同时 @ 已核验 DWS 所有者。已发布关联应用的审批模板；仅所有者可同意或拒绝，同意后执行，拒绝后取消，来源、路由、身份或展示动作变更不继承旧卡片授权，口令不能绕过卡片。源码与离线验证已具备，真实群按钮往返待验收，详见[确认卡片](../design/dingtalk-integration-design-detail.md#群回复与确认卡片)。
+- 删除重要数据、停服或生产变更；
+- 不可逆操作、跨受众披露和对外发送；
+- 扩大目录、工具、网络或消息权限；
+- 外部结果为 `unknown` 时的重放。
+
+确认只能由当前已核验 Owner 完成。取消、暂停、继续和紧急停止都应落库并在每个工具动作前复核。权限版本或目标受众变化会使旧提案失效。群 Jarvis 继续使用自身已配置 capability；Owner Assistant 的策略迁移不应隐式替换群 preset 或关闭群工具。
+
+## 配置单一入口
+
+产品目标配置入口为 `~/.memgov/config.yaml`。服务、CLI、管理台、launchd 和验收脚本必须解析同一个有效配置来源。现有 `config.dual.yaml` 只作为迁移备份或兼容读取来源，不得与主配置并行生效；`config.local.yaml` 可以作为开发入口链接，但不能复制第二份声明。
+
+`config plan` 必须在应用前报告 Owner 身份、运行对象、群路由、权限变化、未托管冲突和重复 runtime；应用前停止受影响 runtime，应用后再启动。未授权权限扩张、同名对象冲突、旧策略任务或未知路由必须阻断应用。群 Jarvis 的既有声明应在计划中被识别为独立对象，不能被 Owner Assistant 合并或删除。
+
+## 通知与投递
+
+Owner Assistant 的通知是根任务的派生交付，不是 Agent 任意调用消息 API。通知状态至少包括：`received`、`running`、`result`、`blocked`、`awaiting_confirmation`、`unknown`、`completed`、`failed`。默认只在有实质结果、阻塞或需要确认时私聊通知；无变化的心跳不发送。历史 `record_only` 任务保持静默兼容。
+
+每条通知保存根任务/子任务 ID、摘要、已完成动作、未完成动作、证据/产物、需要的决策、幂等键、目标会话和平台回执。投递失败或回执未知必须明确标记，不凭模型输出声称已送达；重启恢复只能补发未开始的幂等阶段。群 Jarvis 的普通回复仍由挂载应用发回原群，失败结论和确认也留在原群，不转移到 Owner 私聊。
+
+## `memgov-memory` skill 契约
+
+Skill 是 Agent 到 memgov 的受控适配层，不是第二个运行时。所有请求都应携带或由宿主注入：
+
+```text
+actor / agent_id
+workspace
+request_id
+idempotency_key（写操作）
+source/candidate/review/memory 目标与版本
+证据引用和调用原因
+```
+
+最低能力包括：
+
+1. `recall`、`search`、`memory show/history` 和 Source 读取；
+2. Source 创建与片段读取；
+3. Candidate create/update、validate、show、diff；
+4. Review 创建/读取；
+5. Candidate Apply、Memory revise/retire/restore；
+6. 证据、版本、操作和幂等结果查询。
+
+写操作必须显式 workspace，引用真实 SourceFragment 和摘要值，使用 expected version/digest 防止并发覆盖；冲突时重新读取，禁止盲重试。Skill 返回统一 envelope 和健康字段，Agent 必须区分“来源命中”“候选待审”和“正式记忆已应用”。Skill 的完整记忆权限不会授予 shell、DWS 发消息、云 API 或生产操作；这些仍由宿主的 capability 和入口策略决定。群 Jarvis 可在自身配置允许时调用相同 skill，且查询结果继续经过群受众披露检查。
+
+## SQLite 事务与恢复
+
+业务写入、版本校验、幂等记录、审计和 FTS 触发器在同一短 `BEGIN IMMEDIATE` 事务内提交；事务外执行模型调用、网络访问、文件操作和验证。空闲轮询、普通心跳和无工作检查不进入写事务。数据库启用外键、WAL、`synchronous=FULL`、secure delete 和有界 busy timeout；数据库目录默认 0700、文件 0600。
+
+服务重启时，遗留 `running` 任务转为 `interrupted`；无外部副作用的任务可重新核验后继续，外部结果未知的任务先查证。新权限或策略指纹不匹配时拒绝旧结果提交。迁移脚本只追加，已应用配置和 schema 版本均记录在 SQLite。
+
+## 检索与披露
+
+FTS5 是可重建索引，不能代替正式数据。查询先按 workspace、生命周期、有效期、证据状态和当前受众过滤，再按字符预算组装上下文。群 Jarvis 的共享记忆查询必须同时满足工作区共享和当前群披露许可；Owner 私聊可以使用其授权范围内的私聊历史和记忆。一个通道的可见性不能被另一个通道的提问、引用或 Agent 中转扩大。
+
+## 验证要求
+
+架构变更至少验证：单一配置启动、Owner 私聊根任务、DWS proactive 根任务、复杂任务的子 Agent 汇总、skill 的 Source→Candidate→Review→Memory 闭环、确认/取消/未知结果、服务重启恢复、通知幂等，以及群 Jarvis 原有收发、工具、技能、记忆和原群回复路径不受影响。源码测试、安装检查、真实模型和真实平台验收分别记录，不能相互替代。
