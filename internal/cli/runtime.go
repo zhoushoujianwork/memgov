@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -305,7 +306,7 @@ type runtimeSetupDiscoverer interface {
 // conversation IDs, creates the preset/workspace/channel/routes, verifies the
 // actual platform capabilities, and persists the runtime in one command.
 func (a *app) runtimeSetupCommand() *cobra.Command {
-	var profile, robotCode, robotName, deliveryConversation, workspacePath, workspaceName, channelName, preset string
+	var profile, robotCode, robotName, deliveryConversation, workspacePath, workspaceName, channelName, preset, agentHarness string
 	var claudeProfile, analysisModel, executionModel string
 	var ignored []string
 	var pilot bool
@@ -330,6 +331,16 @@ func (a *app) runtimeSetupCommand() *cobra.Command {
 				return core.Fail("invalid_input", "invalid runtime setup thresholds or concurrency")
 			}
 			name := args[0]
+			agentHarness = strings.ToLower(strings.TrimSpace(agentHarness))
+			if agentHarness == "" {
+				agentHarness = "claude"
+			}
+			if agentHarness != "claude" && claudeProfile != "" {
+				return core.Fail("invalid_input", "claude-profile is supported only by the claude harness")
+			}
+			if agentHarness != "claude" && analysisModel == "" {
+				return core.Fail("invalid_input", "analysis-model is required for a non-Claude harness")
+			}
 			if analysisModel == "" {
 				analysisModel = "haiku"
 			}
@@ -337,6 +348,12 @@ func (a *app) runtimeSetupCommand() *cobra.Command {
 				if executionModel == "" {
 					executionModel = "profile"
 				}
+			}
+			if _, err := runtimeengine.NewHarness(agentHarness, analysisModel, executionModel); err != nil {
+				return core.Fail("invalid_input", "the selected agent harness is unavailable or incomplete; inspect runtime harness")
+			}
+			if preset == "" {
+				preset = agentHarness + "-default"
 			}
 			adapter := a.dwsAdapter
 			if adapter == nil {
@@ -350,10 +367,7 @@ func (a *app) runtimeSetupCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if preset == "" {
-				preset = "claude-default"
-			}
-			presetState, err := agent.Enable(ctx, a.home, "claude", preset)
+			presetState, err := agent.Enable(ctx, a.home, agentHarness, preset)
 			if err != nil {
 				return err
 			}
@@ -412,7 +426,7 @@ func (a *app) runtimeSetupCommand() *cobra.Command {
 			request := core.Request{ID: a.requestID, Command: cmd.CommandPath(), Scope: "global", Actor: a.actor,
 				Key: a.key, Input: map[string]any{"name": name, "ignore": ignored, "profile": profile, "workspace_path": workspacePath, "pilot": pilot,
 					"robot_code": robotCode, "delivery_conversation": deliveryConversation, "workspace_name": workspaceName, "channel_name": channelName,
-					"agent_preset": preset, "claude_profile": claudeProfile, "analysis_model": analysisModel, "execution_model": executionModel,
+					"agent_harness": agentHarness, "agent_preset": preset, "claude_profile": claudeProfile, "analysis_model": analysisModel, "execution_model": executionModel,
 					"item_threshold": threshold, "max_wait_seconds": maxWait, "reconcile_seconds": reconcile, "concurrency": concurrency}}
 			result, err := s.Mutate(ctx, request, func(tx *core.Tx) (any, error) {
 				workspace, findErr := findSetupWorkspace(ctx, tx, workspaceName, workspacePath)
@@ -484,7 +498,8 @@ func (a *app) runtimeSetupCommand() *cobra.Command {
 	cmd.Flags().StringVar(&workspacePath, "workspace-path", "", "任务项目目录；默认当前目录")
 	cmd.Flags().StringVar(&workspaceName, "workspace-name", "", "memgov 工作区名称；默认与 runtime 同名")
 	cmd.Flags().StringVar(&channelName, "channel-name", "", "通道名称；默认 <runtime>-dingtalk")
-	cmd.Flags().StringVar(&preset, "agent-preset", "claude-default", "Claude Agent preset")
+	cmd.Flags().StringVar(&preset, "agent-preset", "", "受控 Agent preset；默认 <agent-harness>-default")
+	cmd.Flags().StringVar(&agentHarness, "agent-harness", "claude", "Agent harness 注册名；可通过 runtime harness 查看")
 	cmd.Flags().StringVar(&claudeProfile, "claude-profile", "", "从本机 zsh alias 读取 Claude 环境配置和默认模型")
 	cmd.Flags().StringVar(&analysisModel, "analysis-model", "", "增量分析模型；profile 表示使用 Claude profile 默认模型")
 	cmd.Flags().StringVar(&executionModel, "execution-model", "", "任务执行模型；profile 表示使用 Claude profile 默认模型")
