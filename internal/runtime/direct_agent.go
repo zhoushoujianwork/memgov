@@ -269,6 +269,14 @@ func (c *Claude) executeDirectAgent(ctx context.Context, in ExecutionInput) (cor
 		s.mu.Unlock()
 		if got.err != nil {
 			c.CloseDirectSession(in.SessionID)
+			if in.ResumeSessionID != "" && isDirectResumeUnavailable(got.err) {
+				// A missing native file is safe to recover: the resume attempt
+				// did not produce a usable turn. Start a new native session and
+				// let directStreamInput replay SQLite's accepted history.
+				in.ResumeSessionID = ""
+				in.NativeSessionID = uuid.NewString()
+				return c.executeDirectAgent(ctx, in)
+			}
 		}
 		return got.result, got.err
 	}
@@ -488,6 +496,30 @@ func directToolKind(name string) string {
 	}
 }
 
+func isDirectResumeUnavailable(err error) bool {
+	return strings.HasPrefix(err.Error(), "direct Claude native session unavailable:")
+}
+
+func directResumeUnavailable(raw []byte) bool {
+	var env struct {
+		Subtype string `json:"subtype"`
+		Result  string `json:"result"`
+	}
+	if json.Unmarshal(raw, &env) != nil {
+		return false
+	}
+	text := strings.ToLower(env.Subtype + " " + env.Result)
+	if !strings.Contains(text, "session") && !strings.Contains(text, "conversation") {
+		return false
+	}
+	for _, marker := range []string{"not found", "no conversation", "cannot resume", "could not resume", "failed to resume", "unavailable"} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func decodeDirectResult(raw []byte) (core.RuntimeAttemptResult, error) {
 	var env struct {
 		Type         string  `json:"type"`
@@ -508,6 +540,9 @@ func decodeDirectResult(raw []byte) (core.RuntimeAttemptResult, error) {
 		return core.RuntimeAttemptResult{}, core.Fail("unavailable", "direct Claude returned unreadable result")
 	}
 	if env.IsError || strings.HasPrefix(env.Subtype, "error") {
+		if directResumeUnavailable(raw) {
+			return core.RuntimeAttemptResult{}, core.Fail("unavailable", "direct Claude native session unavailable: %s", strings.TrimSpace(env.Result))
+		}
 		return core.RuntimeAttemptResult{}, core.Fail("unavailable", "direct Claude reported a failed turn")
 	}
 	if strings.TrimSpace(env.Result) == "" {

@@ -42,6 +42,9 @@ with open(os.environ["DIRECT_TEST_ARGS"], "a", encoding="utf-8") as args:
     args.write(json.dumps(sys.argv[1:]) + "\n")
 with open(os.environ["DIRECT_TEST_PATHS"], "a", encoding="utf-8") as paths:
     paths.write(os.environ["PATH"] + "\n")
+if "--resume" in sys.argv[1:] and os.environ.get("DIRECT_TEST_RESUME_MISSING") == "1":
+    print(json.dumps({"type":"result","subtype":"error_during_execution","is_error":True,"result":"No conversation found with session ID"}), flush=True)
+    sys.exit(0)
 for line in sys.stdin:
     with open(os.environ["DIRECT_TEST_INPUTS"], "a", encoding="utf-8") as inputs:
         inputs.write(line)
@@ -60,6 +63,64 @@ for line in sys.stdin:
 		Preset: preset, ApplicationMode: "direct", Capabilities: []string{"memory_read", "local_read", "local_write"},
 		Task: core.RuntimeTask{Messages: []core.RuntimeMessage{{Body: "你好，原文不变。"}}}}
 	return &Claude{Binary: claudeBinary}, in, starts
+}
+
+func TestDirectAgentReplaysWhenNativeResumeSessionIsMissing(t *testing.T) {
+	c, in, starts := directAgentFixture(t)
+	defer c.CloseDirectSessions()
+	t.Setenv("DIRECT_TEST_RESUME_MISSING", "1")
+	resumeID := uuid.NewString()
+	in.NativeSessionID, in.ResumeSessionID = resumeID, resumeID
+	in.ConversationContext = []core.RuntimeMessage{{Body: "上一轮问题"}, {Body: "上一轮回答", SelfAuthored: true}}
+	in.Task.Messages = []core.RuntimeMessage{{Body: "本轮问题"}}
+	result, err := c.Execute(context.Background(), in)
+	if err != nil || result.Result != "本轮问题" {
+		t.Fatalf("missing native session was not replayed: result=%+v error=%v", result, err)
+	}
+	if got := directStartCount(t, starts); got != 2 {
+		t.Fatalf("resume fallback started %d processes, want 2", got)
+	}
+	args, err := os.ReadFile(filepath.Join(in.Home, "args"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := strings.Split(strings.TrimSpace(string(args)), "\n")
+	if len(rows) != 2 {
+		t.Fatalf("resume fallback started with unexpected arguments: %q", string(args))
+	}
+	var firstArgs, secondArgs []string
+	if err := json.Unmarshal([]byte(rows[0]), &firstArgs); err != nil {
+		t.Fatalf("decode first native arguments: %v", err)
+	}
+	if err := json.Unmarshal([]byte(rows[1]), &secondArgs); err != nil {
+		t.Fatalf("decode second native arguments: %v", err)
+	}
+	findArg := func(args []string, name string) (string, bool) {
+		for i := 0; i+1 < len(args); i++ {
+			if args[i] == name {
+				return args[i+1], true
+			}
+		}
+		return "", false
+	}
+	gotResume, ok := findArg(firstArgs, "--resume")
+	if !ok || gotResume != resumeID {
+		t.Fatalf("first native invocation did not resume %q: %v", resumeID, firstArgs)
+	}
+	if _, ok := findArg(secondArgs, "--resume"); ok {
+		t.Fatalf("fallback native invocation unexpectedly resumed: %v", secondArgs)
+	}
+	newID, ok := findArg(secondArgs, "--session-id")
+	if !ok || newID == "" || newID == resumeID {
+		t.Fatalf("fallback native invocation did not use a fresh session: %v", secondArgs)
+	}
+	inputs, err := os.ReadFile(filepath.Join(in.Home, "inputs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(inputs), "上一轮问题") || !strings.Contains(string(inputs), "上一轮回答") {
+		t.Fatalf("resume fallback did not replay accepted history: %s", inputs)
+	}
 }
 
 func TestDirectAgentKeepsProcessAcrossAcceptedTurnsAndResetsOnHistoryChange(t *testing.T) {
