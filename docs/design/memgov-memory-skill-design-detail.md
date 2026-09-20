@@ -1,6 +1,6 @@
 # `memgov-memory` 跨 Agent 记忆接入：实现详细稿
 
-范围以[主设计](memgov-memory-skill-design.md)为准。当前仓库中的 `.agents/skills/memgov-memory/SKILL.md` 是使用约束；本稿定义把它作为 Owner Assistant 和其他 Agent 的稳定接入协议时必须保持的边界。具体命令仍以目标二进制帮助为准。
+范围以[主设计](memgov-memory-skill-design.md)为准。当前仓库中的 `.agents/skills/memgov-memory/SKILL.md` 是使用约束；本稿定义把它作为 Personal Jarvis 和其他 Agent 的稳定接入协议时必须保持的边界。具体命令仍以目标二进制帮助为准。
 
 ## 接入原则
 
@@ -40,7 +40,7 @@
 4. 正式记忆不足时才 `search --kind source`，并明确来源命中是证据，不是批准记忆；
 5. 将可见性、证据状态、时间和历史缺口传给模型。
 
-Owner Assistant 的私聊任务可查询已授权 Owner 历史；群 Jarvis 的请求必须执行当前群的 workspace、发布和披露过滤。一个 Agent 读到的内容不能仅因 skill 调用就向另一个通道转述。
+Personal Jarvis 的私聊任务可查询已授权 Owner 历史；群 Jarvis 的请求必须执行当前群的 workspace、发布和披露过滤。一个 Agent 读到的内容不能仅因 skill 调用就向另一个通道转述。
 
 ## 写入和治理工作流
 
@@ -77,7 +77,7 @@ message（不含凭据和未授权正文）
 
 错误分类包括版本或 digest 冲突、workspace 拒绝、证据缺失、权限/披露拒绝、无效参数、数据库忙、工具不可用和外部结果未知。`ok: true` 不代表 `doctor` 健康；适配器必须同时检查进程退出状态和 JSON envelope。
 
-## Owner Assistant 集成
+## Personal Jarvis 集成
 
 Owner 根任务在上下文中记录 skill 请求 ID、召回范围、采用的 Memory 版本和候选/审查结果。Agent 可以把代码任务、调查结论和已确认经验分开保存：任务结果留在 Task/Operation，长期经验走 Source → Candidate → Review → Apply。根任务通知 Owner 时，明确“已找到来源”“候选待审”或“Memory 已应用”。
 
@@ -103,7 +103,7 @@ skill 写入的权限由根任务的 `memory_read`/`memory_write` capability 和
 | 证据治理 | Source 片段和 digest、Candidate validate/diff、Review、Apply、版本冲突 |
 | 记忆生命周期 | create/update/retire/restore、撤回证据、有效期和状态过滤 |
 | 并发 | 同一 Memory 的 CAS、重复幂等键、输入变化冲突、数据库忙 |
-| Owner Assistant | 召回上下文、任务结果与 Memory 分离、根任务审计和通知摘要 |
+| Personal Jarvis | 召回上下文、任务结果与 Memory 分离、根任务审计和通知摘要 |
 | 群 Jarvis | 共享记忆过滤、私有内容拒绝、skill 读取不改变群路由/工具/技能、原群回复回归 |
 | 安全 | 来源提示注入、未授权 workspace、凭据泄露、跨受众转述和 shell/消息权限隔离 |
 

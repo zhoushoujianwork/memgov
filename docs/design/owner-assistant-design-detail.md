@@ -1,10 +1,10 @@
-# Owner Assistant 托管服务：实现详细稿
+# Personal Jarvis 托管服务：实现详细稿
 
 范围以[主设计](owner-assistant-design.md)为准。本文描述实现接口和验收约束；字段名可映射到现有 runtime 表，但不能把设计稿当作已安装协议。
 
 ## 任务输入和身份
 
-根任务由以下两类事件创建：
+根任务由平台消息或本地主动任务创建：
 
 | 触发 | `origin` | 授权策略 | 默认通知 |
 | --- | --- | --- | --- |
@@ -79,7 +79,7 @@ idempotency_key / delivery_attempt / platform_receipt
 
 默认只发送接收回执、实质结果、阻塞和确认请求；普通心跳、无变化轮询和内部 Agent 输出不发送。平台 `accepted`、`failed`、`unknown` 保留原值；未知回执不得自动重放。服务启动时只补发尚未开始且仍有效的阶段。
 
-群 Jarvis 的回答和群确认使用独立 Outbox，目标固定为原群；不能通过 Owner Assistant 的私聊通知器转发。群已有能力、工具和技能的 Outbox 路径必须在迁移回归中保持可用。
+群 Jarvis 的回答和群确认使用独立 Outbox，目标固定为原群；不能通过 Personal Jarvis 的私聊通知器转发。群已有能力、工具和技能的 Outbox 路径必须在迁移回归中保持可用。
 
 ## 恢复和并发
 
@@ -89,7 +89,7 @@ idempotency_key / delivery_attempt / platform_receipt
 
 ## `memgov-memory` 调用边界
 
-Owner Assistant 和群 Jarvis 都可按自身 capability 使用 skill。skill 请求必须记录 `actor`、`agent_id`、workspace、`request_id`，写操作还要有稳定幂等键。候选更新绑定 `target_id + expected_version`，应用绑定 `candidate_digest`；冲突返回可重试错误并要求重新读取。
+Personal Jarvis 和群 Jarvis 都可按自身 capability 使用 skill。skill 请求必须记录 `actor`、`agent_id`、workspace、`request_id`，写操作还要有稳定幂等键。候选更新绑定 `target_id + expected_version`，应用绑定 `candidate_digest`；冲突返回可重试错误并要求重新读取。
 
 Skill 的成功 envelope 必须区分 Source、Candidate、Review、Memory 和操作记录；健康字段不能只看进程退出码。skill 的完整数据治理能力不代表它可以发送消息、读取另一受众的私聊、修改生产系统或执行任意 shell。群 Jarvis 调用 skill 时继续进行当前群的 `CheckDisclosure`。
 

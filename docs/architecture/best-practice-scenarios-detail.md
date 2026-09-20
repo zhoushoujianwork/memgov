@@ -1,18 +1,18 @@
 # 最佳落地场景与对齐标准：验收详细稿
 
-主文档：[最佳落地场景与对齐标准](best-practice-scenarios.md)。本文规定 Owner Assistant、DWS 值守、`memgov-memory` skill 和群挂载 Jarvis 的验收方式；它不是当前运行结果。每项结果必须区分源码、安装版本、实际进程和真实平台证据。
+主文档：[最佳落地场景与对齐标准](best-practice-scenarios.md)。本文规定 Personal Jarvis、DWS 值守、`memgov-memory` skill 和群挂载 Jarvis 的验收方式；它不是当前运行结果。每项结果必须区分源码、安装版本、实际进程和真实平台证据。
 
 ## 验收对象和身份
 
 | 对象 | 触发 | 默认任务策略 | 结果位置 |
 | --- | --- | --- | --- |
-| Owner Assistant 根任务 | 已核验 Owner 私聊，或 DWS 发现的 Owner 事项 | `owner_request`（私聊）或 `owner_delegated`（后台） | Owner 私聊通知、任务记录和证据 |
+| Personal Jarvis 根任务 | 已核验 Owner 私聊，或 DWS 发现的 Owner 事项 | `owner_request`（私聊）或 `owner_delegated`（后台） | Owner 私聊通知、任务记录和证据 |
 | 群挂载 Jarvis | 有效群 @ 与该群路由 | 该机器人/群 preset 的现有策略 | 原群回复、群任务和群审计 |
 | 外部 Agent 的 memgov 接入 | Agent 明确调用 skill | skill 声明的 memory capability | `state.db` 的 Source/Candidate/Review/Memory 与操作记录 |
 
-同一个服务进程可以托管这些对象，但测试必须证明 channel、conversation、actor、workspace、受众和发送身份没有被混用。Owner 在群中发言仍按群 Jarvis 策略处理；群请求不能通过 Owner Assistant 中转获取 Owner 私聊或私有授权。
+同一个服务进程可以托管这些对象，但测试必须证明 channel、conversation、actor、workspace、受众和发送身份没有被混用。Owner 在群中发言仍按群 Jarvis 策略处理；群请求不能通过 Personal Jarvis 中转获取 Owner 私聊或私有授权。
 
-## Owner Assistant 固定验收案例
+## Personal Jarvis 固定验收案例
 
 | 案例 | 必须观察到的行为 |
 | --- | --- |
@@ -34,9 +34,9 @@
 | 案例 | 必须观察到的行为 |
 | --- | --- |
 | 有效群 @ | 仍由挂载机器人在原群回复，使用原有 preset、模型、技能、工具和共享记忆配置 |
-| Owner 在群内 @ | 仍按群策略处理，不升级为 Owner Assistant，不切换到 DWS 本人身份 |
+| Owner 在群内 @ | 仍按群策略处理，不升级为 Personal Jarvis，不切换到 DWS 本人身份 |
 | 群 Jarvis 使用 skill | 只读或治理其被配置可见的 memgov 数据；查询仍经过群受众披露检查 |
-| 群工具和目录 | 已配置能力继续可用；Owner Assistant 的配置迁移不删除或收紧群声明 |
+| 群工具和目录 | 已配置能力继续可用；Personal Jarvis 的配置迁移不删除或收紧群声明 |
 | 群失败或待确认 | 失败结论、未知状态和确认留在原群；不自动转发到 Owner 私聊 |
 | 多机器人/多群 | 各自路由、preset、上下文和记忆范围不串线；一个群的策略变化不改其他群 |
 | 未来限制 | 若增加群侧限制，必须有单独策略版本、迁移提示和验收记录；本期不得静默引入 |

@@ -1,4 +1,4 @@
-# memgov 架构详细稿：Owner Assistant、任务和记忆治理
+# memgov 架构详细稿：Personal Jarvis、任务和记忆治理
 
 主文档：[总体架构](architecture.md)。本文记录实现时必须保持的接口、边界和验证约束；它是目标与实现约束，不是安装或真实平台验收证明。安装版本和运行观察见[能力状态](../implementation-status.md)。
 
@@ -9,14 +9,14 @@
 | `cmd/memgov`、`internal/cli` | CLI 入口、JSON envelope、配置计划/应用、记忆和任务命令 |
 | `internal/core` | Source、Candidate、Review、Memory、任务、证据、版本、幂等和审计事务 |
 | `internal/channel` | DWS、应用机器人和群路由适配；保存入口身份与受众，不把平台字段写进记忆模型 |
-| `internal/runtime`、`internal/agent` | Owner 根任务、子 Agent 调度、外部模型调用、工具边界、恢复和确认 |
+| `internal/runtime`、`internal/agent` | Personal Jarvis 根任务、子 Agent 调度、外部模型调用、工具边界、恢复和确认 |
 | `internal/sysprompt` | Owner、后台、群 Jarvis 等入口的基础身份和安全规则；不授予额外 capability |
 | `internal/service` | 单一服务生命周期、配置加载、模块监督、停止、重启和 macOS 托管 |
 | `internal/console`、`internal/observation`、`internal/runlog` | 本地查询、控制回调、健康/进展观测和有界脱敏日志 |
 | `web/` | 管理台静态资源；复用服务业务接口，不另建任务状态机 |
 | `memgov-memory` skill adapter | 将 Agent 的记忆请求映射到稳定 CLI/API 契约；不直接打开 SQLite |
 
-一个统一服务可托管 Owner Assistant 和群 Jarvis，但必须按 `channel`、`conversation`、`application`、身份和策略隔离任务。共享进程或数据库不表示共享授权。
+一个统一服务可托管 Personal Jarvis 和群 Jarvis，但必须按 `channel`、`conversation`、`application`、身份和策略隔离任务。共享进程或数据库不表示共享授权。
 
 ## 正式数据模型
 
@@ -31,7 +31,7 @@ SQLite `state.db` 是唯一真相源。现行对象如下：
 
 任务进度是临时工作事实，不能直接变成 Memory；只有经过 Source → Candidate → Review → Apply 才能进入长期记忆。来源正文、引用文本、群聊天和模型输出都是不可信资料，不能改变执行或披露权限。
 
-## Owner Assistant 任务图
+## Personal Jarvis 任务图
 
 目标任务图如下：
 
@@ -73,17 +73,17 @@ Owner 委托范围内的读取、本机/项目修改、测试、构建、记忆�
 - 扩大目录、工具、网络或消息权限；
 - 外部结果为 `unknown` 时的重放。
 
-确认只能由当前已核验 Owner 完成。取消、暂停、继续和紧急停止都应落库并在每个工具动作前复核。权限版本或目标受众变化会使旧提案失效。群 Jarvis 继续使用自身已配置 capability；Owner Assistant 的策略迁移不应隐式替换群 preset 或关闭群工具。
+确认只能由当前已核验 Owner 完成。取消、暂停、继续和紧急停止都应落库并在每个工具动作前复核。权限版本或目标受众变化会使旧提案失效。群 Jarvis 继续使用自身已配置 capability；Personal Jarvis 的策略迁移不应隐式替换群 preset 或关闭群工具。
 
 ## 配置单一入口
 
 产品目标配置入口为 `~/.memgov/config.yaml`。服务、CLI、管理台、launchd 和验收脚本必须解析同一个有效配置来源。现有 `config.dual.yaml` 只作为迁移备份或兼容读取来源，不得与主配置并行生效；`config.local.yaml` 可以作为开发入口链接，但不能复制第二份声明。
 
-`config plan` 必须在应用前报告 Owner 身份、运行对象、群路由、权限变化、未托管冲突和重复 runtime；应用前停止受影响 runtime，应用后再启动。未授权权限扩张、同名对象冲突、旧策略任务或未知路由必须阻断应用。群 Jarvis 的既有声明应在计划中被识别为独立对象，不能被 Owner Assistant 合并或删除。
+`config plan` 必须在应用前报告 Owner 身份、运行对象、群路由、权限变化、未托管冲突和重复 runtime；应用前停止受影响 runtime，应用后再启动。未授权权限扩张、同名对象冲突、旧策略任务或未知路由必须阻断应用。群 Jarvis 的既有声明应在计划中被识别为独立对象，不能被 Personal Jarvis 合并或删除。
 
 ## 通知与投递
 
-Owner Assistant 的通知是根任务的派生交付，不是 Agent 任意调用消息 API。通知状态至少包括：`received`、`running`、`result`、`blocked`、`awaiting_confirmation`、`unknown`、`completed`、`failed`。默认只在有实质结果、阻塞或需要确认时私聊通知；无变化的心跳不发送。历史 `record_only` 任务保持静默兼容。
+Personal Jarvis 的通知是根任务的派生交付，不是 Agent 任意调用消息 API。通知状态至少包括：`received`、`running`、`result`、`blocked`、`awaiting_confirmation`、`unknown`、`completed`、`failed`。默认只在有实质结果、阻塞或需要确认时私聊通知；无变化的心跳不发送。历史 `record_only` 任务保持静默兼容。
 
 每条通知保存根任务/子任务 ID、摘要、已完成动作、未完成动作、证据/产物、需要的决策、幂等键、目标会话和平台回执。投递失败或回执未知必须明确标记，不凭模型输出声称已送达；重启恢复只能补发未开始的幂等阶段。群 Jarvis 的普通回复仍由挂载应用发回原群，失败结论和确认也留在原群，不转移到 Owner 私聊。
 

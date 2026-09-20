@@ -1,6 +1,6 @@
 # 文档导航与维护标准
 
-先看[产品定位](architecture/positioning.md)与[最佳落地场景](architecture/best-practice-scenarios.md)，了解 Owner Assistant、记忆底座和群挂载 Jarvis 的并行边界；再看[实现状态](implementation-status.md)与[实施路线](roadmap.md)，区分已有能力、待办和验收缺口。上手使用见[项目 README](../README.md)。仓库内构建、测试和脚本示例默认从仓库根目录执行。
+先看[产品定位](architecture/positioning.md)与[最佳落地场景](architecture/best-practice-scenarios.md)，了解 Personal Jarvis、平台适配器、记忆底座和群挂载 Jarvis 的边界；再看[实现状态](implementation-status.md)与[实施路线](roadmap.md)，区分已有能力、待办和验收缺口。上手使用见[项目 README](../README.md)。仓库内构建、测试和脚本示例默认从仓库根目录执行。
 
 ## 分类导航
 
@@ -17,7 +17,7 @@
 
 | 主题 | 主文档 | 详细稿 |
 | --- | --- | --- |
-| Owner Assistant 托管服务 | [主设计](design/owner-assistant-design.md) | [任务、权限与通知](design/owner-assistant-design-detail.md) |
+| Personal Jarvis 托管服务 | [主设计](design/owner-assistant-design.md) | [任务、权限与通知](design/owner-assistant-design-detail.md) |
 | `memgov-memory` 跨 Agent 接入 | [主设计](design/memgov-memory-skill-design.md) | [协议、错误与验收](design/memgov-memory-skill-design-detail.md) |
 | DWS 后台观察、Owner 私聊与群机器人 | [接入设计](design/dingtalk-integration-design.md) | [协议与迁移](design/dingtalk-integration-design-detail.md) |
 | Agent preset、执行、权限与统一 sysprompt | [运行时设计](design/agent-runtime-design.md) | [执行约束](design/agent-runtime-design-detail.md) · [安全规则维护](design/agent-runtime-design-detail.md#统一系统提示与安全验证) |
