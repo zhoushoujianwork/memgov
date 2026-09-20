@@ -230,6 +230,11 @@ func splitAliasCommands(value string) ([]string, error) {
 			quote = current
 			continue
 		}
+		if current == ';' {
+			out = append(out, string(runes[start:i]))
+			start = i + 1
+			continue
+		}
 		if current == '&' && i+1 < len(runes) && runes[i+1] == '&' {
 			out = append(out, string(runes[start:i]))
 			start = i + 2

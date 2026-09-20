@@ -73,6 +73,20 @@ func TestAliasProfileParserKeepsOnlyClaudeEnvironment(t *testing.T) {
 	}
 }
 
+func TestAliasProfileParserAcceptsCcswitchSemicolonSyntax(t *testing.T) {
+	alias := `export ANTHROPIC_BASE_URL="https://proxy.example/api"; export ANTHROPIC_AUTH_TOKEN='test-token'; export ANTHROPIC_MODEL="claude-sonnet"; exec claude`
+	env, err := parseAliasEnvironment(alias)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(env, "\n")
+	for _, want := range []string{"ANTHROPIC_BASE_URL=https://proxy.example/api", "ANTHROPIC_AUTH_TOKEN=test-token", "ANTHROPIC_MODEL=claude-sonnet"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in semicolon-separated profile environment: %q", want, joined)
+		}
+	}
+}
+
 func TestProfileModelUsesAliasDefaultWithoutModelArgument(t *testing.T) {
 	var args []string
 	c := &Claude{Profile: "cc", AnalysisModel: "profile", Run: func(_ context.Context, _ string, _ []byte, argv ...string) ([]byte, error) {

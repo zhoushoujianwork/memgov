@@ -64,7 +64,7 @@
 
 ## 模型阶段
 
-`runtime_configs.claude_profile` 可保存一个 zsh alias 名。每次调用模型前，运行时用固定脚本读取 alias 定义，只接受简单的 `ANTHROPIC_*` 和 `CLAUDE_CODE_*` 赋值，并把它们合并到 Claude 子进程环境。alias 本身不会执行，其他命令、参数和环境变量会被忽略；凭据不进入 SQLite 和日志。分析或执行模型为 `profile` 时不传 `--model`，由 alias 中的 Claude 默认模型决定。
+`runtime_configs.claude_profile` 可保存一个 zsh alias 名。每次调用模型前，运行时用固定脚本读取 alias 定义，只接受简单的 `ANTHROPIC_*` 和 `CLAUDE_CODE_*` 赋值，并把它们合并到 Claude 子进程环境。赋值之间使用 `&&` 或 `;` 均可，兼容 ccswitch 生成的两种常见 alias 形式。alias 本身不会执行，其他命令、参数和环境变量会被忽略；凭据不进入 SQLite 和日志。分析或执行模型为 `profile` 时不传 `--model`，由 alias 中的 Claude 默认模型决定。
 
 ### 群来源增量分析
 
