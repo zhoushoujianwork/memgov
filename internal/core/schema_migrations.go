@@ -78,10 +78,14 @@ var schemaV24 string
 //go:embed schema_v25.sql
 var schemaV25 string
 
+//go:embed schema_v26.sql
+var schemaV26 string
+
 func init() {
 	databaseMigrations = append(databaseMigrations, databaseMigration{Version: 23, SQL: schemaV23})
 	databaseMigrations = append(databaseMigrations, databaseMigration{Version: 24, SQL: schemaV24})
 	databaseMigrations = append(databaseMigrations, databaseMigration{Version: 25, SQL: schemaV25})
+	databaseMigrations = append(databaseMigrations, databaseMigration{Version: 26, SQL: schemaV26})
 }
 
 type databaseMigration struct {

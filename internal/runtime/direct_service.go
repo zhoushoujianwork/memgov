@@ -54,6 +54,8 @@ func (s *Service) executeDirectTurn(ctx context.Context, cfg core.RuntimeConfig,
 	}
 	fail := func(e error) { closeSession(); s.failTask(ctx, cfg, task, attempt, e) }
 	var result core.RuntimeAttemptResult
+	var directNativeID, persistedPolicyDigest string
+	var directHistory []core.RuntimeMessage
 	start := s.now()
 	if session.Command != "" {
 		switch session.Command {
@@ -142,6 +144,17 @@ func (s *Service) executeDirectTurn(ctx context.Context, cfg core.RuntimeConfig,
 			return
 		}
 		execInput := ExecutionInput{Task: task, AttemptID: attempt.ID, SessionID: session.ID, NativeSessionID: attempt.ID, RecordSession: s.sessionRecorder(task, attempt), DirectoryPolicy: policy.Directories, AgentPolicyDigest: core.Digest(policy), Home: s.Home, AgentHome: effectiveAgentHome(s.Home, policy.Home, policy.Agent), WorkspaceID: workspace.ID, WorkDir: workdir, Preset: preset, ApplicationMode: "direct", Capabilities: policy.Capabilities, BashEnabled: policy.BashEnabled, ExternalActions: policy.ExternalActions, ConversationContext: history, HotwordContext: hotwords, ChannelSystemPrompt: channelPrompt, Skills: policy.Skills, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile}
+		// A direct session has a stable logical ID and a separately persisted
+		// native Claude ID. Resume only when the policy and accepted history are
+		// exactly the context used to create the native session; otherwise start
+		// a fresh native session while still supplying the durable replay history.
+		if session.NativeSessionID != "" && session.NativePolicyDigest == directPolicyDigest(execInput, policy.ClaudeProfile, policy.ExecutionModel) && session.NativeContextDigest == directHistoryDigest(history) {
+			execInput.NativeSessionID = session.NativeSessionID
+			execInput.ResumeSessionID = session.NativeSessionID
+		}
+		directHistory = history
+		directNativeID = execInput.NativeSessionID
+		persistedPolicyDigest = directPolicyDigest(execInput, policy.ClaudeProfile, policy.ExecutionModel)
 		result, err = s.Executor.Execute(ctx, execInput)
 		if err == nil {
 			err = s.checkTaskAgent(ctx, cfg, task, policy, preset)
@@ -164,7 +177,17 @@ func (s *Service) executeDirectTurn(ctx context.Context, cfg core.RuntimeConfig,
 	input, output, cost := usageFields(result.Usage)
 	model, _ := result.Usage["model"].(string)
 	s.emit(ctx, runlog.Event{RuntimeID: cfg.ID, TaskID: task.ID, AttemptID: attempt.ID, Level: "info", Component: "execution", Event: "completed", Status: completed.Status, DurationMS: s.now().Sub(start).Milliseconds(), Model: model, InputTokens: input, OutputTokens: output, CostUSD: cost, ToolKinds: result.ToolKinds, Summary: "会话回复已完成"})
-	if !s.deliver(ctx, cfg, task.ID) {
+	delivered := s.deliver(ctx, cfg, task.ID)
+	if delivered && session.Command == "" {
+		// Make the native session reusable only after delivery acceptance, so
+		// replay history and native context cannot diverge on a failed handoff.
+		_ = s.mutate(ctx, "global", "runtime.direct.native_session", func(tx *core.Tx) (any, error) {
+			acceptedHistory := append([]core.RuntimeMessage{}, directHistory...)
+			acceptedHistory = append(acceptedHistory, task.Messages[len(task.Messages)-1], core.RuntimeMessage{Body: result.Result, SelfAuthored: true})
+			return nil, tx.PersistRuntimeDirectNativeSession(ctx, session.ID, directNativeID, persistedPolicyDigest, directHistoryDigest(acceptedHistory))
+		})
+	}
+	if !delivered {
 		closeSession()
 	}
 	if completed.Status == "completed" {

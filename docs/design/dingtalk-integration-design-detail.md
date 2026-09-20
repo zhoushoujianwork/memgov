@@ -394,7 +394,7 @@ Schema 18 的 `runtime_direct_sessions` 保存会话和关闭时间，`runtime_d
 
 `/clear` 关闭原会话并新建会话，不清除正式记忆或审计记录。确认来源仍有效的后续 `/clear` 是提交和投递的屏障：即使旧 Agent 正在执行，其结果也不能完成或投递。其他发送者、其他路由和撤回的 clear 无效。`/status` 解析当前任务的实际 Agent 策略和 Claude 技能发现结果，直接回复 Agent、preset、模型、技能、能力、Bash、外部操作、记忆范围和热词写入权限；两类命令均不启动模型，也不写入会话恢复文本。
 
-每个会话在 `<MEMGOV_HOME>/runtime/sessions/<session-id>` 工作，使用持续的 Claude `stream-json` 进程。stdin 的 user content 为当前消息正文，Agent 自行决定使用工具和 skill，不接收业务任务 JSON Schema。支持任务继续的新调用会按原生会话 ID 保存可恢复执行上下文；未提供原生会话 ID 的兼容路径仍禁用本地会话持久化。SQLite 保存恢复关系与任务版本，原生文件只保存临时执行上下文，见[任务继续详细稿](task-continuation-detail.md)。重启后只从 SQLite 恢复同一会话中已交付、原消息版本仍有效、发送者身份仍核验的本人/机器人轮次；当前进程的历史摘要不匹配时重建，以剔除撤回或未交付上下文。
+每个会话在 `<MEMGOV_HOME>/runtime/sessions/<session-id>` 工作，使用持续的 Claude `stream-json` 进程。stdin 的 user content 为当前消息正文，Agent 自行决定使用工具和 skill，不接收业务任务 JSON Schema。支持任务继续的新调用会按原生会话 ID 保存可恢复执行上下文；未提供原生会话 ID 的兼容路径仍禁用本地会话持久化。SQLite 保存恢复关系与任务版本，原生文件只保存临时执行上下文，见[任务继续详细稿](task-continuation-detail.md)。DingTalk Owner 私聊的逻辑会话还持久化原生会话 ID、策略摘要和已接受历史摘要；服务重启后摘要一致时使用 `--resume`，不一致时用已接受轮次回放并创建新原生会话。重启后只从 SQLite 恢复同一会话中已交付、原消息版本仍有效、发送者身份仍核验的本人/机器人轮次；当前进程的历史摘要不匹配时重建，以剔除撤回或未交付上下文。
 
 记忆 skill 随程序内置并安装到会话的 `.claude/skills`。运行时不替 Agent 选择查询词，也不自动将普通聊天写成记忆。本人私聊未配置独立 Agent 时默认完整 Bash 与 `owner_request`，使用真实 memgov CLI；本人明确请求的外部操作直接执行，不索要额外确认口令。此模式使用运行账户权限，不能用文件工具或记忆包装器宣称完整隔离。
 

@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const SchemaVersion = 25
+const SchemaVersion = 26
 
 type Error struct {
 	Code    string `json:"code"`

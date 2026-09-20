@@ -4,7 +4,7 @@
 
 ## 状态与入口
 
-Schema 21 为 `runtime_tasks` 增加 `resume` JSON，为 `runtime_attempts` 增加 `agent_session` JSON，不修改历史迁移。任务继续记录新任务版本、原尝试 ID、固定“继续”提示与 native/replay 模式；尝试记录原生会话 UUID、策略与上下文摘要、工作分支与基准提交，以及受控目录工作状态。SQLite 仍负责任务、恢复关系、版本和审计，Claude 原生会话文件仅保存可恢复的执行上下文。
+Schema 21 为 `runtime_tasks` 增加 `resume` JSON，为 `runtime_attempts` 增加 `agent_session` JSON；Schema 26 为 `runtime_direct_sessions` 增加私聊原生会话 ID、策略摘要和已接受历史摘要，不修改已发布迁移。任务继续记录新任务版本、原尝试 ID、固定“继续”提示与 native/replay 模式；尝试记录原生会话 UUID、策略与上下文摘要、工作分支与基准提交，以及受控目录工作状态。SQLite 仍负责任务、恢复关系、版本和审计，Claude 原生会话文件仅保存可恢复的执行上下文。
 
 `runtime task resume <task-id>` 与统一服务注入的 Web 控制回调均调用 `ResumeRuntimeTask`。Web 为 `POST /api/v1/tasks/<task-id>/resume`，要求当前 `expected_version`、本机 loopback 访问边界、同源 JSON 和 `X-Memgov-Console: 1`。请求在写事务中检查失败状态、原尝试版本、原文保留及当前路由/Agent 声明、私聊本人身份与 clear 屏障，并拒绝外部动作或投递处于 executing/sending/unknown 等不能盲目重试的状态。
 
@@ -14,7 +14,7 @@ Cyber owner 的主动沟通动作跨尝试保留；`sending` 或 `unknown` 会�
 
 ## Agent 调用与目录
 
-Claude 执行前持久记录确定的会话 UUID。私聊仍按逻辑会话复用进程，原生 UUID 与逻辑会话 UUID 分开；进程更换后不会误用已经保存的会话 ID 来新建会话。每轮都记录实际使用的原生 UUID，只有用户明确继续失败任务时才使用 `--resume <uuid>`。普通重启后的私聊仍按已接受轮次重建上下文。
+Claude 执行前持久记录确定的会话 UUID。私聊按逻辑会话绑定原生 UUID，二者分开保存；同一钉钉私聊在进程或服务重启后，只要策略摘要和已接受历史摘要一致，继续使用 `--resume <uuid>`。摘要不一致、原生会话不可用或历史被撤回/修改时，不沿用旧原生上下文，改用已接受轮次回放并创建新的原生 UUID。每轮记录实际使用的原生 UUID；显式失败任务继续仍沿用原有 `--resume`/replay 规则。
 
 执行调用启用 Claude 本地会话保存；分析、记忆复核和单独确认动作仍沿用无会话保存模式。原生继续沿用相同 UUID 和原目录，发送“继续”以及检查已有成果、核对外部操作状态的固定提示；旧任务 replay 使用新 UUID，额外提供原请求并明确未保存中间上下文。恢复策略、能力、记忆共享范围/类别排除、声明目录、技能和通道提示的摘要必须匹配；原文、已接受会话、记忆上下文和目录快照摘要变化也会拒绝原生上下文复用。继续不授予新执行或披露权限。
 

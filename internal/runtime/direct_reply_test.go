@@ -167,6 +167,13 @@ func TestDirectSupplementGoesToAgentWithoutHaiku(t *testing.T) {
 	if first.analyzer.calls != 0 || first.executor.calls != 2 || first.adapter.sends != 2 {
 		t.Fatalf("supplement was not passed to Agent: analysis=%d execution=%d sends=%d", first.analyzer.calls, first.executor.calls, first.adapter.sends)
 	}
+	var nativeSessionID string
+	if err := first.service.Store.DB.QueryRowContext(ctx, "SELECT native_session_id FROM runtime_direct_sessions WHERE id=?", first.executor.inputs[0].SessionID).Scan(&nativeSessionID); err != nil || nativeSessionID == "" {
+		t.Fatalf("first direct turn did not persist native session: id=%q error=%v", nativeSessionID, err)
+	}
+	if first.executor.inputs[1].ResumeSessionID != nativeSessionID || first.executor.inputs[1].NativeSessionID != nativeSessionID {
+		t.Fatalf("follow-up did not resume persisted native session: input=%+v persisted=%q", first.executor.inputs[1], nativeSessionID)
+	}
 	tasks, err := core.RuntimeTaskList(ctx, first.service.Store.DB, first.cfg.ID, "", 10)
 	if err != nil || len(tasks) != 2 {
 		t.Fatalf("supplement was not forwarded: count=%d error=%v", len(tasks), err)

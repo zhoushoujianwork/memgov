@@ -289,7 +289,7 @@ memgov runtime logs follow my-watcher
 ⏱ 执行 46.0s · 🤖 claude-sonnet-4
 ```
 
-源码已提供 `memgov runtime task resume <任务ID>` 和 Web 任务详情的「继续任务」入口：中断后恢复原会话，或结合旧任务的原请求与已有文件继续。该入口需更新程序并显式升级到 Schema 21；使用与边界见[中断后继续任务](../design/task-continuation.md)。
+源码已提供 `memgov runtime task resume <任务ID>` 和 Web 任务详情的「继续任务」入口：中断后恢复原会话，或结合旧任务的原请求与已有文件继续。该入口需更新程序并显式升级到 Schema 26；使用与边界见[中断后继续任务](../design/task-continuation.md)。
 
 首次启动前的历史只作上下文，不执行陈年任务。没有新消息时不会调用模型。
 

@@ -21,8 +21,11 @@ func DirectCommand(body string) string {
 }
 
 type RuntimeDirectSession struct {
-	ID      string `json:"id"`
-	Command string `json:"command,omitempty"`
+	ID                  string `json:"id"`
+	Command             string `json:"command,omitempty"`
+	NativeSessionID     string `json:"native_session_id,omitempty"`
+	NativePolicyDigest  string `json:"native_policy_digest,omitempty"`
+	NativeContextDigest string `json:"native_context_digest,omitempty"`
 }
 
 // BindRuntimeDirectTurn is idempotent for retries. /clear starts a new logical
@@ -35,7 +38,8 @@ func (tx *Tx) BindRuntimeDirectTurn(ctx context.Context, c RuntimeConfig, t Runt
 	if t.RuntimeID != c.ID {
 		return out, Fail("denied", "direct turn belongs to another runtime")
 	}
-	err := tx.Conn.QueryRowContext(ctx, "SELECT session_id,command FROM runtime_direct_turns WHERE task_id=?", t.ID).Scan(&out.ID, &out.Command)
+	err := tx.Conn.QueryRowContext(ctx, `SELECT dt.session_id,dt.command,s.native_session_id,s.native_policy_digest,s.native_context_digest
+FROM runtime_direct_turns dt JOIN runtime_direct_sessions s ON s.id=dt.session_id WHERE dt.task_id=?`, t.ID).Scan(&out.ID, &out.Command, &out.NativeSessionID, &out.NativePolicyDigest, &out.NativeContextDigest)
 	if err == nil {
 		return out, nil
 	}
@@ -70,6 +74,25 @@ func (tx *Tx) BindRuntimeDirectTurn(ctx context.Context, c RuntimeConfig, t Runt
 	}
 	_, err = tx.Conn.ExecContext(ctx, "INSERT INTO runtime_direct_turns(task_id,session_id,command) VALUES(?,?,?)", t.ID, out.ID, out.Command)
 	return out, err
+}
+
+// PersistRuntimeDirectNativeSession records the native Claude session only after
+// the corresponding reply has been accepted. The logical session remains the
+// SQLite conversation identity; these fields are a resumable execution hint.
+func (tx *Tx) PersistRuntimeDirectNativeSession(ctx context.Context, sessionID, nativeID, policyDigest, contextDigest string) error {
+	if sessionID == "" || nativeID == "" || policyDigest == "" || contextDigest == "" {
+		return Fail("invalid_input", "direct native session state is incomplete")
+	}
+	res, err := tx.Conn.ExecContext(ctx, `UPDATE runtime_direct_sessions
+SET native_session_id=?,native_policy_digest=?,native_context_digest=?
+WHERE id=? AND closed_at=''`, nativeID, policyDigest, contextDigest, sessionID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return Fail("conflict", "direct session is no longer active")
+	}
+	return nil
 }
 
 func RuntimeDirectTurnCurrent(ctx context.Context, q Queryer, taskID string) (bool, error) {

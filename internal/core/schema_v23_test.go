@@ -6,6 +6,10 @@ import "testing"
 func dropSchema23(t *testing.T, s *Store) {
 	t.Helper()
 	for _, statement := range []string{
+		"ALTER TABLE runtime_direct_sessions DROP COLUMN native_context_digest",
+		"ALTER TABLE runtime_direct_sessions DROP COLUMN native_policy_digest",
+		"ALTER TABLE runtime_direct_sessions DROP COLUMN native_session_id",
+		"DELETE FROM schema_migrations WHERE version=26",
 		"DROP TABLE runtime_reviews",
 		"ALTER TABLE runtime_work_leases DROP COLUMN model_activity_at",
 		"ALTER TABLE runtime_work_leases DROP COLUMN runtime_policy_digest",
