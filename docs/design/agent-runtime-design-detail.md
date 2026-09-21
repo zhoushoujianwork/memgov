@@ -294,3 +294,8 @@ Claude/确认动作执行前后都复核任务与 attempt 绑定的 applied conf
 `agents.<name>.home` is normalized to an absolute path during config loading. When omitted, runtime uses `<MEMGOV_HOME>/agent-homes/<name>`. The runtime creates the directory with mode `0700` and a regular `CLAUDE.md` with mode `0600`, then passes the directory to Claude with `--add-dir`; the preset repository remains Git-controlled and clean.
 
 The execution prompt treats `CLAUDE.md` as durable Agent-local notes, not authorization. Only Agents with `local_write` receive exact `Edit(<home>/CLAUDE.md)` and `Write(<home>/CLAUDE.md)` allowlist entries; group Agents do not receive arbitrary home-file access. Notes must be non-secret and bounded by the existing conversation and disclosure policy. Memgov memory tools remain explicitly on demand rather than being queried on every turn; an empty result is not evidence that the library is empty.
+
+
+## Private stream result correlation (2026-09-21)
+
+Source fix: a Claude result with `origin.kind=task-notification` belongs to a background notification, even when it contains text or reports an error. The private reader skips that envelope and waits for the current turn's result. An empty or failed ordinary result, or a stream ending without the current reply, still fails. This prevents a resumed session's old background notification from producing a false `unavailable` reply. Regression tests cover empty, nonempty and failed notifications, the subsequent current reply, and preservation of the next turn. Installation and live messaging acceptance are separate from these tests.

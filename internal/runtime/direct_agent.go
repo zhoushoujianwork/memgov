@@ -457,7 +457,10 @@ func readDirectResult(scanner *bufio.Scanner, observe ...func([]byte)) (core.Run
 			callback(line)
 		}
 		var header struct {
-			Type    string `json:"type"`
+			Type   string `json:"type"`
+			Origin struct {
+				Kind string `json:"kind"`
+			} `json:"origin"`
 			Message struct {
 				Content []struct {
 					Type string `json:"type"`
@@ -482,6 +485,11 @@ func readDirectResult(scanner *bufio.Scanner, observe ...func([]byte)) (core.Run
 			continue // input, output, IDs and model text never enter tool categories
 		}
 		if header.Type == "result" {
+			// Background task notifications have their own result envelopes.
+			// They do not finish the owner's current turn, even when nonempty.
+			if header.Origin.Kind == "task-notification" {
+				continue
+			}
 			result, err := decodeDirectResult(line)
 			result.ToolKinds = toolKinds
 			return result, err

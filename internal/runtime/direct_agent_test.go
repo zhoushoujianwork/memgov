@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"os"
@@ -675,5 +676,38 @@ func TestDirectHotwordWrapperBindsCurrentAttemptAndRejectsOutsideInput(t *testin
 	}
 	if err := exec.Command(wrapper, outside).Run(); err == nil {
 		t.Fatal("hotword wrapper accepted an input outside the session directory")
+	}
+}
+
+func TestDirectResultSkipsBackgroundNotifications(t *testing.T) {
+	for _, notification := range []string{
+		`{"type":"result","subtype":"success","is_error":false,"origin":{"kind":"task-notification"},"num_turns":0,"result":""}`,
+		`{"type":"result","subtype":"success","origin":{"kind":"task-notification"},"result":"old background output"}`,
+		`{"type":"result","subtype":"error_during_execution","is_error":true,"origin":{"kind":"task-notification"},"result":"background failed"}`,
+	} {
+		t.Run(notification, func(t *testing.T) {
+			stream := notification + "\n" + `{"type":"result","subtype":"success","result":"current answer"}` + "\n" + `{"type":"result","subtype":"success","result":"next answer"}`
+			scanner := bufio.NewScanner(strings.NewReader(stream))
+			result, err := readDirectResult(scanner)
+			if err != nil || result.Result != "current answer" {
+				t.Fatalf("result=%+v error=%v", result, err)
+			}
+			next, err := readDirectResult(scanner)
+			if err != nil || next.Result != "next answer" {
+				t.Fatalf("consumed next turn: %+v %v", next, err)
+			}
+		})
+	}
+}
+
+func TestDirectResultStillRejectsMissingOrFailedReply(t *testing.T) {
+	for _, stream := range []string{
+		`{"type":"result","origin":{"kind":"task-notification"},"result":""}`,
+		`{"type":"result","subtype":"success","result":""}`,
+		`{"type":"result","subtype":"error_during_execution","is_error":true,"result":"failed"}`,
+	} {
+		if _, err := readDirectResult(bufio.NewScanner(strings.NewReader(stream))); core.ErrorCode(err) != "unavailable" {
+			t.Fatalf("stream=%s error=%v", stream, err)
+		}
 	}
 }
