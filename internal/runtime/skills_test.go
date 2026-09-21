@@ -55,6 +55,43 @@ func TestDiscoverClaudeUserSkillsFindsClawflow(t *testing.T) {
 	}
 }
 
+func TestDiscoverClaudeUserSkillsSkipsUnavailableInheritedEntries(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, ".claude", "skills")
+	runtimeTestSkill(t, root, "working-skill")
+	if err := os.Symlink(filepath.Join(home, "missing-skill"), filepath.Join(root, "changing-skill")); err != nil {
+		t.Fatal(err)
+	}
+	unsafe := runtimeTestSkill(t, root, "unsafe-skill")
+	if err := os.Symlink(filepath.Join(home, "missing-file"), filepath.Join(unsafe, "changing-file")); err != nil {
+		t.Fatal(err)
+	}
+
+	resolved, err := discoverClaudeUserSkills()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolved) != 1 || resolved[0].Name != "working-skill" {
+		t.Fatalf("unavailable inherited skills blocked discovery: %+v", resolved)
+	}
+}
+
+func TestDiscoverClaudeUserSkillsClassifiesUnavailableRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, ".claude", "skills")
+	if err := os.MkdirAll(filepath.Dir(root), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(root, []byte("not a directory"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := discoverClaudeUserSkills(); core.ErrorCode(err) != "unavailable" {
+		t.Fatalf("unavailable skill root was not classified safely: %v", err)
+	}
+}
+
 func TestPrepareClaudeSkillsRefreshesInheritedSkillOnNextTurn(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

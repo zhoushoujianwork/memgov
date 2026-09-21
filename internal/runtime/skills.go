@@ -61,7 +61,7 @@ func runtimeSkillSummary(body []byte) string {
 func discoverClaudeUserSkills() ([]core.RuntimeSkill, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, err
+		return nil, core.Fail("unavailable", "Claude user skill home is unavailable")
 	}
 	root := filepath.Join(home, ".claude", "skills")
 	entries, err := os.ReadDir(root)
@@ -69,7 +69,7 @@ func discoverClaudeUserSkills() ([]core.RuntimeSkill, error) {
 		return []core.RuntimeSkill{}, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, core.Fail("unavailable", "Claude user skill directory is unavailable")
 	}
 	out := []core.RuntimeSkill{}
 	for _, entry := range entries {
@@ -78,7 +78,10 @@ func discoverClaudeUserSkills() ([]core.RuntimeSkill, error) {
 		}
 		path, err := filepath.EvalSymlinks(filepath.Join(root, entry.Name()))
 		if err != nil {
-			return nil, err
+			// Executor-inherited skills are optional ambient capabilities. A
+			// concurrently replaced or temporarily unavailable entry must not
+			// prevent an otherwise independent Agent turn from starting.
+			continue
 		}
 		skillFile := filepath.Join(path, "SKILL.md")
 		if info, err := os.Stat(skillFile); err != nil || !info.Mode().IsRegular() {
@@ -86,11 +89,11 @@ func discoverClaudeUserSkills() ([]core.RuntimeSkill, error) {
 		}
 		body, err := os.ReadFile(skillFile)
 		if err != nil {
-			return nil, err
+			continue
 		}
 		digest, err := runtimeSkillDigest(path)
 		if err != nil {
-			return nil, err
+			continue
 		}
 		out = append(out, core.RuntimeSkill{Name: entry.Name(), Path: path, Digest: digest, Summary: runtimeSkillSummary(body)})
 	}
