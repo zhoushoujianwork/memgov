@@ -4,8 +4,8 @@ These guidelines apply to development, AI collaboration, and design-document mai
 
 ## Working Language
 
-- Use Chinese (中文) by default when communicating with the user, including progress updates and delivery summaries, so the user can understand the work clearly. Follow an explicit request for another language.
-- Use English by default for implementation plans, code, code comments, commit messages, and documentation updates. User-facing conversation and delivery summaries follow the Chinese preference above unless explicitly overridden.
+- Use English by default when communicating with the user, including progress updates and delivery summaries. Use simple wording and add a brief Chinese explanation (中文释义) when a technical term or phrase may be difficult to understand; full bilingual translations are not necessary.
+- Use English by default for implementation plans, code, code comments, commit messages, and documentation updates. Follow an explicit language request for the conversation or artifact.
 - If a Chinese product term, organization-specific phrase, or business concept has no precise and natural English equivalent, write the clearest English explanation and retain the original Chinese as a parenthetical annotation, for example: `proactive duty monitoring (主动值守)`.
 - Preserve official product names, API field names, commands, identifiers, and quoted source text in their original form. Do not translate them when doing so would make them inaccurate or harder to search.
 - Follow an explicit language request from the user for that conversation or artifact.
