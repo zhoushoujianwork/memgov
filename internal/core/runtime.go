@@ -2561,9 +2561,6 @@ func (tx *Tx) prepareTaskDelivery(ctx context.Context, taskID, purpose string) (
 	if purpose != RuntimeReceiptPurpose && (RuntimeReactionPurpose(purpose) || purpose == RuntimeFailureNoticePurpose) && (c.Status != "running" || !contains([]string{"direct", "group_mention"}, c.ApplicationMode)) {
 		return out, Fail("denied", "only active interactive Agents publish task stage reactions")
 	}
-	if purpose == RuntimeFailureNoticePurpose && c.ApplicationMode == "group_mention" && !runtimeTaskHasReportableResult(t) {
-		return out, Fail("conflict", "group task has no result to report")
-	}
 	if RuntimeReactionPurpose(purpose) && c.ApplicationMode == "direct" && len(t.Messages) == 1 && DirectCommand(t.Messages[0].Body) != "" {
 		return out, Fail("conflict", "system command does not need an Agent acknowledgement")
 	}

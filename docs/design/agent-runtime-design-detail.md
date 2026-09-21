@@ -126,7 +126,7 @@ clarification → pending（补充或显式 retry）
 启动恢复执行以下操作：
 
 - `analyzing` 批次标记失败，关联消息退回 `pending`，允许重新分析；
-- 本地 `running` 任务和尝试标记 `failed/runtime_restarted`，群任务随后发布失败回执，由任务 retry 或 resume 恢复；
+- 本地 `running` 任务和尝试标记 `failed/runtime_restarted`，群任务随后发布失败回执和脱敏文字说明，由任务 retry 或 resume 恢复；
 - 已确认接收的 Owner 私聊任务由机器人发送一次幂等失败通知；直接 Agent 单轮最长运行 30 分钟，超时进入同一失败收尾链路；
 - 失败通知包含白名单化的错误代码和安全原因分类（例如 Agent/模型/本地进程不可用、超时或权限拒绝），不把 Provider stderr、凭据、URL 或原始异常文本发送到聊天；
 - `executing` 外部动作和 `sending` 投递标记 `unknown`，禁止盲目重发。

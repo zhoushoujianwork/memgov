@@ -6,7 +6,7 @@ require github.com/spf13/cobra v1.10.2
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.1
+	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.2-beta.1
 	github.com/spf13/pflag v1.0.9
 	golang.org/x/sys v0.47.0
 	gopkg.in/yaml.v3 v3.0.1

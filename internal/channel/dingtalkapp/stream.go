@@ -23,9 +23,8 @@ const maxInFlight = 16
 // buffer than this process's memory.
 const queueWait = 5 * time.Second
 
-// The upstream SDK's reconnect loop runs on context.Background(), including
-// after an intentional Close. A bounded session lets the caller take a fresh
-// lease and connection without leaving an orphaned callback subscriber.
+// A bounded session lets the caller renew its lease and connection instead of
+// relying on an indefinitely long-lived SDK connection.
 const maxStreamSessionAge = 5 * time.Minute
 
 type streamSessionClient interface {
@@ -109,8 +108,8 @@ func streamFrames(ctx context.Context, cfg channel.Config, secret string, opts S
 	}
 	cli := sdk.NewStreamClient(
 		sdk.WithAppCredential(sdk.NewAppCredentialConfig(cfg.Identity.ClientID, secret)),
-		// v0.9.1 reconnects in a background context even after Close. That can
-		// create a subscriber with no channel lease, including after a probe.
+		// The caller owns reconnection so each SDK connection stays coupled to
+		// the current channel lease and bounded session lifetime.
 		sdk.WithAutoReconnect(false),
 		sdk.WithSubscription(utils.SubscriptionTypeKCallback, payload.BotMessageCallbackTopic,
 			func(_ context.Context, frame *payload.DataFrame) (*payload.DataFrameResponse, error) {

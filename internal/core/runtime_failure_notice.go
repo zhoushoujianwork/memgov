@@ -9,17 +9,13 @@ import (
 )
 
 // RuntimeFailureNoticeTaskIDs returns failed interactive tasks that still need
-// a textual closeout. Direct tasks always receive one. Group tasks receive one
-// when processing produced a result, so a failure reaction never hides a useful
-// conclusion that can still be reported safely.
+// a textual closeout. The notice either preserves a result produced before the
+// failure or explains the stable failure category when no result was produced.
 func RuntimeFailureNoticeTaskIDs(ctx context.Context, q Queryer, runtimeID string) ([]string, error) {
 	rows, err := q.QueryContext(ctx, `SELECT t.id FROM runtime_tasks t
 JOIN runtime_configs c ON c.id=t.runtime_id
 WHERE t.runtime_id=? AND t.status IN ('failed','action_failed','action_unknown','cancelled')
 AND c.application_mode IN ('direct','group_mention')
-AND (c.application_mode='direct' OR trim(t.result)<>'' OR trim(t.result_summary)<>'' OR EXISTS(
- SELECT 1 FROM runtime_action_attempts aa WHERE aa.task_id=t.id AND (trim(aa.result)<>'' OR trim(aa.summary)<>'')
-))
 AND EXISTS(SELECT 1 FROM outbox receipt WHERE receipt.job_id=t.id AND receipt.reason=? AND receipt.state='accepted')
 AND NOT EXISTS(SELECT 1 FROM outbox notice WHERE notice.job_id=t.id AND notice.reason=? AND notice.state<>'ready')
 ORDER BY t.updated_at,t.id`, runtimeID, RuntimeReceiptPurpose, RuntimeFailureNoticePurpose)
@@ -66,9 +62,6 @@ func (tx *Tx) PrepareTaskFailureNotice(ctx context.Context, taskID string) (Outb
 	}
 	if config.Status != "running" || !contains([]string{"direct", "group_mention"}, config.ApplicationMode) || RuntimeCompletionPolicy(config) == "record_only" {
 		return out, Fail("denied", "only an active interactive runtime may publish a failure notice")
-	}
-	if config.ApplicationMode == "group_mention" && !runtimeTaskHasReportableResult(task) {
-		return out, Fail("conflict", "group task has no result to report")
 	}
 	admitted, err := runtimeTaskTriggerAdmitted(ctx, tx.Conn, config, task)
 	if err != nil {
@@ -143,20 +136,6 @@ func (tx *Tx) PrepareTaskFailureNotice(ctx context.Context, taskID string) (Outb
 	out = OutboxView{ID: NewID(), ChannelID: config.ChannelID, RouteID: route.ID, ConversationID: route.ConversationID, Transport: transport, Content: content, Format: format, State: "ready", InputDigest: digest, ReplyTo: replyTo}
 	_, err = tx.Conn.ExecContext(ctx, "INSERT INTO outbox(id,channel_id,route_id,route_version,job_id,conversation_id,audience_key,sender_identity,transport,content,format,input_digest,send_policy,state,reason,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", out.ID, out.ChannelID, out.RouteID, route.Version, task.ID, out.ConversationID, route.AudienceKey, "bot", out.Transport, out.Content, out.Format, out.InputDigest, route.SendPolicy, out.State, RuntimeFailureNoticePurpose, Now(), Now())
 	return out, err
-}
-
-func runtimeTaskHasReportableResult(task RuntimeTask) bool {
-	if strings.TrimSpace(task.Result) != "" || strings.TrimSpace(task.ResultSummary) != "" {
-		return true
-	}
-	for _, action := range task.Actions {
-		for _, attempt := range action.Attempts {
-			if strings.TrimSpace(attempt.Result) != "" || strings.TrimSpace(attempt.Summary) != "" {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func runtimeFailureNotice(task RuntimeTask) string {

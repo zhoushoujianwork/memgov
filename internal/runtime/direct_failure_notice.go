@@ -70,7 +70,7 @@ func (s *Service) deliverFailureNotice(ctx context.Context, cfg core.RuntimeConf
 		s.emit(ctx, runlog.Event{RuntimeID: cfg.ID, TaskID: taskID, Level: "error", Component: "delivery", Event: "record_failed", ErrorCode: core.ErrorCode(finishErr), Summary: "异常任务结果反馈状态记录失败"})
 		return false
 	}
-	level, summary := "info", "异常任务已有结果已反馈"
+	level, summary := "info", "异常任务失败说明已反馈"
 	if state != "accepted" {
 		level, summary = "warn", "异常任务结果反馈未确认成功"
 	}

@@ -408,6 +408,12 @@ func TestRuntimeStartReconcilesFailureMarkAfterRecoveryCrash(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	// The worker that owned the running attempt disappeared with the simulated
+	// service crash. Do not let the current test process look like a competing
+	// healthy service during startup recovery.
+	if _, err := s.Store.DB.ExecContext(ctx, "UPDATE runtime_work_leases SET owner_pid=0,owner_started='',process_pid=0,process_started='' WHERE runtime_id=? AND released=0", cfg.ID); err != nil {
+		t.Fatal(err)
+	}
 	before, err := core.ReadRuntimeTask(ctx, s.Store.DB, task.ID)
 	if err != nil || before.Status != "failed" || before.ErrorCode != "runtime_restarted" {
 		t.Fatalf("pre-restart recovery task=%+v err=%v", before, err)
@@ -417,9 +423,10 @@ func TestRuntimeStartReconcilesFailureMarkAfterRecoveryCrash(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- s.Run(runCtx, cfg.ID) }()
 	receiverEventually(t, func() bool {
-		var state string
-		err := s.Store.DB.QueryRowContext(ctx, "SELECT state FROM outbox WHERE job_id=? AND reason=?", task.ID, core.RuntimeFailureReceiptPurpose).Scan(&state)
-		return err == nil && state == "accepted"
+		var receiptState, noticeState string
+		receiptErr := s.Store.DB.QueryRowContext(ctx, "SELECT state FROM outbox WHERE job_id=? AND reason=?", task.ID, core.RuntimeFailureReceiptPurpose).Scan(&receiptState)
+		noticeErr := s.Store.DB.QueryRowContext(ctx, "SELECT state FROM outbox WHERE job_id=? AND reason=?", task.ID, core.RuntimeFailureNoticePurpose).Scan(&noticeState)
+		return receiptErr == nil && receiptState == "accepted" && noticeErr == nil && noticeState == "accepted"
 	})
 	cancel()
 	select {
@@ -437,6 +444,16 @@ func TestRuntimeStartReconcilesFailureMarkAfterRecoveryCrash(t *testing.T) {
 	adapter := s.Adapter.(*fakeAdapter)
 	if len(adapter.reactions) != 2 || adapter.reactions[1].Emoji != core.RuntimeFailureAcknowledgement || len(adapter.removed) != 1 {
 		t.Fatalf("recovery reactions=%+v removed=%+v", adapter.reactions, adapter.removed)
+	}
+	if len(adapter.requests) != 1 || adapter.requests[0].ConversationID != group.ConversationID || adapter.requests[0].ReplyTo != "interrupted-question" || adapter.requests[0].Format != "group_markdown" {
+		t.Fatalf("recovery failure was not explained in the triggering group: %+v", adapter.requests)
+	}
+	var card core.RuntimeCard
+	if err = json.Unmarshal([]byte(adapter.requests[0].Content), &card); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(card.Text, "错误代码：`runtime_restarted`") || !strings.Contains(card.Text, "服务现已恢复") || len(card.Mentions) != 1 || card.Mentions[0].IDValue != "requester" {
+		t.Fatalf("recovery failure notice was not actionable: %+v", card)
 	}
 }
 
