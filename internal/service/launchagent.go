@@ -28,6 +28,7 @@ type LaunchAgent struct {
 	domain    string
 	run       func(context.Context, ...string) error
 	sleep     func(time.Duration)
+	now       func() time.Time
 }
 
 func UserAgent(home string) (*LaunchAgent, error) {
@@ -48,6 +49,7 @@ func UserAgent(home string) (*LaunchAgent, error) {
 		return nil
 	}
 	m.sleep = time.Sleep
+	m.now = time.Now
 	return m, nil
 }
 
@@ -165,14 +167,28 @@ func (m *LaunchAgent) Start(ctx context.Context) error {
 	}
 	// launchd may finish bootout asynchronously. A bootstrap issued immediately
 	// after a stop can therefore fail even though the plist is valid. Retry the
-	// short transition window and re-inspect between attempts; this keeps the
+	// bounded transition window and re-inspect between attempts; this keeps the
 	// first start reliable instead of requiring the user to run start twice.
-	const retryWindow = 5 * time.Second
+	const retryWindow = 15 * time.Second
 	const retryInterval = 100 * time.Millisecond
-	deadline := time.Now().Add(retryWindow)
+	now := time.Now
+	if m.now != nil {
+		now = m.now
+	}
+	window := retryWindow
+	if contextDeadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(contextDeadline)
+		if remaining <= 0 {
+			return ctx.Err()
+		}
+		if remaining < window {
+			window = remaining
+		}
+	}
+	deadline := now().Add(window)
 	var lastErr error
 	for {
-		remaining := time.Until(deadline)
+		remaining := deadline.Sub(now())
 		if remaining <= 0 {
 			return lastErr
 		}
@@ -187,7 +203,7 @@ func (m *LaunchAgent) Start(ctx context.Context) error {
 			return nil
 		}
 		lastErr = err
-		remaining = time.Until(deadline)
+		remaining = deadline.Sub(now())
 		if remaining <= 0 {
 			return lastErr
 		}
@@ -201,11 +217,11 @@ func (m *LaunchAgent) Start(ctx context.Context) error {
 		if inspectErr == nil && m.Loaded {
 			return m.run(ctx, "kickstart", m.target())
 		}
-		if time.Now().After(deadline) {
+		if now().After(deadline) {
 			return lastErr
 		}
 		wait := retryInterval
-		if remaining := time.Until(deadline); remaining < wait {
+		if remaining := deadline.Sub(now()); remaining < wait {
 			wait = remaining
 		}
 		if wait <= 0 {

@@ -141,3 +141,45 @@ func TestLaunchAgentStartRetriesAsynchronousBootout(t *testing.T) {
 		t.Fatalf("start did not retry bootstrap: attempts=%d loaded=%v", bootstrapAttempts, loaded)
 	}
 }
+
+func TestLaunchAgentStartWaitsBeyondShortBootoutRace(t *testing.T) {
+	home := t.TempDir()
+	current := time.Unix(1_000, 0)
+	m := &LaunchAgent{
+		Label:  "test.memgov",
+		Path:   filepath.Join(home, "test.plist"),
+		domain: "gui/501",
+		now:    func() time.Time { return current },
+		sleep: func(time.Duration) {
+			// Advance the fake clock by one second per retry. The first
+			// successful bootstrap is intentionally beyond the old 5s window.
+			current = current.Add(time.Second)
+		},
+	}
+	if err := os.WriteFile(m.Path, []byte("plist"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded := false
+	bootstrapAttempts := 0
+	m.run = func(_ context.Context, args ...string) error {
+		switch args[0] {
+		case "print":
+			if !loaded {
+				return errors.New("not loaded")
+			}
+		case "bootstrap":
+			bootstrapAttempts++
+			if bootstrapAttempts <= 6 {
+				return errors.New("service still unloading")
+			}
+			loaded = true
+		}
+		return nil
+	}
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if bootstrapAttempts != 7 || !loaded {
+		t.Fatalf("start did not outwait the short race: attempts=%d loaded=%v", bootstrapAttempts, loaded)
+	}
+}

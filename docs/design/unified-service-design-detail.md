@@ -18,7 +18,7 @@ CLI 为启用的数据源、已管理应用及机器人通道生成模块。数�
 
 `service install` 在当前用户的 `~/Library/LaunchAgents/` 写入私有 plist，通过 `launchctl bootstrap gui/<uid>` 启动前台子命令 `service run`。Label 使用规范化数据目录的摘要隔离实例。安装固定二进制绝对路径、数据目录、配置路径、工作目录及端口；只保存 HOME 和 PATH，不复制调用者的秘密环境变量。依赖 `env://` 的凭据需另行配置 launchd 环境，或改用现有 file/keychain 引用；Claude profile 继续读取既有 zsh alias。
 
-`RunAtLoad` 与 `KeepAlive` 覆盖登录启动和进程退出恢复，`ThrottleInterval=5` 限制失败重试频率。`service stop` 先 disable 再 bootout，防止停止后被拉起，禁用跨登录保留；start 再 enable/bootstrap，restart 停止旧代际后启动。launchd 的 bootout 可能异步完成；start 对 bootstrap 使用每次 1 秒、总计 5 秒的有界重试，并在重试间重新检查 job 状态；状态检查本身最多等待 2 秒，超时返回 `unavailable`。卸载保留数据与日志。安装与启动命令等待服务心跳，返回实际模块状态；接受 bootstrap 不等于已就绪。系统退出宽限为 30 秒，超时由 launchd 结束进程；运行时原有任务与租约恢复规则继续适用。
+`RunAtLoad` 与 `KeepAlive` 覆盖登录启动和进程退出恢复，`ThrottleInterval=5` 限制失败重试频率。`service stop` 先 disable 再 bootout，防止停止后被拉起，禁用跨登录保留；start 再 enable/bootstrap，restart 停止旧代际后启动。launchd 的 bootout 可能异步完成；start 对 bootstrap 使用每次 1 秒、最长 15 秒的有界重试（若调用方超时更短则随调用方截止时间结束），并在重试间重新检查 job 状态；状态检查本身最多等待 2 秒，超时返回 `unavailable`。卸载保留数据与日志。安装与启动命令等待服务心跳，返回实际模块状态；接受 bootstrap 不等于已就绪。系统退出宽限为 30 秒，超时由 launchd 结束进程；运行时原有任务与租约恢复规则继续适用。
 
 托管进程每秒检测安装路径的文件身份、大小与修改时间；连续两次观察稳定、具有执行权限且能解析为本机可执行文件格式后，取消模块并退出，由 launchd 从原路径启动新程序。路径缺失、空文件、无执行权限和无法解析的文件不触发替换。文件格式检查不等于版本兼容性保证；损坏程序或不受支持的数据库仍需人工修复。构建先生成 `.new` 再原子改名，构建失败不覆盖现有程序。前台模式不启用自动更新检测。
 
