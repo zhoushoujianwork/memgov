@@ -222,7 +222,14 @@ func runtimeFailureNotice(task RuntimeTask) string {
 // request payloads. The stable error code and this safe category are enough to
 // explain what happened in the conversation and to correlate it with logs.
 func runtimeFailureDetails(task RuntimeTask) string {
-	code := safeRuntimeErrorCode(task.ErrorCode)
+	errorCode := task.ErrorCode
+	// Older runtimes could cancel a task before persisting the cancellation
+	// code. The terminal status is still durable truth, so keep the owner
+	// notice actionable instead of exposing the generic internal category.
+	if task.Status == "cancelled" && strings.TrimSpace(errorCode) == "" {
+		errorCode = "cancelled"
+	}
+	code := safeRuntimeErrorCode(errorCode)
 	reason := map[string]string{
 		"unavailable":       "Agent、模型或本地运行进程当前不可用，可能是连接失败、连接被拒绝、超时或进程异常退出。",
 		"timeout":           "处理超过允许的时间上限。",

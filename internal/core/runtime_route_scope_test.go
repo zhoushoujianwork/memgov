@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -182,5 +183,64 @@ VALUES(?,?,?,?,?,?,?,?,?, 'ready',?,?)`, ordinaryID, f.channel.ID, f.direct.ID, 
 	})
 	if attempt != 1 {
 		t.Fatalf("ordinary outbox was coupled to an unrelated runtime: attempt=%d", attempt)
+	}
+}
+
+func TestBeginDeliveryAllowsCancelledInteractiveFailureCloseout(t *testing.T) {
+	f := newOwnerInteractiveFixture(t)
+	ctx := context.Background()
+	runtimeMutate(t, f.s, "cancelled.closeout.capability", func(tx *Tx) (any, error) {
+		_, err := tx.SetChannelCapabilities(ctx, f.channel.ID, Capabilities{Verified: map[string]bool{"send": true}}, "fake")
+		return nil, err
+	})
+	task := createRuntimeTask(t, f, "cancelled-closeout")
+	var claimed RuntimeTask
+	runtimeMutate(t, f.s, "cancelled.closeout.claim", func(tx *Tx) (any, error) {
+		var err error
+		claimed, _, err = tx.ClaimRuntimeTask(ctx, f.config.ID, "cancelled-closeout-attempt", "model", "preset", "commit", "")
+		return claimed, err
+	})
+	if claimed.ID != task.ID {
+		t.Fatalf("task was not claimed: claimed=%+v want=%s", claimed, task.ID)
+	}
+	runtimeMutate(t, f.s, "cancelled.closeout.cancel", func(tx *Tx) (any, error) {
+		_, err := tx.SetRuntimeTaskStatus(ctx, task.ID, "cancelled")
+		return nil, err
+	})
+	var receipt OutboxView
+	runtimeMutate(t, f.s, "cancelled.closeout.prepare-receipt", func(tx *Tx) (any, error) {
+		var err error
+		receipt, err = tx.PrepareTaskFailureAcknowledgement(ctx, task.ID)
+		return receipt, err
+	})
+	var receiptAttempt int
+	runtimeMutate(t, f.s, "cancelled.closeout.begin-receipt", func(tx *Tx) (any, error) {
+		var err error
+		receiptAttempt, err = tx.BeginDelivery(ctx, receipt.ID)
+		return receiptAttempt, err
+	})
+	if receiptAttempt != 1 {
+		t.Fatalf("cancelled failure reaction did not begin: attempt=%d", receiptAttempt)
+	}
+	runtimeMutate(t, f.s, "cancelled.closeout.finish-receipt", func(tx *Tx) (any, error) {
+		return nil, tx.FinishDelivery(ctx, receipt.ID, receiptAttempt, "accepted", "reaction_added")
+	})
+	var notice OutboxView
+	runtimeMutate(t, f.s, "cancelled.closeout.prepare-notice", func(tx *Tx) (any, error) {
+		var err error
+		notice, err = tx.PrepareTaskFailureNotice(ctx, task.ID)
+		return notice, err
+	})
+	var noticeAttempt int
+	runtimeMutate(t, f.s, "cancelled.closeout.begin-notice", func(tx *Tx) (any, error) {
+		var err error
+		noticeAttempt, err = tx.BeginDelivery(ctx, notice.ID)
+		return noticeAttempt, err
+	})
+	if noticeAttempt != 1 {
+		t.Fatalf("cancelled failure notice did not begin: attempt=%d", noticeAttempt)
+	}
+	if !strings.Contains(notice.Content, "错误代码：`cancelled`") {
+		t.Fatalf("cancelled notice did not expose safe cancellation code: %s", notice.Content)
 	}
 }

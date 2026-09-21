@@ -15,11 +15,16 @@ func TestRuntimeFailureNoticeIncludesSafeActionableErrorReason(t *testing.T) {
 		{name: "unavailable", code: "unavailable", want: "连接被拒绝"},
 		{name: "permission", code: "denied", want: "权限拒绝"},
 		{name: "cancelled", code: "cancelled", want: "任务已取消"},
+		{name: "cancelled status recovers missing legacy code", code: "", want: "错误代码：`cancelled`"},
 		{name: "unknown code is sanitized", code: "unavailable\nTOKEN=PRIVATE", want: "错误代码：`internal`", avoid: "TOKEN=PRIVATE"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			notice := runtimeFailureNotice(RuntimeTask{Status: "failed", ErrorCode: tt.code})
+			status := "failed"
+			if tt.name == "cancelled" || tt.name == "cancelled status recovers missing legacy code" {
+				status = "cancelled"
+			}
+			notice := runtimeFailureNotice(RuntimeTask{Status: status, ErrorCode: tt.code})
 			if !strings.Contains(notice, tt.want) {
 				t.Fatalf("failure notice omitted actionable reason %q: %s", tt.want, notice)
 			}

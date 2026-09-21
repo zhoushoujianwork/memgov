@@ -2952,7 +2952,7 @@ func (tx *Tx) BeginDelivery(ctx context.Context, id string) (int, error) {
 		} else if purpose == RuntimeCompletionReceiptPurpose {
 			validStatus = config.Status == "running" && contains([]string{"direct", "group_mention"}, config.ApplicationMode) && task.Status == "completed" && preparedContent == RuntimeCompletionAcknowledgement && preparedFormat == "reaction"
 		} else if purpose == RuntimeFailureReceiptPurpose {
-			validStatus = config.Status == "running" && contains([]string{"direct", "group_mention"}, config.ApplicationMode) && contains([]string{"failed", "action_failed", "action_unknown"}, task.Status) && preparedContent == RuntimeFailureAcknowledgement && preparedFormat == "reaction"
+			validStatus = config.Status == "running" && contains([]string{"direct", "group_mention"}, config.ApplicationMode) && contains([]string{"failed", "action_failed", "action_unknown", "cancelled"}, task.Status) && preparedContent == RuntimeFailureAcknowledgement && preparedFormat == "reaction"
 		} else if purpose == RuntimeFailureNoticePurpose {
 			expectedContent := formatRuntimeDelivery(task, config, runtimeFailureNotice(task))
 			expectedFormat := "markdown"
@@ -2967,7 +2967,7 @@ func (tx *Tx) BeginDelivery(ctx context.Context, id string) (int, error) {
 				expectedContent = JSON(card)
 				expectedFormat = "group_markdown"
 			}
-			validStatus = config.Status == "running" && contains([]string{"direct", "group_mention"}, config.ApplicationMode) && contains([]string{"failed", "action_failed", "action_unknown"}, task.Status) && preparedContent == expectedContent && preparedFormat == expectedFormat
+			validStatus = config.Status == "running" && contains([]string{"direct", "group_mention"}, config.ApplicationMode) && contains([]string{"failed", "action_failed", "action_unknown", "cancelled"}, task.Status) && preparedContent == expectedContent && preparedFormat == expectedFormat
 		}
 		if !admitted || !current || preparedDigest != versionDigest || !validStatus {
 			return 0, Fail("conflict", "runtime task or trigger changed before delivery")
