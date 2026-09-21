@@ -909,7 +909,19 @@ func (s *Service) executeClaimedAction(ctx context.Context, cfg core.RuntimeConf
 		s.failAction(ctx, cfg, action, attempt, err, false)
 		return true
 	}
-	result, executeErr := s.Actioner.ExecuteConfirmedAction(ctx, ActionExecutionInput{Task: task, Action: action, WorkDir: workdir, Preset: preset, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile})
+	taskConfig := cfg
+	taskConfig.AgentCapabilities, taskConfig.MemoryScope = policy.Capabilities, policy.MemoryScope
+	workspace, workspaceErr := core.RuntimeTaskWorkspace(ctx, s.Store.DB, task)
+	if workspaceErr != nil && core.ErrorCode(workspaceErr) != "not_found" {
+		s.failAction(ctx, cfg, action, attempt, workspaceErr, false)
+		return true
+	}
+	memoryContext, memoryErr := s.runtimeMemoryContext(ctx, taskConfig, task, workspace)
+	if memoryErr != nil && core.ErrorCode(memoryErr) != "not_found" {
+		s.failAction(ctx, cfg, action, attempt, memoryErr, false)
+		return true
+	}
+	result, executeErr := s.Actioner.ExecuteConfirmedAction(ctx, ActionExecutionInput{Task: task, Action: action, MemoryContext: memoryContext, WorkDir: workdir, Preset: preset, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile})
 	if ctx.Err() != nil {
 		executeErr = workError(ctx, "execution")
 	}
@@ -1334,17 +1346,38 @@ func (s *Service) runtimeMemoryContext(ctx context.Context, cfg core.RuntimeConf
 	// preload memgov memory on every message; the explicit memory skill remains
 	// available when the Agent decides it is relevant. Observations are evidence
 	// for a separate task, never a request to preload the owner's private history.
-	if cfg.ApplicationMode == "direct" || cfg.ApplicationMode == "group_mention" || cfg.ApplicationMode == "proactive" {
+	if cfg.ApplicationMode == "direct" || cfg.ApplicationMode == "proactive" {
 		return "", nil
 	}
 	if !hasAgentCapability(cfg.AgentCapabilities, "memory_read") {
 		return "", nil
+	}
+	if cfg.ApplicationMode == "group_mention" {
+		query := task.Title
+		if !kubernetesRoutingIntent(query) {
+			return "", nil
+		}
+		contextValue, err := s.audienceMemoryContext(ctx, cfg, task, query)
+		if err != nil {
+			return "", err
+		}
+		if !hasKubernetesRouteEvidence(contextValue) {
+			contextValue, err = s.audienceMemoryContext(ctx, cfg, task, kubernetesRoutingQuery(query))
+			if err != nil {
+				return "", err
+			}
+		}
+		return contextValue, nil
 	}
 	if cfg.MemoryScope != "conversation_published" {
 		query := task.QueryText()
 		recall, err := core.Recall(ctx, s.Store.DB, query, core.SearchOptions{Scope: workspace.ID, Limit: 10}, 12000, false)
 		return recall.Context, err
 	}
+	return s.audienceMemoryContext(ctx, cfg, task, task.QueryText())
+}
+
+func (s *Service) audienceMemoryContext(ctx context.Context, cfg core.RuntimeConfig, task core.RuntimeTask, query string) (string, error) {
 	route, err := core.ReadRoute(ctx, s.Store.DB, task.RouteID)
 	if err != nil {
 		return "", err
@@ -1352,10 +1385,6 @@ func (s *Service) runtimeMemoryContext(ctx context.Context, cfg core.RuntimeConf
 	audience, err := core.AudienceFor(ctx, s.Store.DB, cfg.ChannelID, route.ConversationID)
 	if err != nil {
 		return "", err
-	}
-	query := task.QueryText()
-	if cfg.ApplicationMode == "group_mention" {
-		query = task.Title
 	}
 	value, err := core.AudienceRecall(ctx, s.Store.DB, audience, query, 12000, false)
 	if err != nil {
@@ -1367,6 +1396,25 @@ func (s *Service) runtimeMemoryContext(ctx context.Context, cfg core.RuntimeConf
 	}
 	contextValue, _ := result["context"].(string)
 	return contextValue, nil
+}
+
+func kubernetesRoutingIntent(query string) bool {
+	query = strings.ToLower(query)
+	for _, term := range []string{"k8s", "kubernetes", "kubectl", "kubeconfig", "tke", "pod", "namespace", "命名空间", "集群", "cluster", "data-prod"} {
+		if strings.Contains(query, term) {
+			return true
+		}
+	}
+	return false
+}
+
+func kubernetesRoutingQuery(query string) string {
+	return strings.TrimSpace(query + " 北京生产 data-prod changebjprod kubeconfig context")
+}
+
+func hasKubernetesRouteEvidence(contextValue string) bool {
+	value := strings.ToLower(contextValue)
+	return strings.Contains(value, "kubeconfig") && strings.Contains(value, "context")
 }
 
 func (s *Service) runtimeHotwordContext(ctx context.Context, cfg core.RuntimeConfig, task core.RuntimeTask, workspace core.Workspace) (string, error) {

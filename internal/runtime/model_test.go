@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -253,12 +254,33 @@ func TestConfirmedActionHasSeparateOneActionPrompt(t *testing.T) {
 		input, args = string(raw), append([]string{}, argv...)
 		return claudeResult(t, map[string]any{"result": "done", "summary": "sent", "artifacts": []string{}, "tool_kinds": []string{"dws"}}), nil
 	}}
-	result, err := c.ExecuteConfirmedAction(context.Background(), ActionExecutionInput{Task: core.RuntimeTask{ID: "task", Version: 2}, Action: core.RuntimePendingAction{ID: "action", TaskVersion: 2, Kind: "send_message", Target: "user", Payload: "hello"}, WorkDir: p.Path, Preset: p})
+	result, err := c.ExecuteConfirmedAction(context.Background(), ActionExecutionInput{Task: core.RuntimeTask{ID: "task", Version: 2}, Action: core.RuntimePendingAction{ID: "action", TaskVersion: 2, Kind: "send_message", Target: "user", Payload: "hello"}, MemoryContext: "kubeconfig /Users/mikas/.kube/tencent-bj-prod.conf; context cls-94le9mxr-100019171796-context-default", WorkDir: p.Path, Preset: p})
 	if err != nil || result.Result != "done" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	if !strings.Contains(input, `"confirmed_action"`) || !strings.Contains(strings.Join(args, " "), "--allowedTools Read,Glob,Grep,Bash") {
+	if !strings.Contains(input, `"confirmed_action"`) || !strings.Contains(input, "tencent-bj-prod.conf") || !strings.Contains(strings.Join(args, " "), "--allowedTools Read,Glob,Grep,Bash") || !strings.Contains(strings.Join(args, " "), "explicit kubeconfig") {
 		t.Fatalf("confirmed action contract missing: input=%s args=%q", input, args)
+	}
+}
+
+func TestExecutionSchemasAllowOmittedEmptyCollections(t *testing.T) {
+	for name, schema := range map[string]string{"execution": executionSchema, "memory": memoryExecutionSchema, "action": actionExecutionSchema} {
+		var value struct {
+			Required []string `json:"required"`
+		}
+		if err := json.Unmarshal([]byte(schema), &value); err != nil {
+			t.Fatalf("%s schema is invalid: %v", name, err)
+		}
+		for _, field := range []string{"artifacts", "tool_kinds", "pending_actions"} {
+			if slices.Contains(value.Required, field) {
+				t.Fatalf("%s schema still requires optional collection %q: %v", name, field, value.Required)
+			}
+		}
+	}
+	var result core.RuntimeAttemptResult
+	normalizeAttemptResult(&result)
+	if result.Artifacts == nil || result.ToolKinds == nil || result.Actions == nil {
+		t.Fatalf("omitted collections were not normalized: %+v", result)
 	}
 }
 

@@ -702,3 +702,21 @@ func TestPrivateAndGroupTurnsDoNotPreloadMemgovMemory(t *testing.T) {
 		}
 	}
 }
+
+func TestKubernetesRoutingIntentAddsFocusedClusterTerms(t *testing.T) {
+	if !kubernetesRoutingIntent("帮忙看一下 data-prod 的 pod 为什么没起来") {
+		t.Fatal("Kubernetes incident was not recognized")
+	}
+	if kubernetesRoutingIntent("今天辛苦了") {
+		t.Fatal("ordinary group message triggered Kubernetes recall")
+	}
+	query := kubernetesRoutingQuery("data-prod pod restart")
+	for _, term := range []string{"北京生产", "data-prod", "changebjprod", "kubeconfig", "context"} {
+		if !strings.Contains(query, term) {
+			t.Fatalf("focused query missing %q: %s", term, query)
+		}
+	}
+	if !hasKubernetesRouteEvidence("kubeconfig /tmp/prod.conf, context cls-94le9mxr") {
+		t.Fatal("explicit cluster route evidence was not recognized")
+	}
+}
