@@ -741,7 +741,10 @@ func (s *Service) tick(ctx context.Context, cfg core.RuntimeConfig, preset agent
 	if syncResult.Pending > 0 || syncResult.Revised > 0 || syncResult.Recalled > 0 {
 		s.emit(ctx, runlog.Event{RuntimeID: cfg.ID, Level: "info", Component: "intake", Event: "messages_synced", Status: "ready", Summary: fmt.Sprintf("发现 %d 条待分析消息", syncResult.Pending+syncResult.Revised)})
 	}
-	for n := 0; n < cfg.AnalysisConcurrency; n++ {
+	for n := 0; ; n++ {
+		if cfg.ApplicationMode != "group_mention" && n >= cfg.AnalysisConcurrency {
+			break
+		}
 		if !s.reserveSlot(cfg, "analysis") {
 			break
 		}
@@ -775,7 +778,7 @@ func (s *Service) tick(ctx context.Context, cfg core.RuntimeConfig, preset agent
 					s.releaseSlot(cfg, "analysis")
 				}
 				s.queueDirectTurn(ctx, cfg, batch)
-			} else if cfg.ApplicationMode == "proactive" && s.concurrent {
+			} else if (cfg.ApplicationMode == "proactive" || cfg.ApplicationMode == "group_mention") && s.concurrent {
 				s.workers.Add(1)
 				go func(batch core.RuntimeBatch) {
 					defer s.workers.Done()
@@ -792,16 +795,21 @@ func (s *Service) tick(ctx context.Context, cfg core.RuntimeConfig, preset agent
 		} else if reservedAnalysis {
 			s.releaseSlot(cfg, "analysis")
 		}
-		if batch.ID == "" || cfg.ApplicationMode != "proactive" || !s.concurrent {
+		if batch.ID == "" || (cfg.ApplicationMode != "proactive" && cfg.ApplicationMode != "group_mention") || !s.concurrent {
 			break
 		}
 	}
 	if s.executeOneConfirmedAction(ctx, cfg, preset) {
 		return
 	}
-	for n := 0; n < cfg.Concurrency; n++ {
-		s.executeOne(ctx, cfg, preset)
-		if cfg.ApplicationMode != "proactive" || !s.concurrent {
+	for n := 0; ; n++ {
+		if cfg.ApplicationMode != "group_mention" && n >= cfg.Concurrency {
+			break
+		}
+		if !s.executeOne(ctx, cfg, preset) {
+			break
+		}
+		if cfg.ApplicationMode != "proactive" && cfg.ApplicationMode != "group_mention" || !s.concurrent {
 			break
 		}
 	}
@@ -838,7 +846,7 @@ func (s *Service) executeOneConfirmedAction(ctx context.Context, cfg core.Runtim
 		}
 		return false
 	}
-	if cfg.ApplicationMode == "proactive" && s.concurrent {
+	if (cfg.ApplicationMode == "proactive" || cfg.ApplicationMode == "group_mention") && s.concurrent {
 		s.workers.Add(1)
 		go func() {
 			defer s.workers.Done()
@@ -1042,9 +1050,9 @@ func (s *Service) analyze(ctx context.Context, cfg core.RuntimeConfig, batch cor
 	}
 }
 
-func (s *Service) executeOne(ctx context.Context, cfg core.RuntimeConfig, preset agent.Preset) {
+func (s *Service) executeOne(ctx context.Context, cfg core.RuntimeConfig, preset agent.Preset) bool {
 	if !s.reserveSlot(cfg, "execution") {
-		return
+		return false
 	}
 	reserved := cfg.ApplicationMode == "proactive" && s.concurrent
 	ready, err := core.RuntimeTaskReady(ctx, s.Store.DB, cfg.ID)
@@ -1052,7 +1060,7 @@ func (s *Service) executeOne(ctx context.Context, cfg core.RuntimeConfig, preset
 		if reserved {
 			s.releaseSlot(cfg, "execution")
 		}
-		return
+		return false
 	}
 	attemptID := core.NewID()
 	var task core.RuntimeTask
@@ -1066,9 +1074,9 @@ func (s *Service) executeOne(ctx context.Context, cfg core.RuntimeConfig, preset
 		if reserved {
 			s.releaseSlot(cfg, "execution")
 		}
-		return
+		return false
 	}
-	if cfg.ApplicationMode == "proactive" && s.concurrent {
+	if (cfg.ApplicationMode == "proactive" || cfg.ApplicationMode == "group_mention") && s.concurrent {
 		s.workers.Add(1)
 		go func() {
 			defer s.workers.Done()
@@ -1076,16 +1084,17 @@ func (s *Service) executeOne(ctx context.Context, cfg core.RuntimeConfig, preset
 			defer s.releaseSlot(cfg, "execution")
 			s.executeClaimed(ctx, cfg, preset, task, attempt)
 		}()
-		return
+		return true
 	}
 	s.executeClaimed(ctx, cfg, preset, task, attempt)
+	return true
 }
 
 func (s *Service) executeClaimed(ctx context.Context, cfg core.RuntimeConfig, preset agent.Preset, task core.RuntimeTask, attempt core.RuntimeAttempt) {
 	var finishTask func()
 	ctx, finishTask = s.taskContext(ctx, task.ID, task.Version)
 	defer finishTask()
-	if cfg.ApplicationMode == "proactive" {
+	if cfg.ApplicationMode == "proactive" || cfg.ApplicationMode == "group_mention" {
 		var finish func()
 		ctx, finish = s.workContext(ctx, attempt.ID, task.ID, task.Version)
 		defer finish()

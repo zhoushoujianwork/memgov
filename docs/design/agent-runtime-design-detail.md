@@ -12,6 +12,8 @@
 
 配置增加 `analysis_concurrency`、`execution_concurrency`、`analysis_timeout_seconds`、`execution_timeout_seconds`、`review_timeout_seconds`；旧 `concurrency` 与新执行字段冲突时拒绝。并发 1–32，截止为 1–86400 秒整数；YAML 明确的 0、负数与非整数不能关闭超时。旧配置省略执行字段时保留 1，示例显式启用 8/4。调低额度仅限制新领取，已领取绝对截止不变。
 
+群 `group_mention` 运行时收到有效 @ 后按群独立并发派发给执行 Agent，不占用 proactive 的共享槽位；同一群仍按该会话的接收顺序领取，慢群不会阻塞其他群。
+
 `runtime status` 与管理台显示共享分析/执行/审查槽位、排队数、最老等待、最后成功分析、重试消息、失败缺口和超时累计；这些指标不把控制心跳当作模型进展。采集连续性继续使用独立来源覆盖与缺口；任务失败、阻塞、澄清和待确认明确标记需处理。
 
 管理台 Runtime 列表增加一条全局健康快照 SQL，总查询次数固定为 3，不随 Runtime 数量增加；原有 1 秒成功缓存与刷新合并保留。第一期 `make check` 已通过，新增热降并发与跨 Runtime 配额测试也通过定向竞态检查。

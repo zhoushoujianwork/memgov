@@ -145,7 +145,7 @@ func PoolAvailable(ctx context.Context, q Queryer, c RuntimeConfig, kind string)
 }
 
 func (tx *Tx) claimWork(ctx context.Context, c RuntimeConfig, kind, id, route, task string, version int) error {
-	if c.ApplicationMode != "proactive" {
+	if c.ApplicationMode != "proactive" && c.ApplicationMode != "group_mention" {
 		return nil
 	}
 	seconds := c.ExecutionTimeoutSeconds

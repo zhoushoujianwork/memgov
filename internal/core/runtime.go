@@ -1270,18 +1270,24 @@ func (tx *Tx) FailRuntimeBatch(ctx context.Context, id, code string) error {
 		if err = tx.Conn.QueryRowContext(ctx, `SELECT attempt FROM runtime_batches WHERE id=?`, id).Scan(&attempt); err != nil {
 			return err
 		}
+		var mode string
+		if err = tx.Conn.QueryRowContext(ctx, `SELECT application_mode FROM runtime_configs c JOIN runtime_batches b ON b.runtime_id=c.id WHERE b.id=?`, id).Scan(&mode); err != nil {
+			return err
+		}
 		retry := code == "unavailable" || code == "analysis_timeout" || code == "runtime_restarted"
 		state, next := "analysis_failed", ""
 		if code == "conflict" {
 			state = "pending"
 		} else if retry && attempt < 3 {
 			state = "pending"
-			delay := 5 * time.Second
-			if attempt > 1 {
-				delay = 30 * time.Second
+			if !(mode == "group_mention" && code == "runtime_restarted") {
+				delay := 5 * time.Second
+				if attempt > 1 {
+					delay = 30 * time.Second
+				}
+				delay += time.Duration(time.Now().UnixNano()%1000) * time.Millisecond
+				next = time.Now().UTC().Add(delay).Format(time.RFC3339Nano)
 			}
-			delay += time.Duration(time.Now().UnixNano()%1000) * time.Millisecond
-			next = time.Now().UTC().Add(delay).Format(time.RFC3339Nano)
 		}
 		if _, err = tx.Conn.ExecContext(ctx, `UPDATE runtime_batches SET next_run_at=? WHERE id=?`, next, id); err != nil {
 			return err
@@ -1614,7 +1620,7 @@ func (tx *Tx) ClaimRuntimeTask(ctx context.Context, value, attemptID, model, pre
 (SELECT count(*) FROM runtime_action_attempts aa JOIN runtime_tasks rt ON rt.id=aa.task_id WHERE rt.runtime_id=? AND aa.status='running')`, c.ID, c.ID).Scan(&active); err != nil {
 		return t, a, err
 	}
-	if (c.ApplicationMode != "proactive" && active > 0) || active >= c.Concurrency {
+	if (c.ApplicationMode != "proactive" && c.ApplicationMode != "group_mention" && active > 0) || (c.ApplicationMode != "group_mention" && active >= c.Concurrency) {
 		return t, a, nil
 	}
 	if !inMemoryCapacity(ctx) {
@@ -2043,7 +2049,7 @@ func (tx *Tx) ClaimRuntimeAction(ctx context.Context, value, attemptID, model st
 (SELECT count(*) FROM runtime_action_attempts aa JOIN runtime_tasks rt ON rt.id=aa.task_id WHERE rt.runtime_id=? AND aa.status='running')`, c.ID, c.ID).Scan(&active); err != nil {
 		return action, attempt, err
 	}
-	if (c.ApplicationMode != "proactive" && active > 0) || active >= c.Concurrency {
+	if (c.ApplicationMode != "proactive" && c.ApplicationMode != "group_mention" && active > 0) || (c.ApplicationMode != "group_mention" && active >= c.Concurrency) {
 		return action, attempt, nil
 	}
 	err = tx.Conn.QueryRowContext(ctx, `SELECT a.id,a.task_id,a.task_version,a.kind,a.target,a.payload,a.payload_digest,a.status,a.confirmed_by,a.confirmation_origin,a.created_at,a.updated_at
@@ -2265,6 +2271,9 @@ AND task_id IN (SELECT id FROM runtime_tasks WHERE runtime_id=?)`, now, c.ID); e
 	batchRows.Close()
 	for _, id := range ids {
 		if err = tx.FailRuntimeBatch(ctx, id, "runtime_restarted"); err != nil {
+			return out, err
+		}
+		if err = tx.ReleaseWorkLease(ctx, id); err != nil {
 			return out, err
 		}
 		out.Batches++
