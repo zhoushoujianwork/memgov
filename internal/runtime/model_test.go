@@ -258,7 +258,7 @@ func TestConfirmedActionHasSeparateOneActionPrompt(t *testing.T) {
 	if err != nil || result.Result != "done" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	if !strings.Contains(input, `"confirmed_action"`) || !strings.Contains(input, "tencent-bj-prod.conf") || !strings.Contains(strings.Join(args, " "), "--allowedTools Read,Glob,Grep,Bash") || !strings.Contains(strings.Join(args, " "), "explicit kubeconfig") {
+	if !strings.Contains(input, `"confirmed_action"`) || !strings.Contains(input, "tencent-bj-prod.conf") || !strings.Contains(strings.Join(args, " "), "--allowedTools Read,Glob,Grep,Bash") || !strings.Contains(strings.Join(args, " "), "explicit kubeconfig") || !strings.Contains(strings.Join(args, " "), "bounded task workspace inputs") {
 		t.Fatalf("confirmed action contract missing: input=%s args=%q", input, args)
 	}
 }
