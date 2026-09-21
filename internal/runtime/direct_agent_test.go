@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -349,18 +351,75 @@ func TestDirectAgentReceivesConfiguredWorkspacePath(t *testing.T) {
 }
 
 func TestDirectAgentCancelledTurnClosesStream(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("direct process-group cleanup is Unix-specific")
+	}
 	c, in, _ := directAgentFixture(t)
 	defer c.CloseDirectSessions()
 	binary := filepath.Join(in.Home, "fake-claude")
-	if err := os.WriteFile(binary, []byte("#!/usr/bin/env python3\nimport sys,time\nfor line in sys.stdin:\n time.sleep(30)\n"), 0700); err != nil {
+	childPID := filepath.Join(in.Home, "child.pid")
+	t.Setenv("DIRECT_TEST_CHILD_PID", childPID)
+	script := "#!/usr/bin/env python3\nimport os, subprocess, sys, time\nchild = subprocess.Popen(['sleep', '60'])\nwith open(os.environ['DIRECT_TEST_CHILD_PID'], 'w', encoding='utf-8') as pid:\n pid.write(str(child.pid))\n pid.flush()\nfor line in sys.stdin:\n time.sleep(30)\n"
+	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	start := time.Now()
-	if _, err := c.Execute(ctx, in); err == nil || time.Since(start) > 3*time.Second {
-		t.Fatalf("cancelled native Claude stream did not exit promptly: error=%v elapsed=%v", err, time.Since(start))
+	result := make(chan error, 1)
+	go func() {
+		_, err := c.Execute(ctx, in)
+		result <- err
+	}()
+	startupDeadline := time.Now().Add(3 * time.Second)
+	for {
+		if _, err := os.Stat(childPID); err == nil {
+			break
+		}
+		select {
+		case err := <-result:
+			t.Fatalf("native Claude exited before recording child PID: %v", err)
+		default:
+		}
+		if time.Now().After(startupDeadline) {
+			t.Fatal("native Claude did not record child PID before startup deadline")
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
+	cancel()
+	var executeErr error
+	select {
+	case executeErr = <-result:
+	case <-time.After(3 * time.Second):
+		t.Fatal("cancelled native Claude stream did not exit promptly")
+	}
+	if executeErr == nil || time.Since(start) > 6*time.Second {
+		t.Fatalf("cancelled native Claude stream did not exit promptly: error=%v elapsed=%v", executeErr, time.Since(start))
+	}
+	rawPID, err := os.ReadFile(childPID)
+	if err != nil {
+		t.Fatalf("cancelled native Claude did not record child PID: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(rawPID)))
+	if err != nil || pid <= 1 {
+		t.Fatalf("cancelled native Claude recorded invalid child PID %q: %v", rawPID, err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && processAlive(pid) {
+		time.Sleep(25 * time.Millisecond)
+	}
+	if processAlive(pid) {
+		t.Fatalf("cancelled native Claude left child process %d alive", pid)
+	}
+}
+
+func processAlive(pid int) bool {
+	output, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "stat=").Output()
+	if err != nil {
+		return false
+	}
+	state := strings.TrimSpace(string(output))
+	return state != "" && !strings.HasPrefix(state, "Z")
 }
 
 func TestDirectAgentTurnTimeoutAllowsThirtyMinutes(t *testing.T) {

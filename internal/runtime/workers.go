@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/zhoushoujianwork/memgov/internal/core"
@@ -14,6 +15,48 @@ func workError(ctx context.Context, stage string) error {
 		return core.Fail(stage+"_timeout", "%s deadline exceeded", stage)
 	}
 	return core.Fail("conflict", "work cancelled or superseded")
+}
+
+// taskContext keeps a claimed task's process-bound execution tied to its
+// durable state. Cancelling a task through the CLI changes its status and
+// version in SQLite; this watcher turns that change into context cancellation
+// so a model or tool process can stop instead of continuing invisibly.
+func (s *Service) taskContext(parent context.Context, taskID string, version int) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(parent)
+	done := make(chan struct{})
+	var once sync.Once
+	finish := func() {
+		once.Do(func() {
+			close(done)
+			cancel()
+		})
+	}
+	go func() {
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				checkCtx, checkCancel := context.WithTimeout(context.Background(), time.Second)
+				var status string
+				var currentVersion int
+				err := s.Store.DB.QueryRowContext(checkCtx, "SELECT status,version FROM runtime_tasks WHERE id=?", taskID).Scan(&status, &currentVersion)
+				checkCancel()
+				// Completion and confirmation states still need the caller's
+				// context for delivery and acknowledgement work. Only durable
+				// invalidation states should interrupt the active Agent.
+				if err == nil && (status == "cancelled" || status == "stale" || (status == "running" && currentVersion != version)) {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return ctx, finish
 }
 
 // workContext creates the one durable deadline for a piece of work. Runtime

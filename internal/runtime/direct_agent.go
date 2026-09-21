@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/zhoushoujianwork/memgov/internal/core"
+	"github.com/zhoushoujianwork/memgov/internal/processtree"
 	"github.com/zhoushoujianwork/memgov/internal/sysprompt"
 )
 
@@ -39,6 +40,7 @@ type directSession struct {
 	stdin                 io.WriteCloser
 	stdout                io.ReadCloser
 	scanner               *bufio.Scanner
+	finishProcess         func()
 	dir                   string
 	model                 string
 	profile               string
@@ -94,7 +96,15 @@ func (s *directSession) close() {
 		_ = s.stdout.Close()
 	}
 	if s.cmd != nil && s.cmd.Process != nil {
+		// Kill the leader on every platform. On Unix the process-tree cleanup
+		// below also kills descendants before Wait can block on inherited pipes.
 		_ = s.cmd.Process.Kill()
+	}
+	if s.finishProcess != nil {
+		s.finishProcess()
+		s.finishProcess = nil
+	}
+	if s.cmd != nil && s.cmd.Process != nil {
 		_ = s.cmd.Wait()
 	}
 }
@@ -294,9 +304,14 @@ func (c *Claude) startDirectSession(ctx context.Context, in ExecutionInput, prof
 	if binary == "" {
 		binary = "claude"
 	}
-	cmd := exec.Command(binary, args...)
+	// CommandContext with a non-cancellable context lets processtree.Bind install
+	// a process-group-aware Cancel callback while keeping the native session
+	// alive across independent direct turns.
+	cmd := exec.CommandContext(context.Background(), binary, args...)
+	finishProcess := processtree.Bind(cmd)
 	if in.RecordSession != nil {
 		if err := in.RecordSession(ctx, agentSessionState(in, in.NativeSessionID)); err != nil {
+			finishProcess()
 			return nil, err
 		}
 	}
@@ -306,18 +321,21 @@ func (c *Claude) startDirectSession(ctx context.Context, in ExecutionInput, prof
 	cmd.Stderr = stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		finishProcess()
 		return nil, core.Fail("unavailable", "direct Claude input pipe failed")
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		finishProcess()
 		return nil, core.Fail("unavailable", "direct Claude output pipe failed")
 	}
 	if err = cmd.Start(); err != nil {
+		finishProcess()
 		return nil, core.Fail("unavailable", "direct Claude process could not start")
 	}
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
-	return &directSession{cmd: cmd, stdin: stdin, stdout: stdout, scanner: scanner, dir: in.WorkDir, model: model, profile: profile, nativeSessionID: in.NativeSessionID, stderr: stderr,
+	return &directSession{cmd: cmd, stdin: stdin, stdout: stdout, scanner: scanner, finishProcess: finishProcess, dir: in.WorkDir, model: model, profile: profile, nativeSessionID: in.NativeSessionID, stderr: stderr,
 		recoveryPending:       true,
 		policyDigest:          directPolicyDigest(in, profile, model),
 		expectedHistoryDigest: directHistoryDigest(in.ConversationContext)}, nil

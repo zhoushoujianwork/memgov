@@ -1082,6 +1082,9 @@ func (s *Service) executeOne(ctx context.Context, cfg core.RuntimeConfig, preset
 }
 
 func (s *Service) executeClaimed(ctx context.Context, cfg core.RuntimeConfig, preset agent.Preset, task core.RuntimeTask, attempt core.RuntimeAttempt) {
+	var finishTask func()
+	ctx, finishTask = s.taskContext(ctx, task.ID, task.Version)
+	defer finishTask()
 	if cfg.ApplicationMode == "proactive" {
 		var finish func()
 		ctx, finish = s.workContext(ctx, attempt.ID, task.ID, task.Version)
