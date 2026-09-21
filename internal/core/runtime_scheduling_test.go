@@ -98,6 +98,10 @@ func TestSchedulingAtomicSharedPools(t *testing.T) {
 	}
 	// Cancellation invalidates the result but retains the slot until process reaping.
 	runtimeMutate(t, f.s, "cancel", func(tx *Tx) (any, error) { return tx.SetRuntimeTaskStatus(ctx, attempts[0].TaskID, "cancelled") })
+	cancelled, readErr := ReadRuntimeTask(ctx, f.s.DB, attempts[0].TaskID)
+	if readErr != nil || cancelled.Status != "cancelled" || cancelled.ErrorCode != "cancelled" {
+		t.Fatalf("cancellation did not preserve a safe closeout code: task=%+v err=%v", cancelled, readErr)
+	}
 	runtimeMutate(t, f.s, "still-full", func(tx *Tx) (any, error) {
 		task, _, e := tx.ClaimRuntimeTask(ctx, f.config.ID, "", "", "", "", "")
 		if task.ID != "" {

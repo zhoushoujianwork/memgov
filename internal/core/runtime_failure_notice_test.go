@@ -14,6 +14,7 @@ func TestRuntimeFailureNoticeIncludesSafeActionableErrorReason(t *testing.T) {
 	}{
 		{name: "unavailable", code: "unavailable", want: "连接被拒绝"},
 		{name: "permission", code: "denied", want: "权限拒绝"},
+		{name: "cancelled", code: "cancelled", want: "任务已取消"},
 		{name: "unknown code is sanitized", code: "unavailable\nTOKEN=PRIVATE", want: "错误代码：`internal`", avoid: "TOKEN=PRIVATE"},
 	}
 	for _, tt := range tests {

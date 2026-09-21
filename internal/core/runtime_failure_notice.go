@@ -15,7 +15,7 @@ import (
 func RuntimeFailureNoticeTaskIDs(ctx context.Context, q Queryer, runtimeID string) ([]string, error) {
 	rows, err := q.QueryContext(ctx, `SELECT t.id FROM runtime_tasks t
 JOIN runtime_configs c ON c.id=t.runtime_id
-WHERE t.runtime_id=? AND t.status IN ('failed','action_failed','action_unknown')
+WHERE t.runtime_id=? AND t.status IN ('failed','action_failed','action_unknown','cancelled')
 AND c.application_mode IN ('direct','group_mention')
 AND (c.application_mode='direct' OR trim(t.result)<>'' OR trim(t.result_summary)<>'' OR EXISTS(
  SELECT 1 FROM runtime_action_attempts aa WHERE aa.task_id=t.id AND (trim(aa.result)<>'' OR trim(aa.summary)<>'')
@@ -50,7 +50,7 @@ func (tx *Tx) PrepareTaskFailureNotice(ctx context.Context, taskID string) (Outb
 	if err != nil {
 		return out, err
 	}
-	if !contains([]string{"failed", "action_failed", "action_unknown"}, task.Status) {
+	if !contains([]string{"failed", "action_failed", "action_unknown", "cancelled"}, task.Status) {
 		return out, Fail("conflict", "task has not failed")
 	}
 	current, err := runtimeTaskMessagesCurrent(ctx, tx.Conn, taskID)
@@ -182,6 +182,8 @@ func runtimeFailureNotice(task RuntimeTask) string {
 	if result == "" {
 		base := ""
 		switch task.Status {
+		case "cancelled":
+			base = "任务已取消，未能完成；系统没有继续执行，也不会自动重试。"
 		case "action_unknown":
 			base = "服务恢复后发现刚才的外部操作结果无法确认，任务已标记为结果未知。请先检查目标系统，不要直接重试。"
 		case "action_failed":
@@ -202,6 +204,8 @@ func runtimeFailureNotice(task RuntimeTask) string {
 		status = "后续外部操作的最终状态无法确认。请先检查目标系统，不要直接重试。"
 	case "action_failed":
 		status = "后续外部操作未完成。以上是本次已经得到的结果，请检查后再决定是否重试。"
+	case "cancelled":
+		status = "任务已取消；以上是取消前已经得到的结果。系统没有继续执行，也不会自动重试。"
 	default:
 		if task.ErrorCode == "runtime_restarted" {
 			status = "刚才服务中断，处理未完整完成。服务现已恢复；以上是本次中断前已经得到的结果。"
@@ -229,7 +233,7 @@ func runtimeFailureDetails(task RuntimeTask) string {
 		"conflict":          "任务状态在处理期间发生变化，系统为避免重复执行而停止。",
 		"runtime_restarted": "服务在处理期间重启，未能完成本次任务。",
 		"internal":          "运行时发生内部错误。",
-		"cancelled":         "任务被取消，未能完成。",
+		"cancelled":         "任务已取消，未能完成。",
 		"action_failed":     "确认后的外部操作执行失败。",
 		"action_unknown":    "确认后的外部操作结果无法确认。",
 	}[code]

@@ -1798,7 +1798,11 @@ func (tx *Tx) SetRuntimeTaskStatus(ctx context.Context, id, status string) (Runt
 	default:
 		return t, Fail("invalid_input", "unsupported task transition")
 	}
-	_, err = tx.Conn.ExecContext(ctx, "UPDATE runtime_tasks SET status=?,needs_clarification=0,version=version+1,error_code='',resume='',updated_at=? WHERE id=?", status, Now(), id)
+	errorCode := ""
+	if status == "cancelled" {
+		errorCode = "cancelled"
+	}
+	_, err = tx.Conn.ExecContext(ctx, "UPDATE runtime_tasks SET status=?,needs_clarification=0,version=version+1,error_code=?,resume='',updated_at=? WHERE id=?", status, errorCode, Now(), id)
 	if err != nil {
 		return t, err
 	}
@@ -2200,7 +2204,7 @@ func RuntimeStageAcknowledgementTaskIDs(ctx context.Context, q Queryer, runtimeI
 	case RuntimeCompletionReceiptPurpose:
 		statusClause = "('completed')"
 	case RuntimeFailureReceiptPurpose:
-		statusClause = "('failed','action_failed','action_unknown')"
+		statusClause = "('failed','action_failed','action_unknown','cancelled')"
 	default:
 		return nil, Fail("invalid_input", "unsupported runtime stage acknowledgement")
 	}
@@ -2516,11 +2520,11 @@ func (tx *Tx) prepareTaskDelivery(ctx context.Context, taskID, purpose string) (
 			return out, Fail("conflict", "task has not completed")
 		}
 	case RuntimeFailureReceiptPurpose:
-		if !contains([]string{"failed", "action_failed", "action_unknown"}, t.Status) {
+		if !contains([]string{"failed", "action_failed", "action_unknown", "cancelled"}, t.Status) {
 			return out, Fail("conflict", "task has not failed")
 		}
 	case RuntimeFailureNoticePurpose:
-		if !contains([]string{"failed", "action_failed", "action_unknown"}, t.Status) {
+		if !contains([]string{"failed", "action_failed", "action_unknown", "cancelled"}, t.Status) {
 			return out, Fail("conflict", "task has not failed")
 		}
 	default:

@@ -1433,6 +1433,14 @@ func (s *Service) failTask(ctx context.Context, cfg core.RuntimeConfig, task cor
 	s.emit(ctx, runlog.Event{RuntimeID: cfg.ID, TaskID: task.ID, AttemptID: attempt.ID, Level: "error", Component: "execution", Event: "failed", DurationMS: duration, Model: attempt.Model, ErrorCode: core.ErrorCode(err), Summary: "任务执行失败，可检查后重试"})
 	if failErr == nil {
 		s.failAcknowledgement(ctx, cfg, task.ID)
+		return
+	}
+	// A CLI cancellation changes the task version and marks the running
+	// attempt stale before the worker observes context cancellation. The
+	// worker cannot overwrite that durable state with FailRuntimeTask, but it
+	// still owes the owner a terminal failure reaction and safe explanation.
+	if current, readErr := core.ReadRuntimeTask(ctx, s.Store.DB, task.ID); readErr == nil && current.Status == "cancelled" && current.Version != task.Version {
+		s.failAcknowledgement(ctx, cfg, task.ID)
 	}
 }
 
