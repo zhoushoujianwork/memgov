@@ -499,7 +499,7 @@ func (a *app) unifiedSpecs(ctx context.Context, s *core.Store) ([]localservice.S
 			if logErr != nil {
 				return logErr
 			}
-			receiver := runtimeengine.Service{Store: store, Adapter: adapter, Logger: logger, Diagnostic: a.errOut, Notify: a.runtimeWake.Notify}
+			receiver := runtimeengine.Service{Store: store, Adapter: adapter, DisableConfirmationCards: true, Logger: logger, Diagnostic: a.errOut, Notify: a.runtimeWake.Notify}
 			return receiver.ReceiveChannel(ctx, c)
 		}})
 	}

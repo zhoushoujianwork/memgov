@@ -151,4 +151,4 @@ search 对记忆和证据返回不同 kind。FTS 查询按字面短语匹配；�
 
 `--format markdown` 支持 recall 与 export，`memory graph ID --format mermaid` 输出关系图。其他命令的 text 输出为可读 JSON。Graph 的 --depth 上限 5，--limit 上限 1000。
 
-应用通道 `identity.confirmation_card_template` 接受已关联应用的 `.schema` 模板 ID。配置后群 pending 结果通过原群卡片及 Stream 回调审批，只有同企业认证 DWS 所有者可“同意”或“拒绝”；同意后执行，拒绝后取消且不能切换决定。正文、@ 对象和展示动作冻结在 Outbox；模板、来源、动作或路由变化拒绝旧卡片。详见[确认卡片](../design/dingtalk-integration-design-detail.md#群回复与确认卡片)。
+应用通道 `identity.confirmation_card_template` 接受已关联应用的 `.schema` 模板 ID。原生卡片及 Stream 回调协议已实现，但当前运行服务暂时停用卡片入口，群 pending 结果使用原群完整确认口令；恢复卡片后只有同企业认证 DWS 所有者可“同意”或“拒绝”，同意后执行，拒绝后取消且不能切换决定。正文、@ 对象和展示动作冻结在 Outbox；模板、来源、动作或路由变化拒绝旧卡片。详见[确认卡片](../design/dingtalk-integration-design-detail.md#群回复与确认卡片)。

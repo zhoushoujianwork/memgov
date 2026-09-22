@@ -263,8 +263,9 @@ func (a *app) runRuntimeWorker(ctx context.Context, value string, externalReceiv
 	}
 	service := runtimeengine.Service{
 		Home: a.home, Store: s, Adapter: adapter, ExternalReceiver: externalReceiver,
-		HarnessName: bundle.Name,
-		Analyzer:    bundle.Analyzer, Executor: bundle.Executor, Actioner: bundle.Actioner, Reviewer: bundle.Reviewer,
+		DisableConfirmationCards: true,
+		HarnessName:              bundle.Name,
+		Analyzer:                 bundle.Analyzer, Executor: bundle.Executor, Actioner: bundle.Actioner, Reviewer: bundle.Reviewer,
 		Logger: logger, Diagnostic: a.errOut,
 	}
 	if externalReceiver && a.runtimeWake != nil {

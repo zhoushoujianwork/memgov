@@ -2490,26 +2490,33 @@ func RuntimeReactionPurpose(purpose string) bool {
 }
 
 func (tx *Tx) PrepareTaskDelivery(ctx context.Context, taskID string) (OutboxView, error) {
-	return tx.prepareTaskDelivery(ctx, taskID, "result")
+	return tx.prepareTaskDelivery(ctx, taskID, "result", false)
+}
+
+// PrepareTaskDeliveryWithoutConfirmationCard keeps the existing text-token
+// confirmation path available while the native card approval integration is
+// temporarily disabled in the runtime service.
+func (tx *Tx) PrepareTaskDeliveryWithoutConfirmationCard(ctx context.Context, taskID string) (OutboxView, error) {
+	return tx.prepareTaskDelivery(ctx, taskID, "result", true)
 }
 
 func (tx *Tx) PrepareTaskAcknowledgement(ctx context.Context, taskID string) (OutboxView, error) {
-	return tx.prepareTaskDelivery(ctx, taskID, RuntimeReceiptPurpose)
+	return tx.prepareTaskDelivery(ctx, taskID, RuntimeReceiptPurpose, false)
 }
 
 func (tx *Tx) PrepareTaskProcessingAcknowledgement(ctx context.Context, taskID string) (OutboxView, error) {
-	return tx.prepareTaskDelivery(ctx, taskID, RuntimeProcessingReceiptPurpose)
+	return tx.prepareTaskDelivery(ctx, taskID, RuntimeProcessingReceiptPurpose, false)
 }
 
 func (tx *Tx) PrepareTaskCompletionAcknowledgement(ctx context.Context, taskID string) (OutboxView, error) {
-	return tx.prepareTaskDelivery(ctx, taskID, RuntimeCompletionReceiptPurpose)
+	return tx.prepareTaskDelivery(ctx, taskID, RuntimeCompletionReceiptPurpose, false)
 }
 
 func (tx *Tx) PrepareTaskFailureAcknowledgement(ctx context.Context, taskID string) (OutboxView, error) {
-	return tx.prepareTaskDelivery(ctx, taskID, RuntimeFailureReceiptPurpose)
+	return tx.prepareTaskDelivery(ctx, taskID, RuntimeFailureReceiptPurpose, false)
 }
 
-func (tx *Tx) prepareTaskDelivery(ctx context.Context, taskID, purpose string) (OutboxView, error) {
+func (tx *Tx) prepareTaskDelivery(ctx context.Context, taskID, purpose string, disableConfirmationCard bool) (OutboxView, error) {
 	var out OutboxView
 	t, err := ReadRuntimeTask(ctx, tx.Conn, taskID)
 	if err != nil {
@@ -2620,7 +2627,7 @@ func (tx *Tx) prepareTaskDelivery(ctx context.Context, taskID, purpose string) (
 		if readErr != nil {
 			return out, readErr
 		}
-		buttonCard := c.ApplicationMode == "group_mention" && app.Identity.ConfirmationCardTemplate != ""
+		buttonCard := !disableConfirmationCard && c.ApplicationMode == "group_mention" && app.Identity.ConfirmationCardTemplate != ""
 		var b strings.Builder
 		b.WriteString(strings.TrimSpace(content))
 		b.WriteString("\n\n需要你确认后才能执行的操作：")
@@ -2676,7 +2683,7 @@ func (tx *Tx) prepareTaskDelivery(ctx context.Context, taskID, purpose string) (
 		}
 		card := RuntimeCard{Text: content, TaskVersion: t.Version}
 		format = "group_markdown"
-		if t.Status == "awaiting_confirmation" && app.Identity.ConfirmationCardTemplate != "" {
+		if t.Status == "awaiting_confirmation" && !disableConfirmationCard && app.Identity.ConfirmationCardTemplate != "" {
 			format = "confirmation_card"
 			card.TemplateID = app.Identity.ConfirmationCardTemplate
 			card.Title, card.Summary, card.Details = runtimeConfirmationCardPresentation(t)

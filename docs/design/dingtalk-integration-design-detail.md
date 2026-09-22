@@ -286,7 +286,7 @@ confirmed action 使用单独 Claude 模式，加载任务上下文但只允许�
 
 2026-09-17 源码增量：普通群答复使用机器人 Markdown 消息，保留问题引用、回答和耗时栏，不创建 StandardCard；`@提问人` 放在正文末尾且只出现一次。真正的原生提醒使用触发回调自带的 `sessionWebhook` 和嵌套 `at.atUserIds`；主动群消息接口不支持 `@`，不能把返回成功误判为提醒生效。webhook 只在回调消息提交成功后进入有界进程内缓存，按 channel、conversation、provider message ID 和真实 user ID 精确匹配，不进入 SQLite、日志、模型或导出；服务重启、凭证过期或身份不匹配时，降级为正文显示昵称的一次普通 Markdown。待确认时才使用审批卡片，并增加经过同企业 DWS 认证的所有者；昵称仅作显示，不授权。群目标始终取 task 的精确触发 route，不发送跨群或私聊提醒。本文对应[主文档](dingtalk-integration-design.md)。
 
-应用通道可独立配置 `identity.confirmation_card_template: <应用关联模板ID>.schema`，通过现有配置预览、应用流程生效；不新增数据库 schema。配置后 pending 群任务使用 `format=confirmation_card`，`/v1.0/card/instances/createAndDeliver`、`callbackType=STREAM`、`userIdType=1`、原群 `openSpaceId`，禁止转发。`atUserIds` 提醒需求发起人及所有者；union ID 只有存在唯一的已核验 user ID 链接时用于高级卡片，不猜测同值地址。模板未配置时使用普通 Markdown 在原群展示口令确认，并明确提示按钮尚未配置；旧投递保留审计，不转发。
+应用通道可独立配置 `identity.confirmation_card_template: <应用关联模板ID>.schema`，通过现有配置预览、应用流程生效；不新增数据库 schema。卡片协议仍按 `format=confirmation_card`、`/v1.0/card/instances/createAndDeliver` 和 `callbackType=STREAM` 实现，但当前运行服务暂时强制使用模板未配置时的普通 Markdown 口令路径，以先恢复可用闭环；底层卡片校验和回调代码保留，后续可恢复。恢复卡片后，`userIdType=1`、原群 `openSpaceId`、`atUserIds`、冻结快照和审批回调校验规则不变。
 
 部署者可关联自有审批模板。模板变量、纯文本转换、截断、同意/拒绝回调及授权边界按本节协议执行；真实模板 ID 不进入公开仓库。
 

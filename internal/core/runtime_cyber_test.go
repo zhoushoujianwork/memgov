@@ -84,7 +84,7 @@ func TestCyberOwnerWithoutDeliveryRouteInvestigatesAndRecordsBlockedWork(t *test
 		t.Fatalf("background blocker: %+v", task)
 	}
 	for _, purpose := range []string{"result", RuntimeReceiptPurpose, RuntimeProcessingReceiptPurpose, RuntimeCompletionReceiptPurpose, RuntimeFailureReceiptPurpose, "confirmation"} {
-		_, err := f.s.Mutate(ctx, Request{Scope: "global", Command: "cyber.no-notice"}, func(tx *Tx) (any, error) { return tx.prepareTaskDelivery(ctx, task.ID, purpose) })
+		_, err := f.s.Mutate(ctx, Request{Scope: "global", Command: "cyber.no-notice"}, func(tx *Tx) (any, error) { return tx.prepareTaskDelivery(ctx, task.ID, purpose, false) })
 		if err == nil {
 			t.Fatalf("background %s generated a notification", purpose)
 		}

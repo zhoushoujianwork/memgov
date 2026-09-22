@@ -906,3 +906,46 @@ func TestGroupConfirmationCardExecutesAfterOwnerClickAndMentionsRequester(t *tes
 		t.Fatal("repeated execution or reply")
 	}
 }
+
+func TestGroupPendingActionUsesTextConfirmationWhenCardsAreDisabled(t *testing.T) {
+	s, cfg, app, group, _ := setupGroupMentionService(t)
+	ctx := context.Background()
+	identity := app.Identity
+	identity.ConfirmationCardTemplate = "confirm.schema"
+	if _, err := s.Store.DB.Exec(`UPDATE channels SET identity=? WHERE id=?`, core.JSON(identity), app.ID); err != nil {
+		t.Fatal(err)
+	}
+	s.DisableConfirmationCards = true
+	s.Analyzer = &contextOnlyAnalyzer{}
+	s.Executor = &modelReportingExecutor{actions: []core.RuntimeAction{{Kind: "infra_change", Target: "test", Payload: "change capacity"}}}
+	s.Actioner = &cardActioner{}
+	preset, err := agent.Enable(ctx, s.Home, "claude", "claude-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.mutate(ctx, "global", "text-confirmation.request", func(tx *core.Tx) (any, error) {
+		return tx.Intake(ctx, app.ID, core.NormalizedEvent{Kind: core.EventMessage, Adapter: "fake", ParseVersion: "1", Origin: "stream", ProviderMessageID: "text-confirmation-question", ConversationID: group.ConversationID, ConversationType: "group", Tenant: app.Tenant, Sender: core.Sender{IDType: "user_id", IDValue: "requester"}, Mentioned: true, Body: "请调整", SentAt: time.Now().UTC().Format(time.RFC3339Nano)})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.tick(ctx, cfg, preset)
+	adapter := s.Adapter.(*fakeAdapter)
+	if len(adapter.requests) != 1 || adapter.requests[0].Format != "group_markdown" {
+		t.Fatalf("disabled card approval still used card delivery: %+v", adapter.requests)
+	}
+	tasks, err := core.RuntimeTaskList(ctx, s.Store.DB, cfg.ID, "awaiting_confirmation", 10)
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("pending task missing: %+v err=%v", tasks, err)
+	}
+	task, err := core.ReadRuntimeTask(ctx, s.Store.DB, tasks[0].ID)
+	if err != nil || len(task.Actions) != 1 {
+		t.Fatalf("pending action missing: %+v err=%v", task, err)
+	}
+	var reply core.RuntimeCard
+	if err = json.Unmarshal([]byte(adapter.requests[0].Content), &reply); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(reply.Text, core.ConfirmationToken(task.Actions[0])) {
+		t.Fatalf("text confirmation token missing from fallback reply: %q", reply.Text)
+	}
+}

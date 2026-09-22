@@ -24,6 +24,10 @@ type Service struct {
 	Home    string
 	Store   *core.Store
 	Adapter channel.Adapter
+	// DisableConfirmationCards temporarily routes group pending-action
+	// deliveries through the existing text-token confirmation path. The
+	// underlying card validation remains available for a later re-enable.
+	DisableConfirmationCards bool
 	// GroupSource is an optional read-only group lister used by a
 	// group_mention runtime to discover DWS groups active in the last 30
 	// days. The application Stream adapter above remains the only receive
@@ -1607,7 +1611,11 @@ func (s *Service) preparePurpose(ctx context.Context, taskID, purpose string) (c
 		case core.RuntimeFailureReceiptPurpose:
 			out, prepareErr = tx.PrepareTaskFailureAcknowledgement(ctx, taskID)
 		default:
-			out, prepareErr = tx.PrepareTaskDelivery(ctx, taskID)
+			if s.DisableConfirmationCards {
+				out, prepareErr = tx.PrepareTaskDeliveryWithoutConfirmationCard(ctx, taskID)
+			} else {
+				out, prepareErr = tx.PrepareTaskDelivery(ctx, taskID)
+			}
 		}
 		return out, prepareErr
 	})

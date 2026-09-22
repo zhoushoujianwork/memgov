@@ -324,7 +324,7 @@ memgov runtime task retry TASK_ID
 
 ## 7. 确认外部操作
 
-群助手关联 `identity.confirmation_card_template` 后，仅 DWS 所有者可在原群卡片选择“同意”或“拒绝”，不能用下面的口令绕过按钮。卡片标题使用当前事件标题，详情以纯文本优先列出操作类型、目标和内容，不显示群回复中的 Markdown 标记、耗时或 @。按钮与执行链路有自动化测试覆盖；真实平台往返仍需部署者验收，见[模板要求](../design/dingtalk-integration-design-detail.md#群回复与确认卡片)。
+群助手关联 `identity.confirmation_card_template` 后，原生审批卡片能力仍保留在代码中；当前运行服务暂时停用卡片入口，群内待确认操作统一展示完整确认口令。这样可以先完成操作闭环，恢复卡片时无需改动任务或动作数据。卡片标题、详情、按钮与执行链路的实现和验收要求见[模板要求](../design/dingtalk-integration-design-detail.md#群回复与确认卡片)。
 
 以下口令兼容协议适用于未配置模板的群助手和显式收紧权限的 Owner 私聊（owner_confirmation）。后台默认 owner_delegated 自主处理；受限后台的待确认只留本地记录，不发送确认通知。Owner 私聊默认 owner_request，按本人的明确要求处理。
 
