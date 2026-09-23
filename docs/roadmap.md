@@ -17,7 +17,8 @@ The [Agent Workspace refactor](design/agent-workspace-design.md) replaces the da
 
 ## Next product work
 
-- Named group context and independent requester execution passed source, service concurrency and isolated real-Claude checks; one signed local installation is healthy with capacity four. Verify a real multi-member platform conversation next. Explicit group execution deadlines passed source and lease checks; complete one-hour local installation acceptance. Initialization stalls remain a separate issue. Explicit cross-member references use available group context; automatic task/process continuation remains separate work.
+- Named group context and independent requester execution passed source, service concurrency and isolated real-Claude checks; one signed local installation is healthy with capacity four. Verify a real multi-member platform conversation next. Explicit cross-member references use available group context; automatic task/process continuation remains separate work.
+- Explicit group execution deadlines passed source and lease checks; one signed local service now runs with a one-hour deadline. Investigate initialization stalls and correct timeout error-message mapping.
 - Executable Claude tool parity and current skill initialization passed source and isolated real-Claude checks; one authorized local conversation binding is applied and its signed service restarted. Next, verify one real group business loop. Missing robot callbacks and DWS Stream timestamp normalization remain independent follow-ups.
 - Investigate the request accepted by DWS without observed application intake immediately after restart; establish receiver readiness and the delivery guarantee before claiming lossless restart. Continue investigating other runtime failures independently of storage format.
 - Implement and verify Personal root/child task relationships and environment snapshots before advertising coordinated sub-Agent work.
