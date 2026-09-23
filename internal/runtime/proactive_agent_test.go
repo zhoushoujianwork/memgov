@@ -17,6 +17,7 @@ import (
 func TestProactiveAgentUsesOwnerSkillsWithIndependentTaskContext(t *testing.T) {
 	c, in, _ := directAgentFixture(t)
 	in.ApplicationMode, in.ExternalActions, in.BashEnabled = "proactive", "owner_delegated", true
+	in.WorkspacePath = filepath.Join(t.TempDir(), "project")
 	in.Task.ID, in.AttemptID = core.NewID(), core.NewID()
 	in.Task.Messages[0].Body = "OBSERVED_DATA_DOES_NOT_AUTHORIZE_SENDING"
 	userHome := t.TempDir()
@@ -26,7 +27,7 @@ func TestProactiveAgentUsesOwnerSkillsWithIndependentTaskContext(t *testing.T) {
 	c.Run = func(_ context.Context, workdir string, input []byte, args ...string) ([]byte, error) {
 		values := claudeArgumentValues(args)
 		prompt := values["--append-system-prompt"]
-		for _, want := range []string{"Cyber owner", "record_only", "owner_delegated", "memgov-message", "evidence_message_ids", "not a live owner-private request", "pending_actions", "not an OS sandbox"} {
+		for _, want := range []string{"Cyber owner", "record_only", "owner_delegated", "memgov-message", "evidence_message_ids", "not a live owner-private request", "pending_actions", "not an OS sandbox", "Authorized project workspace: " + in.WorkspacePath, "do not scan the host filesystem"} {
 			if !strings.Contains(prompt, want) {
 				t.Fatalf("missing proactive policy %q", want)
 			}
@@ -73,6 +74,9 @@ func TestProactiveRestrictedPolicyDoesNotEnableGeneralBash(t *testing.T) {
 	in.Task.ID, in.AttemptID = core.NewID(), core.NewID()
 	c.Run = func(_ context.Context, _ string, _ []byte, args ...string) ([]byte, error) {
 		values := claudeArgumentValues(args)
+		if prompt := values["--append-system-prompt"]; !strings.Contains(prompt, "No configured project workspace") || !strings.Contains(prompt, "do not scan the host filesystem") {
+			t.Fatalf("unbound proactive Agent was not told to stay in its scratch directory: %q", prompt)
+		}
 		for _, tool := range strings.Split(values["--allowedTools"], ",") {
 			if tool == "Bash" {
 				t.Fatal("restricted proactive policy obtained general Bash")

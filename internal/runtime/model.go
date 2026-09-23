@@ -511,6 +511,7 @@ func (c *Claude) execute(ctx context.Context, in ExecutionInput) (core.RuntimeAt
 	prompt := sysprompt.Text("execute")
 	if in.ApplicationMode == "proactive" {
 		prompt = sysprompt.Text("proactive")
+		prompt += workspacePrompt(in)
 		prompt += "\nConfigured external_actions=" + in.ExternalActions + "."
 		if in.ExternalActions != "owner_delegated" {
 			prompt += " External operations lack autonomous delegation; prepare what can safely be prepared and record any blocked operation. Do not perform an external write."

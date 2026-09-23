@@ -3,6 +3,9 @@
 export GOFLAGS = -mod=readonly
 BIN = .memgov/bin/memgov
 VERSION ?= 2.0.0-rc1
+CODESIGN_IDENTITY ?=
+CODESIGN_IDENTIFIER ?= com.zhoushoujianwork.memgov
+-include .memgov/signing.mk
 
 init: install
 	$(BIN) init
@@ -25,6 +28,7 @@ web-dev: web/node_modules/.package-lock.json
 build: web-build
 	go build ./...
 	go build -trimpath -ldflags '-X github.com/zhoushoujianwork/memgov/internal/cli.Version=$(VERSION)' -o $(BIN).new ./cmd/memgov
+	@if [ -n "$(CODESIGN_IDENTITY)" ]; then codesign --force --sign "$(CODESIGN_IDENTITY)" --identifier "$(CODESIGN_IDENTIFIER)" $(BIN).new; fi
 	mv -f $(BIN).new $(BIN)
 
 install: build

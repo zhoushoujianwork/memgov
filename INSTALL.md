@@ -54,6 +54,8 @@ make install
 ./.memgov/bin/memgov init
 ```
 
+On macOS, an ad hoc signed local build can lose its Files & Folders permission after a rebuild. If the service needs access to a protected folder, sign successive builds with the same valid Apple Development or Developer ID identity. Put `CODESIGN_IDENTITY := <identity SHA-1>` in the ignored `.memgov/signing.mk` before running `make install`; find an available identity with `security find-identity -p codesigning -v`. The build signs the new binary before replacing the previous one. Grant only the folder access needed in System Settings > Privacy & Security > Files & Folders. An Agent should use its configured project workspace rather than search the whole user home to locate a project.
+
 The optional AI runtime also requires the external tools configured for that runtime, such as Claude Code and `dws`. Local Workspace reads and writes do not require DingTalk credentials or a model API key; runtime identity checks still require the configured, verified task context.
 
 For a long-running macOS service, see [the runtime guide](docs/guides/runtime-user-guide.md). For development and configuration details, see [README](README.md) and [initialization](docs/guides/initialization.md).

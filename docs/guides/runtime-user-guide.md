@@ -101,6 +101,8 @@ export PATH="$PWD/.memgov/bin:$PATH"
 export MEMGOV_HOME="$HOME/.memgov"
 ```
 
+For a macOS service that needs a protected folder, configure a stable signing identity before building and installing upgrades; otherwise a rebuilt local binary may trigger the folder permission dialog again. See [build from source](../../INSTALL.md#build-from-source). The proactive Agent receives its configured project path and should use it directly instead of scanning the user home to find a project. Full Bash remains an unrestricted host tool, so the prompt is guidance rather than an OS access boundary.
+
 检查依赖：
 
 ```bash
