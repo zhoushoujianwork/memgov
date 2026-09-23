@@ -6,6 +6,7 @@ This page separates source validation from a limited, separately authorized live
 | --- | --- | --- |
 | Agent Workspace files, identity, scoped read/search/write and history | Implemented and offline-validated | Owner chat/background reuse, active-session index refresh, reopen persistence, cross-process conflict handling, path budgets and group isolation pass |
 | Destructive old-memory archival and Schema 27 upgrade | Implemented and offline-validated | Fresh install and old-schema init/service upgrades pass; archive failure and transaction interruption preserve old state; legacy tasks are fenced and unknown sends retained |
+| Executable Claude tools and task initialization | Implemented; source and isolated real-Claude checks passed | Full-Bash groups gain native file and web tools; task skill staging preserves project controls and knowledge; authorized live configuration acceptance pending |
 | Workspace CLI and runtime-managed skill | Implemented and offline-validated | No-Bash scoped access, stale task/attempt/route rejection, config conversion and legacy field/skill/API removal pass |
 | Local workspace browser | Implemented and package-validated on 2026-09-23 | Console package tests, frontend typecheck/build and UI/Markdown/date tests pass; no real installation or platform claim |
 | DingTalk application intake and DWS collection | Retained and regression-tested | Parser, identity, routing, retraction, source retention and delivery tests use synthetic fixtures; Scenario 1 passes all ten offline cases |
@@ -19,6 +20,10 @@ This page separates source validation from a limited, separately authorized live
 Workspace files are authoritative for durable knowledge. SQLite is authoritative for operational state and internal Source evidence. Candidate, Review, Memory, old publication relations and the memory-card UI are superseded. Historical migration files remain intact so old databases can be recognized and archived safely.
 
 The completed delivery checks are `make check`, `make test-runtime-race`, `scripts/runtime-offline-acceptance.sh`, and `npm --prefix web run build`. The race target allows 30 minutes for instrumented SQLite migration fixtures; the core suite completed in about ten minutes. Documentation review checks the staged content before the implementation commit and again before the local merge. These source checks are separate from the limited live acceptance below.
+
+## Executable Claude verification
+
+On 2026-09-23, `make check`, runtime race checks, focused CLI/skill initialization tests and the frontend build passed for the execution follow-up. An isolated real Claude 2.1.223 invocation used the group execution path to load the Workspace skill, read a random seed, write an artifact, run Shell/Python assertions and fetch `https://example.com`. Actual tool traces and the artifact were checked; it sent no platform messages. This proves harness tool execution, not a real group business outcome or upstream Claude version freshness. The authorized conversation configuration and installed service are separate acceptance steps.
 
 ## Authorized local acceptance
 

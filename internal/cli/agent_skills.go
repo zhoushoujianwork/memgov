@@ -57,6 +57,14 @@ func skillDigest(path string) (string, error) {
 	return core.Digest(parts), nil
 }
 
+func workspaceKnowledgeSkillName(name string) bool {
+	switch name {
+	case "memgov-memory", "memgov-workspace", "touch-memory", "error-reflection":
+		return true
+	}
+	return false
+}
+
 func inspectSkill(path string) (core.RuntimeSkill, error) {
 	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
@@ -83,13 +91,17 @@ func inspectSkill(path string) (core.RuntimeSkill, error) {
 	var header struct {
 		Name string `yaml:"name"`
 	}
-	if strings.HasPrefix(string(body), "---\n") {
-		if end := strings.Index(string(body[4:]), "\n---"); end >= 0 {
-			_ = yaml.Unmarshal(body[4:4+end], &header)
+	lines := strings.Split(strings.TrimPrefix(string(body), "\ufeff"), "\n")
+	if len(lines) > 0 && strings.TrimSpace(lines[0]) == "---" {
+		for i := 1; i < len(lines); i++ {
+			if strings.TrimSpace(lines[i]) == "---" {
+				_ = yaml.Unmarshal([]byte(strings.Join(lines[1:i], "\n")), &header)
+				break
+			}
 		}
 	}
-	for _, candidate := range []string{name, canonicalName, header.Name} {
-		if candidate == "memgov-memory" || candidate == "memgov-workspace" {
+	for _, candidate := range []string{name, canonicalName, strings.TrimSpace(header.Name)} {
+		if workspaceKnowledgeSkillName(candidate) {
 			return core.RuntimeSkill{Name: candidate, Path: resolved}, nil
 		}
 	}
@@ -115,14 +127,14 @@ func resolveClaudeSkills(policy core.RuntimeSkillPolicy) ([]core.RuntimeSkill, e
 			return nil, err
 		}
 		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), ".") || (entry.Name() == "memgov-memory" || entry.Name() == "memgov-workspace") {
+			if strings.HasPrefix(entry.Name(), ".") || workspaceKnowledgeSkillName(entry.Name()) {
 				continue
 			}
 			skill, inspectErr := inspectSkill(filepath.Join(home, ".claude", "skills", entry.Name()))
 			if inspectErr != nil {
 				return nil, inspectErr
 			}
-			if skill.Name == "memgov-memory" || skill.Name == "memgov-workspace" {
+			if workspaceKnowledgeSkillName(skill.Name) {
 				continue
 			}
 			byName[skill.Name] = skill
@@ -134,8 +146,8 @@ func resolveClaudeSkills(policy core.RuntimeSkillPolicy) ([]core.RuntimeSkill, e
 		if err != nil {
 			return nil, err
 		}
-		if skill.Name == "memgov-memory" || skill.Name == "memgov-workspace" {
-			return nil, core.Fail("conflict", "workspace knowledge skills are managed by the runtime; memgov-memory is retired")
+		if workspaceKnowledgeSkillName(skill.Name) {
+			return nil, core.Fail("conflict", "workspace knowledge skills are runtime-managed; retired and global memory writers cannot be configured")
 		}
 		if explicit[skill.Name] {
 			return nil, core.Fail("conflict", "duplicate explicit Agent skill name: %s", skill.Name)

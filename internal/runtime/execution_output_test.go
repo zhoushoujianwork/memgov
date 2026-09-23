@@ -87,6 +87,36 @@ print(json.dumps({'type':'result','structured_output':{'result':'已完成'},'us
 	}
 }
 
+func TestFullExecutionGroupUsesInstalledCLIEnvironment(t *testing.T) {
+	c, in, _ := directAgentFixture(t)
+	in.ApplicationMode, in.BashEnabled = "group_mention", true
+	in.WorkspaceID = "group-project"
+	in.Task.ID, in.AttemptID = core.NewID(), core.NewID()
+	c.Run = nil
+	c.Binary = filepath.Join(in.Home, "fake-group-claude")
+	script := `#!/usr/bin/env python3
+import json, os, pathlib, shutil, sys
+json.load(sys.stdin)
+home = pathlib.Path(os.environ["MEMGOV_HOME"])
+assert pathlib.Path(os.environ["PATH"].split(os.pathsep)[0]) == home / "bin"
+assert pathlib.Path(shutil.which("memgov")) == home / "bin" / "memgov"
+assert os.environ["MEMGOV_WORKSPACE"] == "group-project"
+assert os.environ["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] == "1"
+assert os.environ["CLAUDE_CODE_DISABLE_CLAUDE_MDS"] == "1"
+assert not (pathlib.Path.cwd() / ".claude/tools/memgov-message").exists()
+print(json.dumps({"type":"result","structured_output":{"result":"group environment ready"}}), flush=True)
+`
+	if err := os.WriteFile(c.Binary, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := c.Execute(ctx, in)
+	if err != nil || out.Result != "group environment ready" {
+		t.Fatalf("group execution environment: %+v %v", out, err)
+	}
+}
+
 func TestExecutionStreamCancellationPreservesPartialOutput(t *testing.T) {
 	home := t.TempDir()
 	binary := filepath.Join(home, "fake-claude")

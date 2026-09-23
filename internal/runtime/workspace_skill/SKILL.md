@@ -13,6 +13,11 @@ Use the controlled workspace command supplied by the runtime. It is already boun
 to the current task, attempt and audience. Never substitute another Owner, group,
 data home, workspace ID, or an archived memory command.
 
+Invoke that absolute command directly, one operation per call. Do not substitute
+a relative path or combine it with shell chains or pipes. A denied or failed
+call is a failed operation, not evidence that knowledge is absent. Only report
+an empty search after a successful response with no matches.
+
 - `list`: discover knowledge files.
 - `read <path>`: retrieve content and its digest.
 - `search <query>`: search current knowledge, not the archive.

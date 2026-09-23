@@ -39,6 +39,8 @@ Workspace identity is derived from verified ownership or the channel/conversatio
 
 Workspace tools enforce task and audience boundaries independently of prompt instructions. A directory name is not an OS sandbox: full Bash retains the service account's permissions. Existing confirmation and unknown-result recovery rules remain separate from knowledge writes.
 
+The runtime implementation refreshes task-local tools and filtered skills for each attempt while preserving durable knowledge. A Claude Agent configured for full execution receives shell and web tools, with native file tools following its declared capabilities; restricted group Agents keep controlled Workspace access. See [runtime initialization](../design/agent-runtime-design-detail.md#executable-claude-initialization).
+
 ## Current behavior and future goals
 
 Owner chat and group replies keep their configured routes. Proactive completion currently uses `record_only`; independently authorized communication is a separate operation. Personal root/child task graphs, complete environment snapshots and automatic proactive result notifications remain product goals requiring implementation and acceptance.

@@ -94,6 +94,44 @@ func TestRetiredMemorySkillAliasesCannotBeInheritedOrConfigured(t *testing.T) {
 	}
 }
 
+func TestGlobalMemorySkillAliasesAreSkippedWhenInheritedAndRejectedWhenExplicit(t *testing.T) {
+	for _, name := range []string{"touch-memory", "error-reflection"} {
+		t.Run(name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			root := filepath.Join(home, ".claude", "skills")
+			original := writeTestSkill(t, root, name, "global memory writer")
+			alias := filepath.Join(root, "renamed-knowledge")
+			if err := os.Symlink(original, alias); err != nil {
+				t.Fatal(err)
+			}
+			paths := []string{original, alias}
+			for _, format := range []struct{ name, frontmatter string }{
+				{"lf", "---\nname: " + name + "\n---\n"},
+				{"bom-crlf", "\ufeff---\r\nname: \" " + name + " \"\r\n---\r\n"},
+			} {
+				copied := writeTestSkill(t, root, "copied-"+format.name, "renamed copy")
+				if err := os.WriteFile(filepath.Join(copied, "SKILL.md"), []byte(format.frontmatter+"Native knowledge instructions"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				paths = append(paths, copied)
+			}
+			writeTestSkill(t, root, "allowed-helper", "useful operational skill")
+			resolved, err := resolveClaudeSkills(core.RuntimeSkillPolicy{Inherit: "executor"})
+			if err != nil || len(resolved) != 1 || resolved[0].Name != "allowed-helper" {
+				t.Fatalf("inherited global-memory skill reached applied policy: %+v %v", resolved, err)
+			}
+			for _, path := range paths {
+				for _, inherit := range []string{"none", "executor"} {
+					if _, err := resolveClaudeSkills(core.RuntimeSkillPolicy{Inherit: inherit, Paths: []string{path}}); core.ErrorCode(err) != "conflict" {
+						t.Fatalf("explicit incompatible skill accepted during configuration: %s inherit=%s error=%v", path, inherit, err)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestLoadConfigResolvesSkillPathsFromYAMLDirectoryAndHome(t *testing.T) {
 	root, home := t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)

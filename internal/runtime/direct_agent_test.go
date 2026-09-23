@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -271,6 +272,13 @@ func TestDirectAgentBashPolicyUsesRealCLIAndRestartsWhenRevoked(t *testing.T) {
 		strings.Contains(argv["--append-system-prompt"], "pending operation for owner confirmation") {
 		t.Fatalf("full Bash owner request was not enabled or retained a confirmation gate: %q", firstArgs)
 	}
+	for _, flag := range []string{"--tools", "--allowedTools"} {
+		for _, tool := range []string{"WebSearch", "WebFetch"} {
+			if !slices.Contains(strings.Split(argv[flag], ","), tool) {
+				t.Fatalf("full execution process omitted %s from %s", tool, flag)
+			}
+		}
+	}
 	if firstPath := strings.Split(paths[0], string(os.PathListSeparator))[0]; firstPath != filepath.Join(in.Home, "bin") {
 		t.Fatalf("full Bash PATH did not expose real memgov CLI: %q", firstPath)
 	}
@@ -290,7 +298,7 @@ func TestDirectAgentBashPolicyUsesRealCLIAndRestartsWhenRevoked(t *testing.T) {
 		t.Fatal(err)
 	}
 	if joined := strings.Join(secondArgs, " "); !strings.Contains(joined, "Bash("+filepath.Join(in.WorkDir, ".claude", "tools", "memgov-workspace")+" *)") ||
-		strings.Contains(joined, ",Bash,") || strings.Contains(joined, "do not ask for an additional confirmation token") {
+		strings.Contains(joined, ",Bash,") || strings.Contains(joined, "WebSearch") || strings.Contains(joined, "WebFetch") || strings.Contains(joined, "do not ask for an additional confirmation token") {
 		t.Fatalf("revoked process retained full Bash or owner_request: %q", secondArgs)
 	}
 	if firstPath := strings.Split(paths[1], string(os.PathListSeparator))[0]; firstPath != filepath.Join(in.WorkDir, ".claude", "tools") {
