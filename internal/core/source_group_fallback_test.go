@@ -179,7 +179,7 @@ func TestSourceFallbackRetainsAuthorizedPreconfiguredWorkspace(t *testing.T) {
 	}
 	// The accepted cross-workspace case must not weaken stale policy rejection.
 	runtimeMutate(t, s, "fallback.route-policy-change", func(tx *Tx) (any, error) {
-		return tx.UpdateRoute(ctx, route.ID, route.Version, RouteInput{MemoryPolicy: "curated"}, "policy changed after proof")
+		return tx.UpdateRoute(ctx, route.ID, route.Version, RouteInput{SendPolicy: "dispatch_only"}, "policy changed after proof")
 	})
 	if _, err = ReadSourceFallbackScope(ctx, s.DB, d.ID, time.Now()); ErrorCode(err) != "denied" {
 		t.Fatalf("changed route policy reused old proof: %v", err)

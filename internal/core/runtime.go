@@ -25,7 +25,7 @@ type RuntimeConfigInput struct {
 	ApplicationMode   string   `json:"application_mode,omitempty"`
 	ContextChannel    string   `json:"context_channel,omitempty"`
 	AgentCapabilities []string `json:"agent_capabilities,omitempty"`
-	MemoryScope       string   `json:"memory_scope,omitempty"`
+	MemoryScope       string   `json:"-"`
 	AgentBash         *bool    `json:"agent_bash,omitempty"`
 	ExternalActions   string   `json:"external_actions,omitempty"`
 	ClaudeProfile     string   `json:"claude_profile,omitempty"`
@@ -53,7 +53,7 @@ type RuntimeConfig struct {
 	CompletionPolicy  string   `json:"completion_policy"`
 	ContextChannelID  string   `json:"context_channel_id,omitempty"`
 	AgentCapabilities []string `json:"agent_capabilities"`
-	MemoryScope       string   `json:"memory_scope"`
+	MemoryScope       string   `json:"-"`
 	AgentBash         bool     `json:"agent_bash"`
 	ExternalActions   string   `json:"external_actions"`
 	ClaudeProfile     string   `json:"claude_profile,omitempty"`
@@ -165,12 +165,7 @@ func normalizeRuntimeInput(in *RuntimeConfigInput) error {
 		enabled := in.ApplicationMode != "group_mention"
 		in.AgentBash = &enabled
 	}
-	if in.MemoryScope == "" {
-		in.MemoryScope = "owner_authorized"
-	}
-	if !contains([]string{"owner_authorized", "conversation_published"}, in.MemoryScope) {
-		return Fail("invalid_input", "memory_scope must be owner_authorized or conversation_published")
-	}
+
 	if in.ExternalActions == "" {
 		in.ExternalActions = "owner_confirmation"
 		if in.ApplicationMode == "direct" && *in.AgentBash {
@@ -190,7 +185,7 @@ func normalizeRuntimeInput(in *RuntimeConfigInput) error {
 	}
 	seenCapabilities := map[string]bool{}
 	for _, capability := range in.AgentCapabilities {
-		if !contains([]string{"conversation_history_read", "memory_read", "artifact_create", "local_read", "local_write", "local_test"}, capability) || seenCapabilities[capability] {
+		if !contains([]string{"conversation_history_read", "artifact_create", "local_read", "local_write", "local_test"}, capability) || seenCapabilities[capability] {
 			return Fail("invalid_input", "agent_capabilities contains an unsupported or duplicate capability")
 		}
 		seenCapabilities[capability] = true
@@ -287,9 +282,8 @@ func (tx *Tx) ConfigureRuntime(ctx context.Context, in RuntimeConfigInput) (Runt
 			in.ContextChannel = history.ID
 		}
 		in.ItemThreshold = 1
-		in.MemoryScope = "conversation_published"
 		if in.AgentCapabilities == nil {
-			in.AgentCapabilities = []string{"conversation_history_read", "memory_read", "artifact_create"}
+			in.AgentCapabilities = []string{"conversation_history_read", "artifact_create"}
 		}
 	} else {
 		if in.ApplicationMode == "direct" && (delivery.ConversationType != "direct" || delivery.SendPolicy != "dispatch_only") {
@@ -297,7 +291,7 @@ func (tx *Tx) ConfigureRuntime(ctx context.Context, in RuntimeConfigInput) (Runt
 		}
 		in.ContextChannel = ""
 		if in.AgentCapabilities == nil {
-			in.AgentCapabilities = []string{"conversation_history_read", "memory_read", "artifact_create", "local_read", "local_write", "local_test"}
+			in.AgentCapabilities = []string{"conversation_history_read", "artifact_create", "local_read", "local_write", "local_test"}
 		}
 	}
 	owner, weak, err := tx.PrincipalFor(ctx, channel.Tenant, in.Owner)
@@ -479,7 +473,7 @@ func (tx *Tx) SyncRuntimeGroupRoutes(ctx context.Context, value string, conversa
 // For every qualifying DWS conversation this creates or reuses a same
 // conversation, same workspace assistant route on the runtime's own
 // application channel, fixed to triggers:[mention], audience_policy=
-// conversation, memory_policy=explicit_only and send_policy=reply_to_trigger.
+// conversation and send_policy=reply_to_trigger.
 // An app or DWS route marked ignore is excluded from the processing set but
 // never restored, widened or deleted; a group that drops out of the active
 // set is removed from route_ids while its route and audit trail stay intact.
@@ -531,7 +525,7 @@ func (tx *Tx) SyncGroupMentionRoutes(ctx context.Context, value string, dwsConve
 		}
 		created, addErr := tx.AddRoute(ctx, appChannel.ID, RouteInput{ConversationID: id, ConversationType: "group",
 			Workspace: dwsRoute.WorkspaceID, Mode: "assistant", Triggers: []string{"mention"},
-			AudiencePolicy: "conversation", MemoryPolicy: "explicit_only", SendPolicy: "reply_to_trigger"})
+			AudiencePolicy: "conversation", SendPolicy: "reply_to_trigger"})
 		if addErr != nil {
 			return c, added, addErr
 		}
@@ -1028,7 +1022,7 @@ ORDER BY m.sent_at DESC,m.id DESC LIMIT 30`, contextChannel, contextConversation
 		if err != nil {
 			return out, err
 		}
-		matterRows, matterErr := tx.Conn.QueryContext(ctx, "SELECT id,canonical_key,title,status,result_summary,version FROM runtime_tasks WHERE runtime_id=? AND route_id=? ORDER BY updated_at DESC,id LIMIT 50", c.ID, routeID)
+		matterRows, matterErr := tx.Conn.QueryContext(ctx, "SELECT id,canonical_key,title,status,result_summary,version FROM runtime_tasks WHERE runtime_id=? AND route_id=? AND kind<>'memory' ORDER BY updated_at DESC,id LIMIT 50", c.ID, routeID)
 		if matterErr != nil {
 			return out, matterErr
 		}
@@ -1115,7 +1109,7 @@ func (tx *Tx) CompleteRuntimeBatch(ctx context.Context, batch RuntimeBatch, anal
 	}
 	tasks := []RuntimeTask{}
 	for _, d := range analysis.Decisions {
-		if !contains([]string{"task", "update", "cancel", "complete", "memory", "context"}, d.Kind) {
+		if !contains([]string{"task", "update", "cancel", "complete", "context"}, d.Kind) {
 			return nil, Fail("invalid_input", "unsupported runtime decision %q", d.Kind)
 		}
 		if d.Kind == "context" {
@@ -1151,6 +1145,9 @@ func (tx *Tx) CompleteRuntimeBatch(ctx context.Context, batch RuntimeBatch, anal
 		}
 		var existing RuntimeTask
 		err := scanRuntimeTask(tx.Conn.QueryRowContext(ctx, "SELECT "+runtimeTaskColumns+" FROM runtime_tasks WHERE runtime_id=? AND canonical_key=?", batch.RuntimeID, d.CanonicalKey), &existing)
+		if err == nil && existing.Kind == "memory" {
+			return nil, Fail("denied", "legacy memory tasks cannot be updated")
+		}
 		if d.Kind == "cancel" || d.Kind == "complete" || (err == nil && existing.Status == "completed" && d.Kind == "task") {
 			if errors.Is(err, sql.ErrNoRows) {
 				continue
@@ -1311,11 +1308,8 @@ type RuntimeAttemptResult struct {
 	ToolKinds []string        `json:"tool_kinds,omitempty"`
 	Usage     map[string]any  `json:"usage,omitempty"`
 	Actions   []RuntimeAction `json:"pending_actions,omitempty"`
-	Candidate *CandidateInput `json:"candidate,omitempty"`
 }
 type RuntimeTask struct {
-	MemoryStatus       string                 `json:"memory_status,omitempty"`
-	MemoryErrorCode    string                 `json:"memory_error_code,omitempty"`
 	ID                 string                 `json:"id"`
 	RuntimeID          string                 `json:"runtime_id"`
 	RouteID            string                 `json:"route_id"`
@@ -1326,7 +1320,6 @@ type RuntimeTask struct {
 	Status             string                 `json:"status"`
 	NeedsClarification bool                   `json:"needs_clarification"`
 	Version            int                    `json:"version"`
-	CandidateID        string                 `json:"candidate_id,omitempty"`
 	Result             string                 `json:"result,omitempty"`
 	ResultSummary      string                 `json:"result_summary,omitempty"`
 	ErrorCode          string                 `json:"error_code,omitempty"`
@@ -1342,11 +1335,11 @@ type RuntimeTask struct {
 	Resume             *RuntimeTaskResume     `json:"resume,omitempty"`
 }
 
-const runtimeTaskColumns = "id,runtime_id,route_id,canonical_key,kind,title,instructions,status,needs_clarification,version,candidate_id,result,result_summary,error_code,created_at,updated_at,memory_status,memory_error_code"
+const runtimeTaskColumns = "id,runtime_id,route_id,canonical_key,kind,title,instructions,status,needs_clarification,version,result,result_summary,error_code,created_at,updated_at"
 
 func scanRuntimeTask(row scanner, t *RuntimeTask) error {
 	var clarify int
-	err := row.Scan(&t.ID, &t.RuntimeID, &t.RouteID, &t.CanonicalKey, &t.Kind, &t.Title, &t.Instructions, &t.Status, &clarify, &t.Version, &t.CandidateID, &t.Result, &t.ResultSummary, &t.ErrorCode, &t.CreatedAt, &t.UpdatedAt, &t.MemoryStatus, &t.MemoryErrorCode)
+	err := row.Scan(&t.ID, &t.RuntimeID, &t.RouteID, &t.CanonicalKey, &t.Kind, &t.Title, &t.Instructions, &t.Status, &clarify, &t.Version, &t.Result, &t.ResultSummary, &t.ErrorCode, &t.CreatedAt, &t.UpdatedAt)
 	t.NeedsClarification = clarify == 1
 	return err
 }
@@ -1543,12 +1536,6 @@ ORDER BY rb.finished_at DESC,rb.id DESC LIMIT 1`, id).Scan(&t.AnalysisModel, &an
 
 func (tx *Tx) staleRuntimeTaskWork(ctx context.Context, id string) error {
 	now := Now()
-	if _, err := tx.Conn.ExecContext(ctx, "UPDATE runtime_reviews SET status='failed',error_code='memory_version_conflict',finished_at=? WHERE task_id=? AND status IN ('pending','running')", now, id); err != nil {
-		return err
-	}
-	if _, err := tx.Conn.ExecContext(ctx, "UPDATE runtime_tasks SET memory_status='',memory_error_code='',candidate_id='' WHERE id=?", id); err != nil {
-		return err
-	}
 	if _, err := tx.Conn.ExecContext(ctx, "UPDATE runtime_pending_actions SET status='stale',updated_at=? WHERE task_id=? AND status IN ('pending','confirmed')", now, id); err != nil {
 		return err
 	}
@@ -1632,9 +1619,8 @@ func (tx *Tx) ClaimRuntimeTask(ctx context.Context, value, attemptID, model, pre
 AND route_id IN (SELECT value FROM json_each(?))
 AND EXISTS (SELECT 1 FROM channel_routes r WHERE r.id=runtime_tasks.route_id AND r.channel_id=? AND r.status='active' AND r.mode<>'ignore')
 AND NOT EXISTS(SELECT 1 FROM runtime_work_leases l WHERE l.task_id=runtime_tasks.id AND l.released=0)
-AND (kind<>'memory' OR (SELECT count(*) FROM runtime_work_leases l JOIN runtime_tasks mt ON mt.id=l.task_id WHERE l.released=0 AND mt.kind='memory')<2)
-ORDER BY CASE kind WHEN 'memory' THEN 1 ELSE 0 END,
-max(updated_at,coalesce((SELECT max(a.started_at) FROM runtime_attempts a JOIN runtime_tasks previous ON previous.id=a.task_id WHERE previous.runtime_id=runtime_tasks.runtime_id AND previous.route_id=runtime_tasks.route_id),'')),updated_at,id LIMIT 1`, c.ID, JSON(c.RouteIDs), c.ChannelID), &t)
+AND kind<>'memory'
+ORDER BY max(updated_at,coalesce((SELECT max(a.started_at) FROM runtime_attempts a JOIN runtime_tasks previous ON previous.id=a.task_id WHERE previous.runtime_id=runtime_tasks.runtime_id AND previous.route_id=runtime_tasks.route_id),'')),updated_at,id LIMIT 1`, c.ID, JSON(c.RouteIDs), c.ChannelID), &t)
 	if errors.Is(err, sql.ErrNoRows) {
 		return RuntimeTask{}, RuntimeAttempt{}, nil
 	}
@@ -1679,7 +1665,7 @@ func (tx *Tx) SetRuntimeAttemptWorkspace(ctx context.Context, id, workspace stri
 	return nil
 }
 
-func (tx *Tx) CompleteRuntimeTask(ctx context.Context, taskID string, version int, attemptID string, result RuntimeAttemptResult, candidateID string) (RuntimeTask, error) {
+func (tx *Tx) CompleteRuntimeTask(ctx context.Context, taskID string, version int, attemptID string, result RuntimeAttemptResult) (RuntimeTask, error) {
 	t, err := ReadRuntimeTask(ctx, tx.Conn, taskID)
 	if err != nil {
 		return t, err
@@ -1727,7 +1713,7 @@ func (tx *Tx) CompleteRuntimeTask(ctx context.Context, taskID string, version in
 		}
 	}
 	now := Now()
-	res, err := tx.Conn.ExecContext(ctx, "UPDATE runtime_tasks SET status=?,candidate_id=?,result=?,result_summary=?,error_code='',updated_at=? WHERE id=? AND version=? AND status='running'", status, candidateID, result.Result, result.Summary, now, taskID, version)
+	res, err := tx.Conn.ExecContext(ctx, "UPDATE runtime_tasks SET status=?,result=?,result_summary=?,error_code='',updated_at=? WHERE id=? AND version=? AND status='running'", status, result.Result, result.Summary, now, taskID, version)
 	if err != nil {
 		return t, err
 	}
@@ -1784,6 +1770,9 @@ func (tx *Tx) SetRuntimeTaskStatus(ctx context.Context, id, status string) (Runt
 	t, err := ReadRuntimeTask(ctx, tx.Conn, id)
 	if err != nil {
 		return t, err
+	}
+	if status == "pending" && t.Kind == "memory" {
+		return t, Fail("denied", "legacy memory tasks are archived and cannot be replayed")
 	}
 	switch status {
 	case "cancelled":
@@ -2215,7 +2204,7 @@ func RuntimeStageAcknowledgementTaskIDs(ctx context.Context, q Queryer, runtimeI
 		return nil, Fail("invalid_input", "unsupported runtime stage acknowledgement")
 	}
 	rows, err := q.QueryContext(ctx, `SELECT t.id FROM runtime_tasks t
-WHERE t.runtime_id=? AND t.status IN `+statusClause+`
+WHERE t.runtime_id=? AND t.kind<>'memory' AND t.status IN `+statusClause+`
 AND EXISTS(SELECT 1 FROM outbox receipt WHERE receipt.job_id=t.id AND receipt.reason=?)
 AND NOT EXISTS(SELECT 1 FROM outbox stage WHERE stage.job_id=t.id AND stage.reason=? AND stage.state<>'ready')
 ORDER BY t.updated_at,t.id`, runtimeID, RuntimeReceiptPurpose, purpose)
@@ -2245,12 +2234,6 @@ func (tx *Tx) RecoverRuntime(ctx context.Context, value string) (RuntimeRecovery
 		return out, err
 	}
 	now := Now()
-	if _, err = tx.Conn.ExecContext(ctx, `UPDATE runtime_tasks SET memory_status='failed',memory_error_code='review_interrupted' WHERE runtime_id=? AND id IN (SELECT task_id FROM runtime_reviews WHERE status='running')`, c.ID); err != nil {
-		return out, err
-	}
-	if _, err = tx.Conn.ExecContext(ctx, `UPDATE runtime_reviews SET status='failed',error_code='review_interrupted',finished_at=? WHERE runtime_id=? AND status='running'`, now, c.ID); err != nil {
-		return out, err
-	}
 	if _, err = tx.Conn.ExecContext(ctx, `UPDATE runtime_message_actions SET state='unknown',detail='runtime_restarted',updated_at=? WHERE state='sending'
 AND task_id IN (SELECT id FROM runtime_tasks WHERE runtime_id=?)`, now, c.ID); err != nil {
 		return out, err
@@ -2521,6 +2504,9 @@ func (tx *Tx) prepareTaskDelivery(ctx context.Context, taskID, purpose string, d
 	t, err := ReadRuntimeTask(ctx, tx.Conn, taskID)
 	if err != nil {
 		return out, err
+	}
+	if t.Kind == "memory" {
+		return out, Fail("denied", "legacy memory tasks are archived and cannot create deliveries")
 	}
 	switch purpose {
 	case RuntimeReceiptPurpose:
@@ -2892,6 +2878,9 @@ func (tx *Tx) BeginDelivery(ctx context.Context, id string) (int, error) {
 		task, err := ReadRuntimeTask(ctx, tx.Conn, taskID)
 		if err != nil {
 			return 0, err
+		}
+		if task.Kind == "memory" {
+			return 0, Fail("denied", "legacy memory tasks are archived and cannot be delivered")
 		}
 		config, err := ReadRuntime(ctx, tx.Conn, task.RuntimeID)
 		if err != nil {

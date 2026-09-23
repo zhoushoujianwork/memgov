@@ -92,7 +92,7 @@ func TestRuntimeSetupCanSelectARegisteredNonClaudeHarness(t *testing.T) {
 	var actualModels [2]string
 	if err := runtimeengine.RegisterHarness("setup-alternative", func(analysis, execution string) (runtimeengine.HarnessBundle, error) {
 		actualModels = [2]string{analysis, execution}
-		return runtimeengine.HarnessBundle{Analyzer: model, Executor: model, Actioner: model, Reviewer: model}, nil
+		return runtimeengine.HarnessBundle{Analyzer: model, Executor: model, Actioner: model}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -135,10 +135,6 @@ func (setupHarnessModel) Execute(context.Context, runtimeengine.ExecutionInput) 
 func (setupHarnessModel) ExecuteConfirmedAction(context.Context, runtimeengine.ActionExecutionInput) (core.RuntimeAttemptResult, error) {
 	return core.RuntimeAttemptResult{}, nil
 }
-func (setupHarnessModel) Review(context.Context, core.RuntimeTask, core.CandidateInput) (runtimeengine.ReviewResult, error) {
-	return runtimeengine.ReviewResult{}, nil
-}
-
 func TestRuntimeSetupRejectsInvalidHarnessBeforeSideEffects(t *testing.T) {
 	if err := runtimeengine.RegisterHarness("setup-incomplete", func(string, string) (runtimeengine.HarnessBundle, error) {
 		return runtimeengine.HarnessBundle{}, nil

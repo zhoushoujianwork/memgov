@@ -28,7 +28,7 @@ func validateSchedulingNodes(n *yaml.Node) error {
 		for i := 0; i < len(n.Content); i += 2 {
 			key, value := n.Content[i].Value, n.Content[i+1]
 			switch key {
-			case "analysis_concurrency", "execution_concurrency", "analysis_timeout_seconds", "execution_timeout_seconds", "review_timeout_seconds":
+			case "analysis_concurrency", "execution_concurrency", "analysis_timeout_seconds", "execution_timeout_seconds":
 				v, e := strconv.Atoi(value.Value)
 				if e != nil || v <= 0 {
 					return core.Fail("invalid_input", "%s must be a finite positive integer", key)

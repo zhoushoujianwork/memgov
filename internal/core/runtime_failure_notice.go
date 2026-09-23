@@ -14,7 +14,7 @@ import (
 func RuntimeFailureNoticeTaskIDs(ctx context.Context, q Queryer, runtimeID string) ([]string, error) {
 	rows, err := q.QueryContext(ctx, `SELECT t.id FROM runtime_tasks t
 JOIN runtime_configs c ON c.id=t.runtime_id
-WHERE t.runtime_id=? AND t.status IN ('failed','action_failed','action_unknown','cancelled')
+WHERE t.runtime_id=? AND t.kind<>'memory' AND t.status IN ('failed','action_failed','action_unknown','cancelled')
 AND c.application_mode IN ('direct','group_mention')
 AND EXISTS(SELECT 1 FROM outbox receipt WHERE receipt.job_id=t.id AND receipt.reason=? AND receipt.state='accepted')
 AND NOT EXISTS(SELECT 1 FROM outbox notice WHERE notice.job_id=t.id AND notice.reason=? AND notice.state<>'ready')
@@ -45,6 +45,9 @@ func (tx *Tx) PrepareTaskFailureNotice(ctx context.Context, taskID string) (Outb
 	task, err := ReadRuntimeTask(ctx, tx.Conn, taskID)
 	if err != nil {
 		return out, err
+	}
+	if task.Kind == "memory" {
+		return out, Fail("denied", "legacy memory tasks are archived and cannot create failure notices")
 	}
 	if !contains([]string{"failed", "action_failed", "action_unknown", "cancelled"}, task.Status) {
 		return out, Fail("conflict", "task has not failed")

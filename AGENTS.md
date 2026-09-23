@@ -30,7 +30,7 @@ Project example: [DingTalk integration main design](docs/design/dingtalk-integra
 
 ## Current Model and Documentation Status
 
-- The current model consists of Source, Candidate, Review, and Memory, together with their evidence, versions, and operation records. SQLite `state.db` is the single source of truth. The legacy three-axis model (旧三轴), memory atoms (记忆原子), cards, and battles remain only as historical formats and must not appear in current usage instructions.
+- Agent Workspace Markdown files are authoritative for long-term knowledge. SQLite `state.db` is authoritative for messages, internal Source/fragment evidence, tasks, permissions, confirmations, delivery, and recovery. The old Candidate/Review/Memory pipeline, published-memory model, memory cards, and `memgov-memory` skill are superseded by [Agent Workspace](docs/design/agent-workspace-design.md). Historical formats must not appear as current usage instructions.
 - Historical documents must clearly identify themselves as superseded even when opened directly, and must link to the current guidance. Distinguish commands that are designed, under development, and delivered. Do not present a design document or source commit as a capability of the installed binary.
 
 ## Alignment with the Best-Practice Scenarios

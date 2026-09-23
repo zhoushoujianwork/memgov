@@ -63,8 +63,8 @@ for line in sys.stdin:
 		t.Fatal(err)
 	}
 	in := ExecutionInput{SessionID: uuid.NewString(), Home: home, WorkspaceID: "global", WorkDir: workdir,
-		Preset: preset, ApplicationMode: "direct", Capabilities: []string{"memory_read", "local_read", "local_write"},
-		Task: core.RuntimeTask{Messages: []core.RuntimeMessage{{Body: "你好，原文不变。"}}}}
+		Preset: preset, ApplicationMode: "direct", AgentWorkspaceID: "owner/fixture", AttemptID: core.NewID(), Capabilities: []string{"local_read", "local_write"},
+		Task: core.RuntimeTask{ID: core.NewID(), Messages: []core.RuntimeMessage{{Body: "你好，原文不变。"}}}}
 	return &Claude{Binary: claudeBinary}, in, starts
 }
 
@@ -166,6 +166,7 @@ func TestOwnerDirectAgentInheritsClaudeGlobalClawflowSkill(t *testing.T) {
 	userHome := t.TempDir()
 	t.Setenv("HOME", userHome)
 	runtimeTestSkill(t, filepath.Join(userHome, ".claude", "skills"), "clawflow")
+	runtimeTestSkill(t, filepath.Join(userHome, ".claude", "skills"), "memgov-memory")
 	in.Skills = core.RuntimeSkillPolicy{Inherit: "executor"}
 	if _, err := c.Execute(context.Background(), in); err != nil {
 		t.Fatal(err)
@@ -184,8 +185,14 @@ func TestOwnerDirectAgentInheritsClaudeGlobalClawflowSkill(t *testing.T) {
 			values[args[i]] = args[i+1]
 		}
 	}
-	if values["--setting-sources"] != "user,project" || !strings.Contains(values["--allowedTools"], "Skill(clawflow)") {
+	if values["--setting-sources"] != "project" || !strings.Contains(values["--allowedTools"], "Skill(clawflow)") {
 		t.Fatalf("owner direct Agent did not inherit clawflow: %+v", values)
+	}
+	if _, err := os.Stat(filepath.Join(in.WorkDir, ".claude", "skills", "clawflow", "SKILL.md")); err != nil {
+		t.Fatalf("allowed inherited skill not staged: %v", err)
+	}
+	if strings.Contains(values["--allowedTools"], "memgov-memory") {
+		t.Fatal("retired memory skill allowed")
 	}
 	for _, allowed := range strings.Split(values["--allowedTools"], ",") {
 		if allowed == "Bash" {
@@ -208,8 +215,8 @@ func TestDirectAgentRestartsBeforeTurnWhenCapabilitiesOrPresetNarrow(t *testing.
 	if err != nil || second.Result != "权限收缩后的新问题" || directStartCount(t, starts) != 2 {
 		t.Fatalf("native process retained widened permissions or lost this turn: result=%+v starts=%d error=%v", second, directStartCount(t, starts), err)
 	}
-	if _, err := os.Stat(filepath.Join(in.WorkDir, ".claude", "tools", "memgov")); !os.IsNotExist(err) {
-		t.Fatalf("revoked memory wrapper remained available: %v", err)
+	if _, err := os.Stat(filepath.Join(in.WorkDir, ".claude", "tools", "memgov-workspace")); err != nil {
+		t.Fatalf("workspace wrapper disappeared on host permission reduction: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(in.WorkDir, ".claude", "tools", "memgov-hotword")); !os.IsNotExist(err) {
 		t.Fatalf("revoked hotword wrapper remained available: %v", err)
@@ -219,7 +226,7 @@ func TestDirectAgentRestartsBeforeTurnWhenCapabilitiesOrPresetNarrow(t *testing.
 		t.Fatal(err)
 	}
 	rows := strings.Split(strings.TrimSpace(string(args)), "\n")
-	if len(rows) != 2 || !strings.Contains(rows[0], "Skill(memgov-memory)") || strings.Contains(rows[1], "Skill(memgov-memory)") || strings.Contains(rows[1], "Edit,Write") {
+	if len(rows) != 2 || !strings.Contains(rows[0], "Skill(memgov-workspace)") || !strings.Contains(rows[1], "Skill(memgov-workspace)") || strings.Contains(rows[1], "Edit,Write") {
 		t.Fatalf("new native process retained old Claude tool permissions: %q", rows)
 	}
 	in.Task.Messages = []core.RuntimeMessage{{Body: "受控preset升级"}}
@@ -282,14 +289,14 @@ func TestDirectAgentBashPolicyUsesRealCLIAndRestartsWhenRevoked(t *testing.T) {
 	if err := json.Unmarshal([]byte(argsRows[1]), &secondArgs); err != nil {
 		t.Fatal(err)
 	}
-	if joined := strings.Join(secondArgs, " "); !strings.Contains(joined, "Bash("+filepath.Join(in.WorkDir, ".claude", "tools", "memgov")+" *)") ||
+	if joined := strings.Join(secondArgs, " "); !strings.Contains(joined, "Bash("+filepath.Join(in.WorkDir, ".claude", "tools", "memgov-workspace")+" *)") ||
 		strings.Contains(joined, ",Bash,") || strings.Contains(joined, "do not ask for an additional confirmation token") {
 		t.Fatalf("revoked process retained full Bash or owner_request: %q", secondArgs)
 	}
 	if firstPath := strings.Split(paths[1], string(os.PathListSeparator))[0]; firstPath != filepath.Join(in.WorkDir, ".claude", "tools") {
 		t.Fatalf("restricted process PATH did not restore wrapper: %q", firstPath)
 	}
-	if _, err := os.Stat(filepath.Join(in.WorkDir, ".claude", "tools", "memgov")); err != nil {
+	if _, err := os.Stat(filepath.Join(in.WorkDir, ".claude", "tools", "memgov-workspace")); err != nil {
 		t.Fatalf("restricted memory wrapper missing after revocation: %v", err)
 	}
 }
@@ -429,30 +436,6 @@ func TestDirectAgentTurnTimeoutAllowsThirtyMinutes(t *testing.T) {
 	}
 }
 
-func TestBundledDirectMemorySkillMatchesProjectSkill(t *testing.T) {
-	projectSkill := filepath.Join("..", "..", "skills", "memgov-memory")
-	if _, err := os.Stat(filepath.Join(projectSkill, "SKILL.md")); os.IsNotExist(err) {
-		// Some local installations use the shared .agents skill directory.
-		projectSkill = filepath.Join("..", "..", ".agents", "skills", "memgov-memory")
-	}
-	originalSkill, err := os.ReadFile(filepath.Join(projectSkill, "SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	bundledSkill, err := directMemorySkill.ReadFile("memory_skill/SKILL.md")
-	if err != nil || string(bundledSkill) != string(originalSkill) {
-		t.Fatalf("installed memory SKILL.md drifted from project skill: error=%v", err)
-	}
-	originalGuide, err := os.ReadFile(filepath.Join(projectSkill, "references", "cli-workflows.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	bundledGuide, err := directMemorySkill.ReadFile("memory_skill/references/cli-workflows.md")
-	if err != nil || !strings.HasSuffix(string(bundledGuide), strings.TrimPrefix(string(originalGuide), "# CLI workflows\n")) {
-		t.Fatalf("installed reference workflow drifted from project guide: error=%v", err)
-	}
-}
-
 func TestDirectModeCannotFallBackToClassifierOrBusinessJSONExecutor(t *testing.T) {
 	c := &Claude{Run: func(context.Context, string, []byte, ...string) ([]byte, error) {
 		t.Fatal("direct mode invoked classified/business-schema Claude command")
@@ -499,7 +482,7 @@ func TestDirectAgentStreamInputSkillAndToolPolicy(t *testing.T) {
 	current := "请解释这段原文：hello？"
 	in.Task.Messages = []core.RuntimeMessage{{Body: current}}
 	in.ConversationContext = []core.RuntimeMessage{{Body: "之前的问题"}, {Body: "之前的回答", SelfAuthored: true}}
-	in.MemoryContext = "forced recall must not be supplied"
+	in.WorkspaceBootstrap.Content = "untrusted workspace bootstrap"
 	var seenArgs []string
 	var seenInput []byte
 	c.Run = func(_ context.Context, _ string, input []byte, args ...string) ([]byte, error) {
@@ -531,80 +514,21 @@ func TestDirectAgentStreamInputSkillAndToolPolicy(t *testing.T) {
 		values["--setting-sources"] != "project" || values["--permission-mode"] != "dontAsk" || values["--json-schema"] != "" {
 		t.Fatalf("direct session retained the business schema or lost streaming controls: %+v", values)
 	}
-	if strings.Contains(values["--append-system-prompt"], current) || strings.Contains(values["--append-system-prompt"], in.MemoryContext) ||
+	if strings.Contains(values["--append-system-prompt"], current) || strings.Contains(values["--append-system-prompt"], in.WorkspaceBootstrap.Content) ||
 		strings.Contains(values["--append-system-prompt"], "之前的问题") || strings.Contains(values["--append-system-prompt"], "之前的回答") ||
 		!strings.Contains(incoming.Message.Content[0].Text, "之前的问题") || !strings.Contains(incoming.Message.Content[0].Text, "之前的回答") {
 		t.Fatal("system prompt rewrote the current question, forced recall, or lost recovery history")
 	}
 	allowed := values["--allowedTools"]
-	if !strings.Contains(allowed, "Skill(memgov-memory)") || !strings.Contains(allowed, "/.claude/tools/memgov *)") || !strings.Contains(allowed, "memgov-action") || !strings.Contains(allowed, "memgov-hotword") ||
+	if !strings.Contains(allowed, "Skill(memgov-workspace)") || !strings.Contains(allowed, "/.claude/tools/memgov-workspace *)") || !strings.Contains(allowed, "memgov-action") ||
 		strings.Contains(allowed, "Bash(curl") || strings.Contains(allowed, "Bash(git") || strings.Contains(allowed, "Bash(make") || strings.Contains(allowed, ",Bash,") {
 		t.Fatalf("direct tool boundary is too broad or memory skill is inaccessible: %q", allowed)
 	}
-	for _, rel := range []string{filepath.Join(".claude", "skills", "memgov-memory", "SKILL.md"), filepath.Join(".claude", "skills", "memgov-memory", "references", "cli-workflows.md"), filepath.Join(".claude", "tools", "memgov"), filepath.Join(".claude", "tools", "memgov-action"), filepath.Join(".claude", "tools", "memgov-hotword")} {
+	for _, rel := range []string{filepath.Join(".claude", "skills", "memgov-workspace", "SKILL.md"), filepath.Join(".claude", "tools", "memgov-workspace"), filepath.Join(".claude", "tools", "memgov-action")} {
 		if _, err := os.Stat(filepath.Join(in.WorkDir, rel)); err != nil {
 			t.Fatalf("controlled project skill/action tool was not installed: %s error=%v", rel, err)
 		}
 	}
-}
-
-func TestDirectMemoryWrapperBindsScopeAndAllowsOnlyReviewedFlow(t *testing.T) {
-	_, in, _ := directAgentFixture(t)
-	output := filepath.Join(in.Home, "memory-calls")
-	bin := filepath.Join(in.Home, "bin", "memgov")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '" + output + "'\n"
-	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := installDirectMemoryTool(in, bin); err != nil {
-		t.Fatal(err)
-	}
-	wrapper := filepath.Join(in.WorkDir, ".claude", "tools", "memgov")
-	accept := func(args ...string) {
-		t.Helper()
-		if err := exec.Command(wrapper, args...).Run(); err != nil {
-			t.Fatalf("controlled memory command rejected %v: %v", args, err)
-		}
-	}
-	reject := func(args ...string) {
-		t.Helper()
-		if err := exec.Command(wrapper, args...).Run(); err == nil {
-			t.Fatalf("controlled memory command admitted %v", args)
-		}
-	}
-	input := filepath.Join(in.WorkDir, "source.json")
-	if err := os.WriteFile(input, []byte(`{"kind":"agent_result","uri":"agent-note://test","content":"reviewed"}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	accept("version")
-	accept("recall", "safe query", "--limit", "3")
-	accept("search", "safe query", "--kind", "source")
-	accept("memory", "show", "memory-internal")
-	accept("source", "ingest", "--input", input, "--idempotency-key", "source-test")
-	accept("candidate", "submit", "--input", input, "--idempotency-key", "candidate-test")
-	accept("candidate", "validate", "candidate-internal")
-	accept("candidate", "diff", "candidate-internal")
-	accept("candidate", "apply", "candidate-internal", "--expected-digest", "digest-internal")
-	for _, args := range [][]string{{"--home", "/other", "recall", "query"}, {"recall", "query", "--workspace", "other"},
-		{"config", "show"}, {"doctor"}, {"memory", "purge", "memory-internal"}, {"backup", "restore"},
-		{"source", "ingest", "--input", filepath.Join(t.TempDir(), "outside.json"), "--idempotency-key", "bad"},
-		{"source", "ingest", "--input", input}, {"search", "query", "--all-workspaces"}} {
-		reject(args...)
-	}
-	rows, err := os.ReadFile(output)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, row := range strings.Split(strings.TrimSpace(string(rows)), "\n") {
-		if !strings.HasPrefix(row, "--home "+in.Home+" --workspace "+in.WorkspaceID+" --actor direct-agent ") {
-			t.Fatalf("memory CLI command escaped fixed scope: %q", row)
-		}
-	}
-	in.Capabilities = []string{"memory_read", "local_read"}
-	if err := installDirectMemoryTool(in, bin); err != nil {
-		t.Fatal(err)
-	}
-	reject("source", "ingest", "--input", input, "--idempotency-key", "read-only")
 }
 
 func TestDirectActionWrapperBindsCurrentAttemptWithoutExternalWrite(t *testing.T) {
@@ -640,42 +564,6 @@ func TestDirectActionWrapperBindsCurrentAttemptWithoutExternalWrite(t *testing.T
 	}
 	if err := exec.Command(filepath.Join(in.WorkDir, ".claude", "tools", "memgov-action"), outside).Run(); err == nil {
 		t.Fatal("action wrapper accepted an input outside the session directory")
-	}
-}
-
-func TestDirectHotwordWrapperBindsCurrentAttemptAndRejectsOutsideInput(t *testing.T) {
-	_, in, _ := directAgentFixture(t)
-	output := filepath.Join(in.Home, "hotword-captures")
-	bin := filepath.Join(in.Home, "bin", "memgov")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '" + output + "'\ncat \"${12}\" >> '" + output + "'\n"
-	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := installDirectHotwordTool(in, bin); err != nil {
-		t.Fatal(err)
-	}
-	control, _ := json.Marshal(map[string]string{"task_id": "task-internal", "attempt_id": "attempt-internal", "workspace_id": in.WorkspaceID})
-	if err := os.WriteFile(filepath.Join(in.WorkDir, ".memgov-turn.json"), control, 0600); err != nil {
-		t.Fatal(err)
-	}
-	input := filepath.Join(in.WorkDir, "hotword.json")
-	if err := os.WriteFile(input, []byte(`{"canonical":"memgov","aliases":["Memo Go"],"meaning":"记忆治理工具"}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	wrapper := filepath.Join(in.WorkDir, ".claude", "tools", "memgov-hotword")
-	if err := exec.Command(wrapper, input).Run(); err != nil {
-		t.Fatal(err)
-	}
-	body, err := os.ReadFile(output)
-	if err != nil || !strings.Contains(string(body), "runtime task capture-hotword task-internal --input") || !strings.Contains(string(body), `"attempt_id": "attempt-internal"`) {
-		t.Fatalf("hotword wrapper did not bind the current turn: %q %v", body, err)
-	}
-	outside := filepath.Join(t.TempDir(), "outside.json")
-	if err := os.WriteFile(outside, []byte(`{"canonical":"x","aliases":["y"],"meaning":"z"}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := exec.Command(wrapper, outside).Run(); err == nil {
-		t.Fatal("hotword wrapper accepted an input outside the session directory")
 	}
 }
 

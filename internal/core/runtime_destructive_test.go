@@ -23,7 +23,7 @@ func TestDestructiveProposalReleasesTaskAndRequiresExactDetails(t *testing.T) {
 		}
 		_, err := f.s.Mutate(ctx, Request{Scope: "global", Command: "test.propose"}, func(tx *Tx) (any, error) {
 			var e error
-			task, e = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "awaiting concrete approval", Actions: []RuntimeAction{{Kind: RuntimeDestructiveAction, Target: "/named/test/artifact", Payload: payload}}}, "")
+			task, e = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "awaiting concrete approval", Actions: []RuntimeAction{{Kind: RuntimeDestructiveAction, Target: "/named/test/artifact", Payload: payload}}})
 			return task, e
 		})
 		if !valid {

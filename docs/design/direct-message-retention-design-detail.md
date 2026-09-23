@@ -6,7 +6,7 @@
 
 Schema 20 在 `data_sources` 保存 `direct_enabled`、`direct_enabled_at`、`backfill_after_enable`、`retention_days`、最近私聊收流和清理结果。`direct_conversation_contacts` 以通道和真实会话 ID 为主键，稳定联系人标识用于精确过滤，显示名只作候选搜索。
 
-私聊路由使用 `conversation_type=direct`、`mode=collect`、`audience_policy=local_private`、`memory_policy=explicit_only` 和 `send_policy=draft_only`。群发现只更新群路由，不能吸收本人交付路由；私聊发现也不能改变群授权。
+私聊路由使用 `conversation_type=direct`、`mode=collect`、`audience_policy=local_private` 和 `send_policy=draft_only`。群发现只更新群路由，不能吸收本人交付路由；私聊发现也不能改变群授权。
 
 开启边界按配置真正应用时记录。事件早于边界或早于保留窗口会被拒绝，停用后不会收流。再次从关闭切到开启会覆盖启用时间，因此补漏不会跨过停用区间。
 
@@ -34,7 +34,7 @@ Schema 22 的 `runtime_message_actions` 同样遵循七天原文保留：引用�
 
 启动后立即清理，之后每小时检查；服务每个事务最多处理 50 条，尚有积压时分批继续，失败可重试。候选消息限定为当前数据源实际拥有的路由。
 
-`config plan` 的 `retention_previews` 显示现有可用原文中将到期的消息数量。每批清理只扫描一次记忆、历史版本与候选引文，避免长事务阻塞实时租约续期；ready 日志来自实际 DWS 平台标记。
+`config plan` 的 `retention_previews` 显示现有可用原文中将到期的消息数量。每批清理限定消息及其运行时原文副本，避免长事务阻塞消息处理；ready 日志来自实际 DWS 平台标记。
 
 清理会：
 
@@ -44,9 +44,9 @@ Schema 22 的 `runtime_message_actions` 同样遵循七天原文保留：引用�
 - 投递草稿和幂等响应缓存同步移除过期原文；缓存仍保留去重键，不重新执行已完成请求；
 - 保留 Source、location、digest、消息 ID、去重、覆盖和审计记录。
 
-正式记忆不因证据到期而退役。读取证据时会因 Source 已到期而失败，要求 DWS 回查。SQLite 使用 `secure_delete`；本规则不覆盖用户自行保存的备份或导出。
+Workspace knowledge has its own file/history lifecycle and is not automatically deleted when a raw source expires. Notes should retain dated conclusions and source references rather than raw chat copies. Expired evidence requires authorized platform rechecking. SQLite uses `secure_delete`; this rule does not erase workspace files, old archives, user backups or exports.
 
-后台批次前，消息详情、Source 片段、来源搜索、记忆/候选/历史中的引文以及运行上下文已按发送时间即时排除原文。Source 仍可查询无正文定位；正式结论仍可按已有发布范围读取。个人 DWS 原文到期仍推进来源水位并清理证据，但已接受的 Owner 应用机器人私聊轮次属于用户-facing 会话，不因该来源水位被截断；其恢复历史继续由 SQLite 会话关系和已接受投递共同决定。引文清理使用现行模型的规范 JSON 摘要校验，不破坏记忆版本一致性。
+Message details, internal Source fragments and runtime context exclude expired raw text before physical cleanup. Source identifiers and non-body location metadata remain for traceability; legacy memory/candidate quote scans are removed. Accepted Owner application-bot conversation turns keep their existing session/delivery recovery rules, independently of DWS collection watermarks. Workspace notes are a separate persistence layer and never expand evidence availability or disclosure authority.
 
 ## 失败语义与测试
 

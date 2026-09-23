@@ -6,19 +6,26 @@ make install
 .memgov/bin/memgov workspace add project-a --path /absolute/project-a
 ```
 
-新权威库是 `~/.memgov/state.db`，与旧 `memgov.db` 分开。init 可重复执行；发现旧模型表或未知 Schema 时拒绝覆盖。不要用旧数据库改名冒充新库。
+Operational state is stored in `~/.memgov/state.db`，与旧 `memgov.db` 分开。init 可重复执行；受支持的旧 Schema 先归档再升级，没有受支持迁移记录的旧模型或未知 Schema 拒绝覆盖。不要用旧数据库改名冒充新库。
 
-已安装 macOS 系统托管时，`make install` 替换程序后，服务会自动备份并迁移受支持的旧 Schema，再恢复运行；升级前备份位于 `<数据根>/backups/service-upgrades/`。普通前台命令仍通过 `init` 显式升级。备份失败或版本不兼容时查看 `service status` 给出的启动日志，详见[统一服务](../design/unified-service-design.md)。
+Before upgrading an old service, stop it and convert the effective configuration:
+
+```bash
+memgov --home /path/to/data --config /path/to/config.yaml config migrate-workspaces
+memgov --home /path/to/data --config /path/to/config.yaml init
+```
+
+Configuration conversion archives the original YAML and AgentHome notes, removes old memory/home/share/review fields and validates the result; it does not apply runtime configuration. Schema 27 archives and verifies a consistent complete old `.db`, a `.knowledge.tar` of configuration and legacy AgentHome notes, and their digest manifest before removing Candidate/Review/Memory and related jobs. Managed-service upgrades use the same archive-before-drop gate, but configuration conversion must happen first. A failed archive prevents destructive migration. New Agent Workspaces start empty; rollback requires the old archive and matching binary. See [recovery](governance.md) and the [Workspace design](../design/agent-workspace-design.md).
 
 数据根优先级：`--home` → `MEMGOV_HOME` → `~/.memgov`。
 
-工作区优先级：`--workspace` → `MEMGOV_WORKSPACE` → 当前目录匹配的最长项目路径 → 配置的 default_workspace → global。显式指定 `--workspace global` 可脱离项目绑定。工作区是本机检索和写入作用域，不是多租户身份认证。
+工作区优先级：`--workspace` → `MEMGOV_WORKSPACE` → 当前目录匹配的最长项目路径 → 配置的 default_workspace → global。显式指定 `--workspace global` 可脱离项目绑定。These project associations do not select Agent knowledge ownership. Agent Workspace identity is derived from verified Owner or channel/conversation identity.
 
-配置文件：`--config` → `MEMGOV_CONFIG` → 数据根下 `config.yaml`。运行服务只认这一份活动配置：`~/.memgov/config.yaml`。若历史环境仍有 `config.dual.yaml`，先停止依赖它的 runtime，再把完整 Personal Jarvis 声明合并到 `config.yaml`，预览并应用后重新启动统一服务；旧文件只保留为迁移备份，不再作为日常入口。平台适配器和 Agent harness 均通过独立注册/配置选择，不把某个平台或执行器写入记忆模型。
+配置文件：`--config` → `MEMGOV_CONFIG` → 数据根下 `config.yaml`。运行服务使用当前选定的唯一活动配置；默认数据根下为 `~/.memgov/config.yaml`。若历史环境仍有 `config.dual.yaml`，先停止依赖它的 runtime，再把完整 Personal Jarvis 声明合并到 `config.yaml`，预览并应用后重新启动统一服务；旧文件只保留为迁移备份，不再作为日常入口。平台适配器和 Agent harness 均通过独立注册/配置选择，不把某个平台或执行器写入记忆模型。
 
-仓库内的 `config.local.yaml` 不会自动加载。它只作为开发环境入口链接，不能复制出第二份运行配置。首次初始化可将[完整示例](../../config.local.yaml.example)合并到 `~/.memgov/config.yaml`，或在开发环境显式使用 `--config config.local.yaml`；服务安装和 launchd 始终保存 `~/.memgov/config.yaml`。
+仓库内的 `config.local.yaml` 不会自动加载。它只作为开发环境入口链接，不能复制出第二份运行配置。首次初始化可将[完整示例](../../config.local.yaml.example)合并到 `~/.memgov/config.yaml`，或在开发环境显式使用 `--config config.local.yaml`；service install 将所选配置的绝对路径保存到 launchd；更换路径需要显式重新安装托管配置。
 
-Personal Jarvis 使用 `applications.owner_private` 与 `applications.proactive` 组织同一套根任务模型：平台消息和本地主动发现都可以创建根任务，根任务可以直接处理或派发有界 Agent。新的主动值守任务按“有实质结果、阻塞或需要确认时通知用户”运行；历史 `record_only` 任务继续兼容并保持只记录。新建默认后台 Agent 使用 `owner_delegated`，已有显式 Agent 的限制保留，权限扩张仍需预览和显式应用。`applications.bots` 继续按 channel 声明群 Jarvis 的默认人设及私聊/群覆盖；群 Jarvis 的现有能力和回复通道不因 Personal Jarvis 重构而削减。详见[Personal Jarvis 主设计](../design/owner-assistant-design.md)、[配置兼容](../design/dingtalk-integration-design-detail.md#完成与配置兼容)。源码、安装和真实平台验收分别以[交付状态](../implementation-status.md)为准。
+Owner private chat and proactive processing use separate operational entrypoints and the verified Owner's shared knowledge workspace. Group Agents keep independent channel/conversation workspaces. Proactive completion currently remains `record_only`; root/child orchestration and automatic proactive notifications are product targets, not part of this migration. Agent preset, skill and external-action policies remain explicit configuration. See [runtime guidance](runtime-user-guide.md).
 
 目前支持以下配置：
 
@@ -71,8 +78,8 @@ memgov --config config.local.yaml runtime start my-watcher
 
 命令行参数覆盖 YAML，例如 `--robot-code`、`--analysis-model`、`--pilot=false`；显式 `--ignore` 列表替换 YAML 列表。`pilot: true` 固定使用 1 条 / 30 秒 / 10 秒对账参数。默认值不会修改已存在实例，它们继续通过 `runtime configure` 管理。应用机器人通道使用 `config apply` 注册，不使用 dws 的 `runtime setup` 自动发现流程。
 
-`config show`、`config validate`、`version`、帮助和补全不创建数据库。YAML 是系统默认值和通道配置的输入文件，业务配置的生效版本、记忆、任务和审计仍以 SQLite 为准。普通命令 stdout 只输出结果；值守运行日志另外写入 JSONL 文件。旧配置中的 Skill、store、index、legacy bridge 设置不再使用。
+`config show`、`config validate`、`version`、帮助和补全不创建数据库。YAML 是系统默认值和通道配置的输入文件，业务配置的生效版本、任务和审计仍以 SQLite 为准；知识正文以 Agent Workspace 文件为准。普通命令 stdout 只输出结果；值守运行日志另外写入 JSONL 文件。旧配置中的 Skill、store、index、legacy bridge 设置不再使用。
 
-从另一台机器恢复：先选定新数据根并执行 init，再 backup verify 与 backup restore。只复制单个正在使用的 state.db 不构成一致性备份，应使用 backup create。
+Recovery needs the schema-compatible database, effective configuration and separate copies of `<home>/agent-workspaces/` and `<home>/agent-workspace-history/`. A consistent SQLite backup alone does not include knowledge; copying an active state.db alone is not a consistent backup. See [governance](governance.md).
 
 清理构建结果用 `make clean`，它只移除 `.memgov/bin` 和 `dist`，不会删除记忆数据或原始输入。

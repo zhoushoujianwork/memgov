@@ -1,66 +1,28 @@
-# 产品定位：开源、平台无关的个人 Jarvis
+# Product positioning: a local Personal Jarvis
 
-状态：产品正式定位已确定，部分运行行为仍在实现和真实平台验收中。本文说明目标形态和边界；安装版本、源码实现与现场运行状态以[能力状态](../implementation-status.md)为准。
+Status: product direction with current storage decisions. The [implementation status](../implementation-status.md) separates shipped source, planned capabilities and deployment acceptance.
 
-memgov 的正式产品定位是一个开源、平台无关、harness 无关、运行在用户本地环境中的个人 Jarvis。它通过飞书、钉钉、Slack、Telegram、企业微信、Web Chat 或其他适配器接收消息，也可以在 Claude、Codex、OpenClaw、自建 harness 或其他执行器之间替换，但不把 Agent、工作区、技能、任务和记忆绑定到任何一个平台或 harness。两类适配器都可以由用户和社区自由扩展；用户自己的本地 Workspace 才是持续工作的边界。
+memgov is an open-source personal work assistant running in the user's own environment. Communication platforms and Agent harnesses are adapter boundaries, rather than the product identity. DingTalk/DWS and Claude are current integrations; mentioning other platforms or harnesses does not mean those adapters ship.
 
-Jarvis 接收用户的日常需求和后台发现的事项，组织消息、历史、本机环境、项目和受治理记忆，按授权范围直接处理或派发 Agent，并把结果、阻塞和需要决策的事项交回用户。DWS Owner 是当前的重要使用场景，不再是产品的身份前提。
+The product goal is to connect work discovery, background context, authorized execution, verifiable delivery and reusable experience. A personal Agent and group-specific Agents retain distinct identities and audiences. Tool count and Agent count are not measures of success.
 
-memgov 的核心价值不只是保存文本，而是为这套服务提供可信的记忆、证据、任务和权限治理底座：
+## Persistent knowledge and operational state
 
-```text
-任意平台消息 / 本地主动任务
-        → 事项与上下文组装
-        → 直接处理或派发 Agent
-        → 工具执行、验证与记忆治理
-        → 结果、阻塞或确认请求回到用户
-```
+[Agent Workspaces](../design/agent-workspace-design.md) hold readable, editable Markdown knowledge. Owner private chat and proactive work share the verified Owner's workspace. Groups are isolated by channel and conversation, regardless of which preset they use. The short index is refreshed every turn and detailed notes are read on demand.
 
-## 核心分层
+SQLite holds messages, internal evidence, temporary task progress, permissions, delivery and recovery facts. It is the authority for those operational records, while workspace files are the authority for knowledge. The old Candidate/Review/Memory governance model is archived and removed; internal Source evidence remains for message behavior.
 
-| 层 | 职责 | 是否平台绑定 |
-| --- | --- | --- |
-| 沟通平台适配器 | 收发消息、附件、身份和会话事件 | 是；可替换、可开源扩展 |
-| Personal Jarvis | 理解请求、保持上下文、拆解任务、汇总结果 | 否 |
-| Agent Runtime / harness | 沙箱、文件、命令、技能和任务执行 | 否；可替换、可开源扩展 |
-| 持久化 Workspace | 身份、人设、用户画像、项目资料、任务和记忆 | 否；由用户控制 |
-| memgov 治理层 | 证据、记忆、权限、受众、确认、审计和恢复 | 否 |
+## Interfaces and boundaries
 
-Aily、OpenClaw 等系统可以作为 Agent Runtime 和 Workspace 设计的参考，但不是 memgov 的运行依赖或产品边界。
+Daily work enters through configured chat or proactive processing. CLI and the local console configure, diagnose and inspect the system. The runtime-managed `memgov-workspace` skill explains the scoped knowledge tools; it does not grant shell, messaging or production permissions. Knowledge text cannot authorize an action or disclosure.
 
-## 产品入口
+Only explicit read-only reference directories are shared. Owner knowledge is not automatically mounted into groups. Full Bash continues to run as the service account and is not an operating-system sandbox.
 
-| 入口 | 主要用途 | 当前身份边界 |
-| --- | --- | --- |
-| 任意平台适配器 | 日常提问、交办、跟进和确认 | 保留平台身份、会话、受众和发送策略 |
-| 本地主动值守 | 发现属于用户的工作并主动推进 | 使用用户预设的委托范围；结果通知策略由运行配置决定 |
-| CLI 与本地管理台 | 配置、诊断、任务控制、审计和记忆治理 | 本机运维入口，不替代机器人对话 |
-| `memgov-memory` skill | 让其他 Agent 查询和治理同一套记忆与证据 | 赋予 memgov 数据治理能力，不自动赋予 shell、发消息或生产权限 |
-| 群挂载的 Jarvis | 团队在群内使用独立助手 | 沿用该机器人、该群的 preset、工具、技能、记忆可见范围和回复路由 |
+<a id="检索定位"></a>
+## Retrieval choice
 
-群挂载的 Jarvis 是个人 Jarvis 之外的团队接入面。个人 Workspace 可以跨平台复用，但每个入口仍保留自己的身份、会话、受众和发送权限；私聊授权不会自动注入群聊，群消息也不会自动取得用户的私有历史。这里的隔离是受众与授权边界，不是对群 Jarvis 的功能降级。
+Use a short `MEMORY.md` index plus focused file search and reads. Keep project decisions and procedures together, record observation dates and source references, and correct stale knowledge with a new version. Do not load an entire note archive every turn or copy raw chat indiscriminately. Current-file search is scoped to one workspace; historical revisions and migration archives are excluded.
 
-## 记忆与证据底座
+## Next product milestones
 
-现行模型只有四类正式对象：
-
-- **Source**：不可变的原始材料和证据快照；
-- **Candidate**：等待核对的新建或修订建议；
-- **Review**：对候选及证据的复核记录；
-- **Memory**：经过应用、可长期复用的结论及其版本。
-
-SQLite `state.db` 是唯一真相源。原始来源、任务临时进展和长期记忆分别治理；来源正文不能授予执行、披露或发送权限。`memgov-memory` skill 通过稳定的 CLI/API 契约访问这些对象，记录 Agent、工作区、请求、证据、版本和幂等结果，避免各 Agent 直接操作数据库。
-
-## 运行和交付边界
-
-Personal Jarvis 可以在已授权范围内读取本机和项目、修改代码、运行测试、查询记忆、派发子 Agent，以及调用已配置的工具。删除、停服、生产变更、跨受众披露、对外发送、权限扩大和未知结果重放等动作需要当前用户的明确确认。所有任务、子任务、工具动作、证据和通知都应可追溯。
-
-主动值守的目标行为是：有实质结果、阻塞或需要确认时通知用户；没有变化时保持安静。适配器必须把结果发回原入口，不能因为发起者是用户就擅自改用另一个平台或本人身份发送。
-
-## 检索定位
-
-广义上，memgov 可以作为 RAG 的本地治理层：Agent 先召回记忆或来源，再结合当前任务回答。当前使用 SQLite FTS5，不引入向量数据库。它面向规模可控、需要证据和权限边界的个人与项目知识，优先保证工作区、有效期、状态和证据约束。
-
-只有在真实使用中反复出现“记忆规模仍小但换一种说法就无法召回”的问题，才考虑增加可重建的本地语义索引；它只能补充 FTS，不能替代 SQLite 权威数据和治理过滤。
-
-参见[总体架构](architecture.md)、[Personal Jarvis 设计](../design/owner-assistant-design.md)、[memgov-memory skill 设计](../design/memgov-memory-skill-design.md)和[最佳落地场景](best-practice-scenarios.md)。旧三轴、记忆原子、卡片和战斗模型只保留在[历史存档](../archive/decisions/README.md)中。
+Proactive completion currently records results locally (`record_only`). Root/child task orchestration and automatic result notifications remain future work. First validate one real work loop and the workspace migration, then add these capabilities with explicit scope and evidence. See the [architecture](architecture.md), [acceptance scenarios](best-practice-scenarios.md) and [roadmap](../roadmap.md).

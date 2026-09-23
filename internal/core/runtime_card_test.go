@@ -57,7 +57,7 @@ func newCardFixture(t *testing.T) cardFixture {
 	})
 	runtimeMutate(t, f.s, "card.complete", func(tx *Tx) (any, error) {
 		var err error
-		task, err = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "已准备", Actions: []RuntimeAction{{Kind: "git_push", Target: "origin/main", Payload: "push abc"}, {Kind: "infra_change", Target: "test", Payload: "change capacity"}}}, "")
+		task, err = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "已准备", Actions: []RuntimeAction{{Kind: "git_push", Target: "origin/main", Payload: "push abc"}, {Kind: "infra_change", Target: "test", Payload: "change capacity"}}})
 		return task, err
 	})
 	var out OutboxView

@@ -1,6 +1,6 @@
 # 历史存档 0001：记忆存储 —— 文件原生，还是直接上数据库？
 
-> 已被 memgov v2 取代。下文保留当时分析，不是现行操作指南。当前以 SQLite `state.db` 为唯一真相源，使用 Source、Candidate、Review、Memory；见[现行架构](../../architecture/architecture.md)和[CLI 用法](../../../README.md)。
+> Superseded historical record. Current knowledge lives in Agent Workspace files; SQLite retains operational state and internal evidence. See [current architecture](../../architecture/architecture.md) and [Workspace design](../../design/agent-workspace-design.md).
 
 - 状态：**历史存档，不再适用**（原状态：待拍板）
 - 日期：2026-09-11

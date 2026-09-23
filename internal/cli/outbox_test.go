@@ -7,9 +7,8 @@ import (
 	"github.com/zhoushoujianwork/memgov/internal/core"
 )
 
-// replyFixture registers a channel, formalizes a memory, publishes it to the
-// conversation and opens a trusted context, which is the state a reply needs.
-func replyFixture(t *testing.T, home string) (memoryID, contextID string) {
+// replyFixture opens a trusted reply context without a knowledge publication.
+func replyFixture(t *testing.T, home string) (contextID string) {
 	t.Helper()
 	invoke(t, home, "", "init")
 	add := `{"name":"bot-main","kind":"dingtalk_app","identity":{"expected_corp_id":"corp1","client_id":"cli-1","robot_code":"bot-1"},` +
@@ -17,25 +16,21 @@ func replyFixture(t *testing.T, home string) (memoryID, contextID string) {
 	if code, value := invoke(t, home, add, "channel", "add", "--input", "-"); code != 0 {
 		t.Fatalf("channel add: %+v", value)
 	}
-	memoryID = formalMemory(t, home)
-	if code, value := invoke(t, home, "", "audience", "publish", "bot-main", memoryID, "--conversation", "cid:group2", "--reason", "群里问到该流程"); code != 0 {
-		t.Fatalf("publish: %+v", value)
-	}
 	open := `{"conversation_id":"cid:group2","sender":{"id_type":"union_id","id_value":"alice"},"query":"上线前要注意什么","trigger_message_id":"m1"}`
 	code, opened := invoke(t, home, open, "reply", "open", "bot-main", "--input", "-")
 	if code != 0 {
 		t.Fatalf("reply open: %+v", opened)
 	}
-	return memoryID, data(t, opened)["id"].(string)
+	return data(t, opened)["id"].(string)
 }
 
 // The whole reply path runs offline: a draft is stored, displayed with its target
 // and evidence, and refuses to be dispatched while sending is not enabled.
 func TestReplyDraftIsDisplayedButNeverSent(t *testing.T) {
 	home := t.TempDir()
-	memoryID, contextID := replyFixture(t, home)
+	contextID := replyFixture(t, home)
 	draft := core.JSON(map[string]any{"request_context_id": contextID,
-		"content": "上线前必须先备份数据库。", "citations": []string{memoryID}})
+		"content": "上线前必须先备份数据库。", "citations": []string{}})
 	code, created := invoke(t, home, draft, "reply", "draft", "--input", "-")
 	if code != 0 {
 		t.Fatalf("reply draft: %+v", created)
@@ -57,7 +52,7 @@ func TestReplyDraftIsDisplayedButNeverSent(t *testing.T) {
 	if p["target"].(map[string]any)["conversation_id"] != "cid:group2" {
 		t.Fatalf("target: %+v", p["target"])
 	}
-	if len(p["citations"].([]any)) != 1 {
+	if len(p["citations"].([]any)) != 0 {
 		t.Fatalf("citations were not displayed: %+v", p["citations"])
 	}
 	if p["sendable"] != false {
@@ -98,28 +93,13 @@ func TestReplyDraftIsDisplayedButNeverSent(t *testing.T) {
 	}
 }
 
-// A reply may not cite material the conversation is not allowed to see, and the
-// context alone decides the audience of a recall.
-func TestReplyRecallAndCitationsStayInsideTheContextAudience(t *testing.T) {
+// Retired Memory citations must not become sendable after the cutover.
+func TestReplyRefusesLegacyMemoryCitations(t *testing.T) {
 	home := t.TempDir()
-	memoryID, contextID := replyFixture(t, home)
-	code, recalled := invoke(t, home, "", "reply", "recall", contextID, "上线前要注意什么")
-	if code != 0 {
-		t.Fatalf("reply recall: %+v", recalled)
-	}
-	// Revoking the publication makes both the recall and a new citation refuse.
-	if code, value := invoke(t, home, "", "audience", "unpublish", "bot-main", memoryID, "--conversation", "cid:group2", "--reason", "收回"); code != 0 {
-		t.Fatalf("unpublish: %+v", value)
-	}
-	draft := core.JSON(map[string]any{"request_context_id": contextID,
-		"content": "上线前必须先备份数据库。", "citations": []string{memoryID}})
-	code, refused := invoke(t, home, draft, "reply", "draft", "--input", "-")
-	if code != 6 {
-		t.Fatalf("an unpublished memory was cited: %d %+v", code, refused)
-	}
-	// An unknown context is not found rather than answered with an empty result.
-	if code, _ = invoke(t, home, "", "reply", "recall", "00000000-0000-4000-8000-000000000000", "问题"); code != 4 {
-		t.Fatalf("an unknown context was answered: %d", code)
+	contextID := replyFixture(t, home)
+	draft := core.JSON(map[string]any{"request_context_id": contextID, "content": "old claim", "citations": []string{"old-memory-id"}})
+	if code, out := invoke(t, home, draft, "reply", "draft", "--input", "-"); code != 6 {
+		t.Fatal(code, out)
 	}
 }
 
@@ -127,7 +107,7 @@ func TestReplyRecallAndCitationsStayInsideTheContextAudience(t *testing.T) {
 // attempt, and an unknown outcome stays unknown instead of being retried.
 func TestDispatchRecordsAttemptAndKeepsUnknownDeliveryHonest(t *testing.T) {
 	home := t.TempDir()
-	memoryID, contextID := replyFixture(t, home)
+	contextID := replyFixture(t, home)
 	// Sending is enabled on the route and the capability is recorded by a probe
 	// against the stub, so nothing here contacts a platform. This happens before
 	// the draft is produced, because a policy change stales earlier drafts.
@@ -155,7 +135,7 @@ func TestDispatchRecordsAttemptAndKeepsUnknownDeliveryHonest(t *testing.T) {
 		t.Fatalf("a draft was produced against a stale route version: %d %+v", code, refused)
 	}
 	draft := core.JSON(map[string]any{"request_context_id": data(t, reopened)["id"].(string),
-		"content": "上线前必须先备份数据库。", "citations": []string{memoryID}})
+		"content": "上线前必须先备份数据库。", "citations": []string{}})
 	code, created := invoke(t, home, draft, "reply", "draft", "--input", "-")
 	if code != 0 {
 		t.Fatalf("reply draft: %+v", created)

@@ -126,7 +126,7 @@ func runtimePolicyInput(current core.RuntimeConfig) core.RuntimeConfigInput {
 		Owner:           core.Sender{IDType: current.OwnerIDType, IDValue: current.OwnerIDValue},
 		ApplicationMode: current.ApplicationMode, AgentCapabilities: current.AgentCapabilities,
 		AgentBash: &bash, ExternalActions: current.ExternalActions,
-		MemoryScope: current.MemoryScope, ClaudeProfile: current.ClaudeProfile,
+		ClaudeProfile: current.ClaudeProfile,
 		AnalysisModel: current.AnalysisModel, ExecutionModel: current.ExecutionModel,
 		AgentPreset: current.AgentPreset, ItemThreshold: current.ItemThreshold,
 		MaxWaitSeconds: current.MaxWaitSeconds, ReconcileSeconds: current.ReconcileSeconds,
@@ -210,7 +210,7 @@ func applyDualModePlan(ctx context.Context, tx *core.Tx, plan DualConfigPlan) (c
 						}
 					}
 				} else {
-					runtime, configureErr := tx.ConfigureRuntime(ctx, core.RuntimeConfigInput{Scheduling: p.Scheduling, Name: "proactive", Channel: channel.ID, RouteIDs: routeIDs, Owner: core.Sender{IDType: p.Owner.IDType, IDValue: p.Owner.IDValue}, AgentCapabilities: agent.Capabilities, AgentBash: &agent.Bash, ExternalActions: agent.ExternalActions, MemoryScope: agent.MemoryScope, ClaudeProfile: agent.ClaudeProfile, AnalysisModel: p.AnalysisModel, ExecutionModel: agent.ExecutionModel, AgentPreset: agent.Preset, ItemThreshold: *p.Batch.Items, MaxWaitSeconds: *p.Batch.MaxWaitSeconds, ReconcileSeconds: *plan.Declaration.DataSources[p.Source].ReconcileSeconds, ExpectedVersion: version})
+					runtime, configureErr := tx.ConfigureRuntime(ctx, core.RuntimeConfigInput{Scheduling: p.Scheduling, Name: "proactive", Channel: channel.ID, RouteIDs: routeIDs, Owner: core.Sender{IDType: p.Owner.IDType, IDValue: p.Owner.IDValue}, AgentCapabilities: agent.Capabilities, AgentBash: &agent.Bash, ExternalActions: agent.ExternalActions, ClaudeProfile: agent.ClaudeProfile, AnalysisModel: p.AnalysisModel, ExecutionModel: agent.ExecutionModel, AgentPreset: agent.Preset, ItemThreshold: *p.Batch.Items, MaxWaitSeconds: *p.Batch.MaxWaitSeconds, ReconcileSeconds: *plan.Declaration.DataSources[p.Source].ReconcileSeconds, ExpectedVersion: version})
 					if configureErr != nil {
 						return old, configureErr
 					}
@@ -280,7 +280,6 @@ func applyDualModePlan(ctx context.Context, tx *core.Tx, plan DualConfigPlan) (c
 				input.AgentCapabilities = agent.Capabilities
 				input.AgentBash = &agent.Bash
 				input.ExternalActions = agent.ExternalActions
-				input.MemoryScope = agent.MemoryScope
 				input.ClaudeProfile = agent.ClaudeProfile
 				input.ExecutionModel = agent.ExecutionModel
 				input.AgentPreset = agent.Preset
@@ -359,7 +358,7 @@ func applyDualModePlan(ctx context.Context, tx *core.Tx, plan DualConfigPlan) (c
 			} else if core.ErrorCode(err) != "not_found" {
 				return old, err
 			}
-			_, err = tx.ConfigureRuntime(ctx, core.RuntimeConfigInput{Name: binding.Runtime, Channel: app.ID, RouteIDs: routeIDs, DeliveryRouteID: routeIDs[0], Owner: owner, ApplicationMode: "group_mention", ContextChannel: contextChannel, AgentCapabilities: agent.Capabilities, AgentBash: &agent.Bash, ExternalActions: agent.ExternalActions, MemoryScope: agent.MemoryScope, ClaudeProfile: agent.ClaudeProfile, ExecutionModel: agent.ExecutionModel, AgentPreset: agent.Preset, Concurrency: 1, ExpectedVersion: version})
+			_, err = tx.ConfigureRuntime(ctx, core.RuntimeConfigInput{Name: binding.Runtime, Channel: app.ID, RouteIDs: routeIDs, DeliveryRouteID: routeIDs[0], Owner: owner, ApplicationMode: "group_mention", ContextChannel: contextChannel, AgentCapabilities: agent.Capabilities, AgentBash: &agent.Bash, ExternalActions: agent.ExternalActions, ClaudeProfile: agent.ClaudeProfile, ExecutionModel: agent.ExecutionModel, AgentPreset: agent.Preset, Concurrency: 1, ExpectedVersion: version})
 			if err != nil {
 				return old, err
 			}

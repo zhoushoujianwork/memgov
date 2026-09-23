@@ -122,7 +122,7 @@ func TestRuntimeRestartUnknownDeliveryNeverReexecutes(t *testing.T) {
 		return task, err
 	})
 	runtimeMutate(t, f.s, "restart.complete", func(tx *Tx) (any, error) {
-		return tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "validated artifact", Summary: "complete"}, "")
+		return tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "validated artifact", Summary: "complete"})
 	})
 	var outbox OutboxView
 	runtimeMutate(t, f.s, "restart.delivery", func(tx *Tx) (any, error) {

@@ -1,20 +1,25 @@
 # Implementation status
 
-This page describes the source tree and the platform-neutral Personal Jarvis product line. It does not claim that a particular local installation, communication platform, harness, model account, or long-running service has been validated. Group-mounted Jarvis remains an independent ingress and keeps its configured capabilities while the Personal Jarvis work is rolled out.
+This page describes the source tree, not a particular installed executable or live service. Agent Workspace files replace the database memory model. Full functional checks, the race gate, offline acceptance and the frontend build passed on 2026-09-23.
 
-| Capability | Source status | Reproducible validation | Remaining boundary |
-| --- | --- | --- | --- |
-| Source, Candidate, Review, Memory, evidence, versioning, search, backup, and governance | Implemented | `make check` and the core package tests | Validate upgrades against a disposable copy before using production data |
-| DingTalk application intake and DWS-backed collection | Implemented | Adapter, parser, identity, routing, offline scenario tests, and a local launchd service with all five configured modules active | Requires the operator's own DingTalk configuration and continued live-platform observation |
-| Platform adapter contract and harness registry | Implemented in source | Fake adapter tests, harness registry tests, full Go test suite, and an installed `2.0.0-harness-migration` smoke test where `runtime harness` reported Claude healthy and a real DWS owner-private prompt returned `READY`; the earlier unavailable case delivered a safe error code and reason in chat | Additional community platform and harness adapters still require their own live acceptance |
-| Personal Jarvis, group-mounted Jarvis, proactive processing, and permission policies | Partially implemented / compatibility maintained | Runtime, policy, confirmation, scheduling, recovery, group-route regression tests, plus the real owner-private DWS smoke path | Personal root/child task graph, environment snapshot, proactive result notification, and broad live-platform delivery still require deployment verification; existing group Jarvis capability is intentionally preserved |
-| Single active `~/.memgov/config.yaml` and runtime plan diagnostics | Implemented in source | Config validation/plan and migration regression tests | A deployed host must stop old dependent runtimes, apply the merged declaration, restart the unified service, and archive `config.dual.yaml` |
-| `memgov-memory` cross-Agent governance protocol | Documented and skill surfaces aligned | Skill contract review plus CLI/core governance tests | Stable external Agent/API packaging and live multi-Agent acceptance remain deployment work |
-| Local console and embedded React UI | Implemented | Type checking, frontend tests, Go console tests, and embedded build | The console is local-only and is not a multi-user authenticated service |
-| macOS managed service | Implemented | LaunchAgent unit and opt-in isolated integration tests | Linux service management and desktop packaging are not included |
-| Release archives for macOS and Linux, arm64 and amd64 | Implemented | `make release VERSION=<version>` | Signing, notarization, and Windows builds are not included |
-| End-to-end operational acceptance | Environment-specific | Offline fixtures are included | Real credentials, conversations, logs, and acceptance evidence stay outside the public repository |
+| Capability | Source status | Validation and remaining boundary |
+| --- | --- | --- |
+| Agent Workspace files, identity, scoped read/search/write and history | Implemented and offline-validated | Owner chat/background reuse, active-session index refresh, reopen persistence, cross-process conflict handling, path budgets and group isolation pass |
+| Destructive old-memory archival and Schema 27 upgrade | Implemented and offline-validated | Fresh install and old-schema init/service upgrades pass; archive failure and transaction interruption preserve old state; legacy tasks are fenced and unknown sends retained |
+| Workspace CLI and runtime-managed skill | Implemented and offline-validated | No-Bash scoped access, stale task/attempt/route rejection, config conversion and legacy field/skill/API removal pass |
+| Local workspace browser | Implemented and package-validated on 2026-09-23 | Console package tests, frontend typecheck/build and UI/Markdown/date tests pass; no real installation or platform claim |
+| DingTalk application intake and DWS collection | Retained and regression-tested | Parser, identity, routing, retraction, source retention and delivery tests use synthetic fixtures; Scenario 1 passes all ten offline cases |
+| Runtime policy, confirmation, cancellation and recovery | Retained and regression-tested | Full functional and race checks pass, including cancellation, confirmation, delivery and unknown-result recovery |
+| Proactive completion | `record_only` remains current | Independent authorized communication is separate; automatic completion notifications remain future work |
+| Personal root/child task graph and broad environment snapshots | Product design, not delivered by this refactor | Require implementation plus separate offline and business acceptance |
+| Platform/harness adapters | Existing contracts and Claude implementation retained | Each additional adapter needs its own integration and live acceptance |
+| Single active config, macOS managed service and local operations | Existing source capabilities retained | Legacy configuration conversion precedes upgrade; no running service is replaced by this development task |
+| Release archives and Desktop | Existing release packaging; Desktop remains future work | No push, release, installation or deployment is part of this refactor |
 
-The current implementation still prioritizes a single local SQLite authority. Tool count, Agent count, and process liveness are not acceptance criteria; the relevant outcomes are safe scope, useful task completion, verifiable delivery, and governed memory reuse.
+Workspace files are authoritative for durable knowledge. SQLite is authoritative for operational state and internal Source evidence. Candidate, Review, Memory, old publication relations and the memory-card UI are superseded. Historical migration files remain intact so old databases can be recognized and archived safely.
 
-See the [roadmap](roadmap.md) for planned work and the [documentation index](README.md) for detailed designs and guides.
+The completed delivery checks are `make check`, `make test-runtime-race`, `scripts/runtime-offline-acceptance.sh`, and `npm --prefix web run build`. The race target allows 30 minutes for instrumented SQLite migration fixtures; the core suite completed in about ten minutes. Documentation review checks the staged content before the implementation commit and again before the local merge. These checks do not establish live-platform acceptance or upgrade an installed service.
+
+The relevant best-practice scenarios are Owner private work, proactive discovery and isolated group work, including experience reuse. The listed behaviors are verified offline; a real discover → investigate → execute → accept → write knowledge → reuse loop still needs separately authorized deployment and real evidence. Personal root/child orchestration and proactive completion notifications remain future work.
+
+Historical source or local installation tests recorded in individual designs describe their original versions and were not automatically rerun for this refactor. Real credentials, messages and acceptance evidence stay outside the public repository. See the [roadmap](roadmap.md), [workspace design](design/agent-workspace-design.md) and [documentation index](README.md).

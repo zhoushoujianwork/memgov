@@ -69,11 +69,15 @@ type directReactionAdapter struct {
 }
 
 func (a *directReactionAdapter) AddReaction(ctx context.Context, cfg channel.Config, req channel.ReactionRequest) error {
+	a.mu.Lock()
 	a.added = append(a.added, req.Emoji)
+	a.mu.Unlock()
 	return a.fakeAdapter.AddReaction(ctx, cfg, req)
 }
 
 func (a *directReactionAdapter) RemoveReaction(_ context.Context, _ channel.Config, req channel.ReactionRequest) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.removed = append(a.removed, req.Emoji)
 	return nil
 }

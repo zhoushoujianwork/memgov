@@ -34,10 +34,10 @@ func TestDirectSystemCommandsAndSessionRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := f.executor.inputs[0]
-	if first.SessionID == "" || first.Task.Messages[0].Body != "原始问题\n请保留换行。" || len(first.MemoryContext) != 0 {
+	if first.SessionID == "" || first.Task.Messages[0].Body != "原始问题\n请保留换行。" || first.AgentWorkspaceID == "" || first.WorkspaceBootstrap.Content == "" {
 		t.Fatal("direct transport modified the owner text or injected memory")
 	}
-	for _, expected := range []string{"one-to-one DingTalk chat", "Do not search all memgov memory first", `profile "corp:owner"`} {
+	for _, expected := range []string{"one-to-one DingTalk chat", "Do not search all workspace knowledge first", `profile "corp:owner"`} {
 		if !strings.Contains(first.ChannelSystemPrompt, expected) {
 			t.Fatalf("owner direct transport omitted channel behavior %q: %s", expected, first.ChannelSystemPrompt)
 		}
@@ -54,7 +54,7 @@ JOIN message_revisions mr ON mr.message_id=m.id AND mr.revision=m.current_revisi
 WHERE t.runtime_id=? AND trim(mr.body)='/status' ORDER BY t.created_at DESC LIMIT 1`, f.cfg.ID).Scan(&statusResult); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"Agent：owner-default", "技能继承：executor", "clawflow", "memgov-memory", "能力：artifact_create、conversation_history_read、local_read、local_test、local_write、memory_read", "Bash：true", "外部操作：owner_request", "记忆范围：owner_authorized", "普通私聊不会自动召回全部记忆"} {
+	for _, expected := range []string{"Agent：owner-default", "技能继承：executor", "clawflow", "memgov-workspace", "能力：artifact_create、conversation_history_read、local_read、local_test、local_write", "Bash：true", "外部操作：owner_request", "知识范围：owner_workspace", "启动只加载简短知识索引"} {
 		if !strings.Contains(statusResult, expected) {
 			t.Fatalf("status omitted %q: %s", expected, statusResult)
 		}

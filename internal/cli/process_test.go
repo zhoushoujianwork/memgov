@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zhoushoujianwork/memgov/internal/agentworkspace"
 	"github.com/zhoushoujianwork/memgov/internal/core"
 )
 
@@ -54,14 +55,21 @@ func TestBinaryConcurrentCASAndIdempotency(t *testing.T) {
 	if code, v, _ := runBinary(binary, home, "", "init"); code != 0 {
 		t.Fatal(v)
 	}
-	input := `{"uri":"process://source","content":"明确记录：项目部署前检查权限。"}`
+	ref, err := agentworkspace.OwnerRef("process-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = agentworkspace.Ensure(home, ref); err != nil {
+		t.Fatal(err)
+	}
+	input := `{"path":"notes/process.md","content":"verified experience","expected_digest":""}`
 	var wg sync.WaitGroup
 	codes := make(chan int, 12)
 	for i := 0; i < 12; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			code, _, _ := runBinary(binary, home, input, "source", "ingest", "--input", "-", "--idempotency-key", "same-source")
+			code, _, _ := runBinary(binary, home, input, "agent", "workspace", "write", "--workspace-id", ref.ID, "--input", "-", "--idempotency-key", "same-write")
 			codes <- code
 		}()
 	}
@@ -72,35 +80,19 @@ func TestBinaryConcurrentCASAndIdempotency(t *testing.T) {
 			t.Fatal("concurrent idempotency", code)
 		}
 	}
-	_, list, _ := runBinary(binary, home, "", "source", "list")
-	sources := list["data"].([]any)
-	if len(sources) != 1 {
-		t.Fatal(list)
+	doc, err := agentworkspace.Read(home, ref.ID, "notes/process.md")
+	if err != nil {
+		t.Fatal(err)
 	}
-	id := sources[0].(map[string]any)["id"].(string)
-	_, data, _ := runBinary(binary, home, "", "source", "show", id)
-	source := data["data"].(map[string]any)
-	f := source["fragments"].([]any)[0].(map[string]any)
-	candidate := map[string]any{"reason": "explicit source", "memory": map[string]any{"category": "fact", "title": "部署前检查", "summary": "项目部署前检查权限。", "content": "明确记录：项目部署前检查权限。", "evidence": []any{map[string]any{"source_id": id, "fragment_id": f["id"], "sha256": f["sha256"]}}}}
-	raw, _ := json.Marshal(candidate)
-	code, c, _ := runBinary(binary, home, string(raw), "candidate", "submit", "--input", "-")
-	if code != 0 {
-		t.Fatal(c)
-	}
-	cand := c["data"].(map[string]any)
-	code, v, _ := runBinary(binary, home, "", "candidate", "apply", cand["id"].(string), "--expected-digest", cand["digest"].(string))
-	if code != 0 {
-		t.Fatal(v)
-	}
-	mid := v["data"].(map[string]any)["memory"].(map[string]any)["id"].(string)
 	codes = make(chan int, 12)
 	for i := 0; i < 12; i++ {
 		wg.Add(1)
-		go func() {
+		go func(i int) {
 			defer wg.Done()
-			code, _, _ := runBinary(binary, home, "", "memory", "retire", mid, "--expected-version", "1", "--reason", "concurrent update")
+			input := core.JSON(map[string]any{"path": doc.Path, "content": fmt.Sprintf("unique update %d", i), "expected_digest": doc.Digest})
+			code, _, _ := runBinary(binary, home, input, "agent", "workspace", "write", "--workspace-id", ref.ID, "--input", "-")
 			codes <- code
-		}()
+		}(i)
 	}
 	wg.Wait()
 	close(codes)
@@ -117,11 +109,15 @@ func TestBinaryConcurrentCASAndIdempotency(t *testing.T) {
 	if wins != 1 || conflicts != 11 {
 		t.Fatal(wins, conflicts)
 	}
-	code, v, _ = runBinary(binary, home, "{invalid", "candidate", "submit", "--input", "-")
-	if code != 2 || v["ok"] != false {
-		t.Fatal(code, v)
+	revisions, err := agentworkspace.History(home, ref.ID, doc.Path)
+	if err != nil || len(revisions) != 2 {
+		t.Fatal(revisions, err)
+	}
+	if code, out, _ := runBinary(binary, home, "{invalid", "agent", "workspace", "write", "--workspace-id", ref.ID, "--input", "-"); code != 2 {
+		t.Fatal(code, out)
 	}
 }
+
 func TestDatabaseLockHelper(t *testing.T) {
 	if os.Getenv("MEMGOV_TEST_LOCK_HELPER") != "1" {
 		return
@@ -164,7 +160,7 @@ func TestBinaryTimeoutUnderAnotherProcessWriteLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := time.Now()
-	code, v, _ := runBinary(binary, home, `{"uri":"timeout://source","content":"blocked write"}`, "--timeout", "50ms", "source", "ingest", "--input", "-")
+	code, v, _ := runBinary(binary, home, "", "--timeout", "50ms", "workspace", "add", "blocked")
 	if code != 5 || time.Since(start) > 2*time.Second {
 		t.Fatal("timeout contract", code, v, time.Since(start))
 	}

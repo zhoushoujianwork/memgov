@@ -1,20 +1,20 @@
 # Agent preset 与 AI 值守运行时实现细节
 
-面向用户的范围与使用方式见[主设计文档](agent-runtime-design.md)。
+面向用户的范围与使用方式见[主设计文档](agent-runtime-design.md)。 Knowledge storage now follows [Agent Workspace](agent-workspace-design.md). Dated schema descriptions below are historical evolution notes; removed memory-review behavior is not current runtime behavior.
 
 ## Cyber 并发与可靠性（2026-09-18）
 
 第一期源码：`runtime_scheduling.go` 在写事务内领取工作，Schema 23 增量保存租约、执行归属、进程组身份、绝对截止、阶段、重试时间及目录写锁。分析池与执行池独立计数，服务内多个主动 Runtime 共享总额度（冲突配置取运行/暂停/降级实例声明的最小值）。后台工作只派发已持久化的记录，无无限内存队列；交互模式不占后台额度。单会话最多一个未回收分析租约，按首条本地观察时间选择会话；执行期间仍可分析新消息。同任务未回收租约禁止再领取，即使旧任务已被取消。
 
-执行截止从领取开始，包含准备、Agent、验证和记忆处理；审查子截止不得延长父截止。独立控制循环每 5 秒检查截止/任务版本，每 10 秒续 30 秒租约。Unix 调用独立进程组，取消先 TERM，5 秒后 KILL，并限制输出管道等待；启动恢复先核验旧 Owner 进程身份、回收旧组，健康执行者不能被另一 Runtime 接管。Owner 私聊执行另外监听 SQLite 中的任务状态：`cancelled` 或 `stale` 会取消当前调用，版本变化仍会拒绝迟到结果；`completed` 和 `awaiting_confirmation` 不会取消交付阶段。取消若已收到处理中回执，会补发失败阶段标记和一条只含安全错误代码/原因的私聊说明；失败说明不包含 Agent stderr、凭据或原始异常。完成须通过租约、执行 ID、任务版本、来源证据和权限 epoch 校验。仅调度参数变化可在线应用，权限变化仍使旧执行失效。
+执行截止从领取开始，包含准备、Agent 和验证；Workspace 调用不得延长任务截止。独立控制循环每 5 秒检查截止/任务版本，每 10 秒续 30 秒租约。Unix 调用独立进程组，取消先 TERM，5 秒后 KILL，并限制输出管道等待；启动恢复先核验旧 Owner 进程身份、回收旧组，健康执行者不能被另一 Runtime 接管。Owner 私聊执行另外监听 SQLite 中的任务状态：`cancelled` 或 `stale` 会取消当前调用，版本变化仍会拒绝迟到结果；`completed` 和 `awaiting_confirmation` 不会取消交付阶段。取消若已收到处理中回执，会补发失败阶段标记和一条只含安全错误代码/原因的私聊说明；失败说明不包含 Agent stderr、凭据或原始异常。完成须通过租约、执行 ID、任务版本、来源证据和权限 epoch 校验。仅调度参数变化可在线应用，权限变化仍使旧执行失效。
 
 分析暂时不可用或超时最多重试两次，退避 5/30 秒加小于 1 秒抖动，不占槽位；拒绝和格式校验失败保留失败证据。耗尽后消息标记 `analysis_failed`，不阻止同会话后续消息。任务超时保留失败状态和已有会话/流式输出，不自动重放。代码沿用独立 worktree，写根规范化并在 SQLite 内做包含关系互斥，读操作无需写锁。
 
-配置增加 `analysis_concurrency`、`execution_concurrency`、`analysis_timeout_seconds`、`execution_timeout_seconds`、`review_timeout_seconds`；旧 `concurrency` 与新执行字段冲突时拒绝。并发 1–32，截止为 1–86400 秒整数；YAML 明确的 0、负数与非整数不能关闭超时。旧配置省略执行字段时保留 1，示例显式启用 8/4。调低额度仅限制新领取，已领取绝对截止不变。
+配置增加 `analysis_concurrency`、`execution_concurrency`、`analysis_timeout_seconds`、`execution_timeout_seconds`；旧 `concurrency` 与新执行字段冲突时拒绝。并发 1–32，截止为 1–86400 秒整数；YAML 明确的 0、负数与非整数不能关闭超时。旧配置省略执行字段时保留 1，示例显式启用 8/4。调低额度仅限制新领取，已领取绝对截止不变。
 
 群 `group_mention` 运行时收到有效 @ 后按群独立并发派发给执行 Agent，不占用 proactive 的共享槽位；同一群仍按该会话的接收顺序领取，慢群不会阻塞其他群。
 
-`runtime status` 与管理台显示共享分析/执行/审查槽位、排队数、最老等待、最后成功分析、重试消息、失败缺口和超时累计；这些指标不把控制心跳当作模型进展。采集连续性继续使用独立来源覆盖与缺口；任务失败、阻塞、澄清和待确认明确标记需处理。
+`runtime status` 与管理台显示共享分析/执行槽位、排队数、最老等待、最后成功分析、重试消息、失败缺口和超时累计；这些指标不把控制心跳当作模型进展。采集连续性继续使用独立来源覆盖与缺口；任务失败、阻塞、澄清和待确认明确标记需处理。
 
 管理台 Runtime 列表增加一条全局健康快照 SQL，总查询次数固定为 3，不随 Runtime 数量增加；原有 1 秒成功缓存与刷新合并保留。第一期 `make check` 已通过，新增热降并发与跨 Runtime 配额测试也通过定向竞态检查。
 
@@ -26,11 +26,9 @@
 
 ## 后台观察执行与记录边界
 
-### 第三期调查、确认与记忆闭环
+### Investigation, confirmation and Workspace knowledge
 
-2026-09-18 源码增量（Schema 25）：`runtime_reviews` 单独保存候选、父执行截止、审查执行 ID、状态、错误类别及模型用量，任务新增 `memory_status/memory_error_code`。审查使用共享执行池、最多 2 个，普通待执行任务优先；截止为 `min(原任务截止, 领取时间+review_timeout_seconds)`，排队不能延长 15 分钟总预算。业务结果先原子完成并入审查队列；审查提交、独立 Review 和 digest Apply 均校验租约、任务版本、证据与权限，失败不覆盖业务结果。正在审查的工作中断后保留失败原因，不自动重放；未领取队列可恢复，过期父预算直接记录失败。
-
-错误区分 `memory_permission_denied`、`memory_invalid_candidate`、`memory_evidence_unavailable`、`memory_version_conflict`、`memory_review_timeout`、`memory_review_unavailable` 与父预算耗尽。新路径由定向注错与有效/拒绝候选测试验证。
+Schema 27 removes the old `runtime_reviews` pipeline and task memory status fields. Agents maintain knowledge directly through scoped Workspace tools. A failed knowledge write cannot overwrite a successful task result or cause automatic replay. Business actions retain the confirmation and recovery behavior described below.
 
 后台破坏性动作使用 `kind=destructive_operation`，`target` 为具体目标，JSON payload 包含非空 `operation/impact/recovery`。返回提案后任务进入 `awaiting_confirmation` 并释放执行槽位；其他历史受限动作仍为 `blocked`，不会因升级被重新授权。管理台在证据及版本有效时显示完整提案与口令。确认只接受已绑定应用机器人私聊中的新实时消息、当前已核验 Owner、完整口令及 payload digest；历史导入、上下文引用、撤销的身份、改版任务均不能批准。确认后独立派发、占执行池并受超时/租约/目录互斥控制；调用开始后失败或取消标记 unknown，先核验再继续，不自动重试。
 
@@ -38,7 +36,7 @@
 
 会话调度使用首条接收时间，并在每次派发后推进该会话的虚拟就绪时间，让其他就绪会话先获得机会。调度参数更新不改变执行权限摘要，已领取任务继续使用原绝对截止；实际权限变化由 watchdog 和提交门禁拒绝。进程组 KILL 后等待退出确认；失败则保留租约和目录锁，需检查而非冒险重用。模型输出时间由实际流式输出更新，与 10 秒控制心跳分栏展示；非流式阶段没有输出时不伪造活动时间。
 
-离线验证覆盖：有效候选完整闭环、审查拒绝及四类失败保留业务结果、缩短时限的超时回收、父预算不可延长、旧消息/引用/失效 Owner 不能确认、具体提案释放槽位及确认后领取。真实 120/900 秒永久挂起、并发负载 P95、真实附件/业务操作和安装后的 24 小时观察独立记录，未有证据前不标为验收通过。
+离线验证覆盖：Workspace 写入边界与业务结果独立、缩短时限的超时回收、父预算不可延长、旧消息/引用/失效 Owner 不能确认、具体提案释放槽位及确认后领取。真实 120/900 秒永久挂起、并发负载 P95、真实附件/业务操作和安装后的 24 小时观察独立记录，未有证据前不标为验收通过。
 
 ### 第二期采集与时间核验
 
@@ -58,9 +56,9 @@
 
 `runtime setup --agent-harness NAME` (or YAML `runtime_setup.agent_harness`) resolves the registered harness before DWS discovery, preset creation, or database changes. It rejects unavailable or incomplete adapters. An omitted preset becomes `<NAME>-default`; startup still resolves the adapter from that preset's provider. Non-Claude setup requires an explicit analysis model and rejects a Claude alias profile, avoiding an accidental Haiku or Claude credential fallback. Offline setup tests cover an alternative registered adapter, model forwarding, and rejection before side effects.
 
-运行时启动时将已注册 harness 的名称绑定到 Service，并把同一个 profile 传给分析、执行、确认动作和复核组件。harness 若只提供执行器而没有确认动作实现，会在诊断和启动前被拒绝。任务选择的 preset provider 必须与启动 harness 相同；这避免用 Claude 执行器静默运行另一种 harness 的规则目录。替换 harness 时应先注册适配器，再为它创建匹配 provider 的 preset 并重新启动 runtime。
+运行时启动时将已注册 harness 的名称绑定到 Service，并把同一个 profile 传给分析、执行与确认动作组件。harness 若只提供执行器而没有确认动作实现，会在诊断和启动前被拒绝。任务选择的 preset provider 必须与启动 harness 相同；这避免用 Claude 执行器静默运行另一种 harness 的规则目录。替换 harness 时应先注册适配器，再为它创建匹配 provider 的 preset 并重新启动 runtime。
 
-后台与 Owner 私聊共享执行能力，不共享授权入口。Owner 私聊的 `owner_request` 只接受已核验本人的请求；群 @ 不论发起人是谁都解析群策略。所有路径按当前配置、task/attempt、来源可用性复核。验收见[矩阵](../architecture/best-practice-scenarios-detail.md#后台观察与机器人交互验收)。
+后台与 Owner 私聊共享执行能力，不共享授权入口。Owner 私聊的 `owner_request` 只接受已核验本人的请求；群 @ 不论发起人是谁都解析群策略。所有路径按当前配置、task/attempt、来源可用性复核。验收见[矩阵](../architecture/best-practice-scenarios-detail.md#personal-jarvis-固定验收案例)。
 
 ## 目录与 preset
 
@@ -79,7 +77,6 @@
 - `task`：新任务；
 - `update`：更新同一 `canonical_key` 的任务；
 - `cancel`：取消已有任务；
-- `memory`：提出可复用长期记忆；
 - `context`：普通讨论。
 
 分析器判断事项与 Owner 的相关性、处理价值及可行下一步，不要求启动前输入齐全。信息缺失可成为调查计划的一部分；无价值、重复或无可行下一步时记录原因。分析阶段禁用工具、MCP、Chrome、slash command 和会话持久化；真正的调查交给独立 Agent。
@@ -88,23 +85,23 @@ DWS 来源负责独立采集，机器人私聊和群 @ 由应用 Stream 接收�
 
 ### 通道专属系统提示
 
-执行前，运行时从任务的实际 channel、route、application mode 和已绑定 DWS profile 生成 `channel_system_prompt`。该值只来自 SQLite 中已核验的通道元数据，不拼接消息正文或可配置的聊天内容。本人钉钉 direct 提示规定：问题提到某人且答案可能依赖沟通时，先通过已安装的 `dws` 技能或获准 CLI 在当前企业和绑定 profile 内解析唯一联系人，再读取双方单聊；不先做广泛记忆召回，重名时先澄清，也不因读取而获得发送权限。明确询问长期记忆时先调用 `memgov-memory`。运行时会话目录只是临时工作区，不能据其内容判断正式记忆或钉钉历史是否为空。若 Owner 任务绑定了本地项目 workspace，私聊或主动值守 Agent 会收到其绝对路径，并区分该路径与当前会话 scratch 目录；Agent 应直接使用已绑定路径，不能通过扫描整个主机重新寻找项目。群 mention 和声明目录的隔离 Agent 只收到 scratch 目录及已复制的快照，不会收到原始 workspace 路径，也不能以路径字符串推断未挂载的主机目录。没有绑定项目路径时留在 scratch 目录并报告缺少工作区，不做全盘搜索。普通私聊回答由应用机器人回当前会话；Owner 明确要求另发且动作策略允许时，才提示使用绑定 profile 的 `dws chat +messages-send --as user --format json`，未绑定 profile 时禁止借用环境账号。群 mention 提示规定只使用本群上下文，普通回答由应用机器人回原群，禁止因人名转读成员私聊、使用所有者私有记忆或以 DWS 本人身份发送。其他模式只使用当前 route 已授权的上下文。
+执行前，运行时从任务的实际 channel、route、application mode 和已绑定 DWS profile 生成 `channel_system_prompt`。该值只来自 SQLite 中已核验的通道元数据，不拼接消息正文或可配置的聊天内容。本人钉钉 direct 提示规定：问题提到某人且答案可能依赖沟通时，先通过已安装的 `dws` 技能或获准 CLI 在当前企业和绑定 profile 内解析唯一联系人，再读取双方单聊；不先做广泛记忆召回，重名时先澄清，也不因读取而获得发送权限。明确询问长期知识时使用 `memgov-workspace`。运行时会话目录只是临时工作区，不能据其内容判断正式记忆或钉钉历史是否为空。若 Owner 任务绑定了本地项目 workspace，私聊或主动值守 Agent 会收到其绝对路径，并区分该路径与当前会话 scratch 目录；Agent 应直接使用已绑定路径，不能通过扫描整个主机重新寻找项目。群 mention 和声明目录的隔离 Agent 只收到 scratch 目录及已复制的快照，不会收到原始 workspace 路径，也不能以路径字符串推断未挂载的主机目录。没有绑定项目路径时留在 scratch 目录并报告缺少工作区，不做全盘搜索。普通私聊回答由应用机器人回当前会话；Owner 明确要求另发且动作策略允许时，才提示使用绑定 profile 的 `dws chat +messages-send --as user --format json`，未绑定 profile 时禁止借用环境账号。群 mention 提示规定只使用本群上下文，普通回答由应用机器人回原群，禁止因人名转读成员私聊、使用所有者私有记忆或以 DWS 本人身份发送。其他模式只使用当前 route 已授权的上下文。
 
 `channel_system_prompt` 进入 Claude 执行系统提示；本人持续会话的策略摘要也包含其 digest。通道提示变化会在下一轮关闭旧进程并建立新会话，避免旧通道行为继续生效。它只决定上下文检索优先级，不扩大 Agent 的工具、能力、受众或外部操作权限。
 
-`message query CHANNEL` 查询 SQLite 中已经提交且尚未撤回的消息，可按精确会话、正文或发送者显示名、RFC3339 时间窗口和数量筛选。结果返回命中或指定会话的 `conversation_type`、`observed_at`、`covered_until` 与 `gap_unresolved`，并用紧凑摘要报告通道的有效会话数、类型、已观测数、未解决缺口数和最新观测时间；即使搜索零命中也保留摘要。显示名只参与检索，不作为身份或授权依据；水位有缺口、目标 direct 会话未进入观测范围或结果不足时，Agent 必须回到绑定通道补查，不能把空结果解释为平台上没有记录。查询结果仍是 Source/Observation 证据，只有经过候选、复核和应用后才成为正式 Memory。
+`message query CHANNEL` 查询 SQLite 中已经提交且尚未撤回的消息，可按精确会话、正文或发送者显示名、RFC3339 时间窗口和数量筛选。结果返回命中或指定会话的 `conversation_type`、`observed_at`、`covered_until` 与 `gap_unresolved`，并用紧凑摘要报告通道的有效会话数、类型、已观测数、未解决缺口数和最新观测时间；即使搜索零命中也保留摘要。显示名只参与检索，不作为身份或授权依据；水位有缺口、目标 direct 会话未进入观测范围或结果不足时，Agent 必须回到绑定通道补查，不能把空结果解释为平台上没有记录。查询结果仍是 Source/Observation 证据；可复用结论由 Agent 另行写入有日期和来源引用的 Workspace 文件。
 
 ### 群来源任务执行
 
-执行器加载 preset 规则与任务消息。主动值守按任务 workspace 准备记忆；群 @ 不按标题预装载记忆，改由[群共享查询工具](group-memory-sharing-detail.md)按需读取当前受众可见内容。非 Git workspace 使用 `<MEMGOV_HOME>/runtime/tasks/<task>/<attempt>`；Git workspace 使用 `<MEMGOV_HOME>/runtime/worktrees/<task>/<attempt>` 和 `codex/runtime-*` 分支。
+执行器加载 preset 规则与任务消息。所有入口刷新该任务受众的最新短索引；详细文件通过 [Workspace 工具](agent-workspace-design-detail.md)按需读取。非 Git workspace 使用 `<MEMGOV_HOME>/runtime/tasks/<task>/<attempt>`；Git workspace 使用 `<MEMGOV_HOME>/runtime/worktrees/<task>/<attempt>` 和 `codex/runtime-*` 分支。
 
 后台独立 Agent 使用 Owner 执行能力，依据实际 Agent 的 Bash、技能、目录和 external_actions 策略开放工具；显式受限 Agent 仍受其限制。代码任务按工作目录模式验证产物和 Git 状态，不能要求普通调查或问答必须制造提交。任务、尝试、实际模型、preset commit、结果、产物、工具类别和用量全部写入 SQLite。
 
 交互回答在写入 Outbox 时加入受限长度的问题引用与耗时、模型页脚；后台 record_only 结果不进入此路径。独立沟通工具的正文和平台回执单独保存在 runtime_message_actions。引用、页脚和接收表情属于通道展示，不写入长期记忆。
 
-### 长期记忆
+### Persistent knowledge
 
-`memory` 任务的执行结果必须包含 `CandidateInput`，其中 Evidence 引用消息快照对应的 Source 和 Fragment。运行时调用现有候选校验，再以独立 Haiku 调用生成 Review。接受后按 candidate digest 应用；拒绝记录在 Review 和 Candidate 中。撤回消息会让 Source 不可用，并取消相关未完成任务。
+All runtime entrypoints use the [Workspace contract](agent-workspace-design-detail.md). The latest short index is context data, including on later turns of a live Owner session. Agent writes use a content digest and read-back verification; they do not submit candidates or invoke a reviewer. Background and Owner chat share verified Owner scope; each group keeps separate scope. Old extraction, hotword-ingestion, published-memory recall and review flows are removed.
 
 ## 任务与版本状态
 
@@ -188,7 +185,7 @@ Schema 21 源码增加人工 `task resume`：保留原尝试与工作目录，�
 
 只读判断不是授权或领取凭据。判断为真后，原有写事务仍重新读取 runtime、route、版本、来源可用性、身份和当前状态，再通过条件更新领取；判断与事务之间出现的变化只能使事务无操作或冲突，不能重复领取、越过确认或扩大受众。进程重启继续从 SQLite 状态恢复，不依赖内存通知。
 
-这项边界用于消除后台空转对平台消息持久化、接收表情、任务完成和投递的写锁排队；实际业务变化、幂等结果和外部操作仍按 `synchronous=FULL` 提交。后续若引入事件唤醒，它只能减少只读检查，不能替代持久状态或事务内复核。回归测试要求连续空闲 tick 不增加 `requests`，并覆盖新消息待同步、低于阈值后按时间唤醒和执行中任务不重复领取。
+这项边界用于消除后台空转对平台消息持久化、接收表情、任务完成和投递的写锁排队；实际业务变化、幂等结果和外部操作仍按 `synchronous=FULL` 提交。统一服务现有的提交后事件唤醒只减少等待，只读扫描仍作为兜底；它不能替代持久状态或事务内复核。回归测试要求连续空闲 tick 不增加 `requests`，并覆盖新消息待同步、低于阈值后按时间唤醒和执行中任务不重复领取。
 
 dws 长连接中断后按 1 秒退避重连。接收会话使用 `all-group` 订阅；每次轮换前以 30 天时间窗、最多 10 页消息刷新活跃群集合，把新活跃群注册为 `collect`，将沉默群移出 runtime 处理集合，并保留已有 `ignore`。启动时立即对账，随后每个周期最多对 20 个活跃群执行 5 页、200 条的一小时有界历史窗口，并保留 5 分钟重叠。只有完整窗口推进覆盖水位。
 
@@ -209,7 +206,7 @@ dws 长连接中断后按 1 秒退避重连。接收会话使用 `all-group` 订
 
 默认 `bash=false` 的群模型仅可根据 `artifact_create` 或 `local_write` 使用 Write/Edit，权限统一以 `Edit(./artifacts/**)` 限定到任务产物目录；不开放自由 Bash，关闭项目/用户 settings 加载及 MCP。`local_test` 不能间接开启 Bash。Write 的路径权限应使用 Edit 规则，具体语义参见 [Claude Code 文件权限说明](https://code.claude.com/docs/en/permissions#read-and-edit)。显式 `bash=true` 的独立群 Agent 开放完整 Shell，因此不再具有这些文件工具规则所暗示的完整隔离；禁止同时配置目录快照。
 
-交付前逐个校验产物为 `artifacts/` 内的普通文件，拒绝 URL、越界路径、输入快照和符号链接。未声明 `memory_read` 或 `conversation_history_read` 时，不提供对应额外上下文。群记忆始终为 `conversation_published`；所有者非空 directories 采用下述独立复制边界。
+交付前逐个校验产物为 `artifacts/` 内的普通文件，拒绝 URL、越界路径、输入快照和符号链接。`conversation_history_read` 控制额外会话历史。Workspace 工具使用当前群身份，与该能力独立；所有者非空 directories 采用下述独立复制边界。
 
 该能力已在当前源码实现并通过离线测试；目标企业实际验收仍是独立步骤。
 
@@ -240,9 +237,8 @@ dws 长连接中断后按 1 秒退避重连。接收会话使用 `all-group` 订
 | [group.md](../../internal/sysprompt/group.md) | 群内有效 @ |
 | [execute.md](../../internal/sysprompt/execute.md) | 普通任务执行 |
 | [confirmed-action.md](../../internal/sysprompt/confirmed-action.md) | 一次已确认外部操作 |
-| [review.md](../../internal/sysprompt/review.md) | 独立记忆复核 |
 
-公共规则区分当前已核验请求与资料中的指令，不按危险关键词直接封禁。要求在操作前核查目标、影响、受众、权限及可恢复性；对未授权破坏和外传拒绝执行，对范围不清的合法维护澄清必要信息。区分 `owner_request`、`owner_delegated` 与 `owner_confirmation`，不把资料内容当作新的授权。筛选阶段将嵌入攻击作为 context；复核阶段拒绝伪造授权和试图控制未来行为的候选。上述语义由模型遵循，不是新增的确定性攻击分类器。
+公共规则区分当前已核验请求与资料中的指令，不按危险关键词直接封禁。要求在操作前核查目标、影响、受众、权限及可恢复性；对未授权破坏和外传拒绝执行，对范围不清的合法维护澄清必要信息。区分 `owner_request`、`owner_delegated` 与 `owner_confirmation`，不把资料内容当作新的授权。筛选阶段将嵌入攻击作为 context；Workspace 内容不得授予执行或披露权限。上述语义由模型遵循，不是新增的确定性攻击分类器。
 
 私聊恢复不再把已接受对话或热词拼入 `--append-system-prompt`。新进程首次 stdin 的 user message 使用独立 text block 携带 JSON 编码的恢复数据，末尾 text block 保留当前请求；无背景数据时仍用原始字符串。同一存活进程后续轮次、原生 resume 均不重复注入背景。引用仍按原有规则 JSON 编码并标为不可信。恢复数据上限为 128 KiB，超过后在模型调用前失败；系统提示另有 128 KiB 上限。stream user message 结构参考 [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/typescript#sdkusermessage)，本次未调用真实模型验证该部署版本。
 
@@ -257,7 +253,7 @@ go test -race ./internal/runtime
 git diff --check
 ```
 
-验证覆盖：六个模型入口均带同一份公共安全规则；攻击文本不能进入 system 参数；私聊当前原文与 JSON 背景独立；存活进程不重复历史、引用更正触发重建、超限上下文不调用模型。样例包括中英文角色伪造、外传与删除请求、JSON/分隔符伪装、编码指令、记忆污染和正常安全分析。fake runner 仅验证传输与工具配置，不把模拟响应当作模型安全判断。既有确认、受众、目录及任务恢复门禁由全量测试回归。
+验证覆盖：各模型入口均带同一份公共安全规则；攻击文本不能进入 system 参数；私聊当前原文与 JSON 背景独立；存活进程不重复历史、引用更正触发重建、超限上下文不调用模型。样例包括中英文角色伪造、外传与删除请求、JSON/分隔符伪装、编码指令、记忆污染和正常安全分析。fake runner 仅验证传输与工具配置，不把模拟响应当作模型安全判断。既有确认、受众、目录及任务恢复门禁由全量测试回归。
 
 剩余缺口：真实模型对攻击的识别率、正常维护误拒率和多轮攻击仍需在无生产凭据的隔离环境实测，并记录模型及版本；完整 Bash 仍使用运行账户权限，prompt 无法保证阻止所有越权访问。不得把离线通过写成真实钉钉、安装二进制或运行中服务的安全验收。
 
@@ -265,22 +261,20 @@ git diff --check
 
 Schema 19 的历史迁移曾将群与 proactive 设为 false/owner_confirmation，该已有显式限制继续保留。本轮新建 proactive 和 Owner direct 默认完整 Bash，分别默认 owner_delegated 与 owner_request；群默认 false/owner_confirmation。RuntimeConfigInput.agent_bash 使用可缺省布尔，显式 false 保留。YAML 中显式声明 Agent 的 bash 省略仍为 false；未指定 proactive Agent 或 bot Owner 私聊 Agent 才生成完整默认策略。
 
-`applications.bots.<channel>` 以机器人 channel 为键，default_agent 提供基础人设。owner_private 引用已核验 direct runtime；省略 agent 时继承 bot 默认 preset/profile/model，并生成完整 Owner 权限，不继承群的 conversation_published 限制。group_mention.agent 可覆盖 bot 默认，bindings 再按群覆盖。显式 Owner Agent 可收紧。旧 applications.owner_private 仍可引用现有实例，省略 Agent 时保留实例人设。owner_request 仅允许 direct；owner_delegated 仅允许 proactive；群只接受 owner_confirmation。DWS history_channel 可只用于身份核验，不要求启用 data_source；没有群历史来源时只用机器人当前上下文。
+`applications.bots.<channel>` 以机器人 channel 为键，default_agent 提供基础人设。owner_private 引用已核验 direct runtime；省略 agent 时继承 bot 默认 preset/profile/model，并生成完整 Owner 权限，不继承群 Workspace 身份。group_mention.agent 可覆盖 bot 默认，bindings 再按群覆盖。显式 Owner Agent 可收紧。旧 applications.owner_private 仍可引用现有实例，省略 Agent 时保留实例人设。owner_request 仅允许 direct；owner_delegated 仅允许 proactive；群只接受 owner_confirmation。DWS history_channel 可只用于身份核验，不要求启用 data_source；没有群历史来源时只用机器人当前上下文。
 
 | 字段 | 封装与生效方式 |
 | --- | --- |
-| `bash` | Claude Bash 工具的自由 Shell 开关。true 使用完整 Bash，不用命令白名单或全局 bypassPermissions。false 不能通过 local_test 等间接开启；本人私聊仅保留固定路径的受控记忆/提案包装器。 |
+| `bash` | Claude Bash 工具的自由 Shell 开关。true 使用完整 Bash，不用命令白名单或全局 bypassPermissions。false 不能通过 local_test 等间接开启；仅保留固定路径的受控 Workspace/提案包装器。 |
 | `local_read` | 本人普通模式配置 Claude Read/Glob/Grep；群与 directories 模式只提供声明范围的输入。 |
 | `local_write` | 配置 Edit/Write；目录模式和群产物仍使用相应文件工具范围。 |
 | `local_test` | 表达测试能力，但不授权自由 Shell；测试命令需要 bash=true。 |
 | `artifact_create` | 群任务可在 artifacts 内写入交付产物。 |
-| `memory_read` | memgov 自有记忆能力。本人私聊将内置 SKILL.md 与命令指南复制到会话的 .claude/skills/memgov-memory，Agent 决定是否调用；其他任务按该能力提供受控记忆上下文。 |
-| `memory_scope` | 决定受控记忆接口的范围；群只能 conversation_published，本人可用 owner_authorized。 |
 | `external_actions` | owner_confirmation 使用交互提案/确认；owner_request 仅用于已核验 Owner 私聊的明确请求；owner_delegated 仅用于后台观察的 Owner 预设授权。来源文字不能改变任何策略。 |
 
-完整 Bash 将真实 memgov CLI 加入 PATH，不使用受限包装器代替。它可以调用其他命令、读写运行账户能访问的文件；memory_read、文件工具规则和命令包装器不能成为此模式的完整隔离边界。能力开关不等同于 OS sandbox。
+完整 Bash 将真实 memgov CLI 加入 PATH，不使用受限包装器代替。它可以调用其他命令、读写运行账户能访问的文件；Workspace 工具、文件工具规则和命令包装器不能成为此模式的完整隔离边界。能力开关不等同于 OS sandbox。
 
-有效策略包含 Bash 和 external_actions，并进入任务策略摘要及原生 Claude 会话指纹。重配置使旧任务/结果失效；再次发送消息时关闭旧权限进程，建立新进程。`runtime status` 显示持久化策略，私聊 `/status` 显示本人策略。日志仅记录工具类别、耗时和结果分类，不记录命令、输出或正文。普通私聊继续原文传递，不强制预召回、提案或本地 commit。
+有效策略包含 Bash 和 external_actions，并进入任务策略摘要及原生 Claude 会话指纹。重配置使旧任务/结果失效；再次发送消息时关闭旧权限进程，建立新进程。`runtime status` 显示持久化策略，私聊 `/status` 显示本人策略。日志仅记录工具类别、耗时和结果分类，不记录命令、输出或正文。普通私聊仍保留当前原文；每轮只附最新受限索引，不强制读取全部文件、提出外部动作或创建本地 commit。
 
 模型完成后，后端验证产物是可写根内的普通文件，拒绝输入来源路径、符号链接和越界路径。私有代码任务执行 `git diff --check`，对实际更改创建本地 commit；这仅代表 Git 差异检查通过，不声称运行了项目测试。记录的 commit 位于本次私有 clone/worktree，可由所有者审阅后决定后续处理。
 
@@ -289,11 +283,13 @@ Claude/确认动作执行前后都复核任务与 attempt 绑定的 applied conf
 2026-09-17 群卡片增量：群回答 @ 发起人，待确认卡片 @ DWS 所有者。已发布关联应用的审批模板，仅所有者可同意或拒绝；拒绝后任务取消且动作不可执行，操作变更不继承旧批准，口令不能绕过卡片。源码与离线验证已具备，真实群按钮往返待验收，详见[确认卡片](dingtalk-integration-design-detail.md#群回复与确认卡片)。
 
 
-## Per-Agent home and CLAUDE.md
+## Agent Workspace replaces AgentHome knowledge
 
-`agents.<name>.home` is normalized to an absolute path during config loading. When omitted, runtime uses `<MEMGOV_HOME>/agent-homes/<name>`. The runtime creates the directory with mode `0700` and a regular `CLAUDE.md` with mode `0600`, then passes the directory to Claude with `--add-dir`; the preset repository remains Git-controlled and clean.
+Legacy `agents.<name>.home` is removed from normal configuration. Configuration conversion archives the old notes. Runtime knowledge belongs to verified Owner or channel/conversation identity under `agent-workspaces/`, separate from preset Git rules and session/task/project directories. It is accessed through current-task-bound tools, not a broad `--add-dir` mount. Existing harness auto-memory and inherited old `memgov-memory` skills must not reload archived notes. See the [Workspace details](agent-workspace-design-detail.md).
 
-The execution prompt treats `CLAUDE.md` as durable Agent-local notes, not authorization. Only Agents with `local_write` receive exact `Edit(<home>/CLAUDE.md)` and `Write(<home>/CLAUDE.md)` allowlist entries; group Agents do not receive arbitrary home-file access. Notes must be non-secret and bounded by the existing conversation and disclosure policy. Memgov memory tools remain explicitly on demand rather than being queried on every turn; an empty result is not evidence that the library is empty.
+For Claude, both explicit skills and filtered `inherit: executor` skills are staged under the execution directory’s `.claude/skills`. The provider uses `--setting-sources project` (or no sources when no staged skills are needed in a restricted execution); it never enables `user` settings to inherit skills. Discovery excludes the retired `memgov-memory` identity by directory name, canonical directory name and YAML frontmatter `name`, including renamed symlinks/copies. Explicit attempts to configure that identity are rejected. The runtime also manages `memgov-workspace` itself and removes stale staged legacy skills.
+
+Every Claude process forces `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` and `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`, overriding ambient/profile values. Existing user, project and old AgentHome `CLAUDE.md` files therefore cannot silently become runtime knowledge or instructions. Preset rules still pass the existing clean-Git/commit checks and are explicitly composed into the trusted prompt. The latest Workspace index remains a separate untrusted data block; disabling native knowledge does not disable configured skills or widen Bash/file permissions.
 
 
 ## Private stream result correlation (2026-09-21)

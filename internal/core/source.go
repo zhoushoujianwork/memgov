@@ -198,39 +198,3 @@ func ReadSource(ctx context.Context, q Queryer, id, scope string) (Source, error
 	}
 	return s, rows.Err()
 }
-func checkEvidence(ctx context.Context, q Queryer, m Memory) error {
-	for _, e := range m.Evidence {
-		expired, expiryErr := sourceRawExpired(ctx, q, e.SourceID)
-		if expiryErr != nil {
-			return expiryErr
-		}
-		if expired {
-			return Fail("denied", "evidence raw text expired; re-query platform before applying: %s", e.SourceID)
-		}
-		var source, hash, content, scope string
-		err := q.QueryRowContext(ctx, "SELECT f.source_id,f.digest,f.content,s.workspace_id FROM fragments f JOIN sources s ON s.id=f.source_id WHERE f.id=? AND s.redacted=0", e.FragmentID).Scan(&source, &hash, &content, &scope)
-		if errors.Is(err, sql.ErrNoRows) {
-			return Fail("invalid_input", "evidence fragment %s does not exist", e.FragmentID)
-		}
-		if err != nil {
-			return err
-		}
-		if e.SourceID != source || e.SHA256 != hash {
-			return Fail("invalid_input", "evidence identity or digest mismatch: %s", e.FragmentID)
-		}
-		if scope != "global" && scope != scopeID(m.WorkspaceID) {
-			return Fail("denied", "evidence cannot be promoted across workspaces")
-		}
-		if e.Quote != "" && !strings.Contains(content, e.Quote) {
-			return Fail("invalid_input", "evidence quote is not present in source fragment")
-		}
-	}
-	var n int
-	if err := q.QueryRowContext(ctx, "SELECT count(*) FROM tombstones WHERE (kind='memory_id' AND fingerprint=?) OR (kind='content' AND fingerprint=?)", m.ID, Hash([]byte(strings.TrimSpace(m.Content)))).Scan(&n); err != nil {
-		return err
-	}
-	if n > 0 {
-		return Fail("denied", "memory matches a purge tombstone")
-	}
-	return nil
-}

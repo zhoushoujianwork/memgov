@@ -106,13 +106,6 @@ func (a *app) runtimeCommands() {
 		}
 		return tx.ProposeRuntimeAction(ctx, args[0], in)
 	}))
-	task.AddCommand(a.write("capture-hotword <task-id>", "保存本人明确纠正的语音转写热词", cobra.ExactArgs(1), func(ctx context.Context, tx *core.Tx, args []string, raw json.RawMessage) (any, error) {
-		var in core.HotwordCaptureInput
-		if err := decode(raw, &in); err != nil {
-			return nil, err
-		}
-		return tx.CaptureRuntimeHotword(ctx, args[0], in)
-	}))
 	task.AddCommand(a.read("show <task-id>", "读取任务、来源、执行和待确认动作", cobra.ExactArgs(1), func(ctx context.Context, s *core.Store, args []string) (any, error) {
 		return core.ReadRuntimeTask(ctx, s.DB, args[0])
 	}))
@@ -265,7 +258,7 @@ func (a *app) runRuntimeWorker(ctx context.Context, value string, externalReceiv
 		Home: a.home, Store: s, Adapter: adapter, ExternalReceiver: externalReceiver,
 		DisableConfirmationCards: true,
 		HarnessName:              bundle.Name,
-		Analyzer:                 bundle.Analyzer, Executor: bundle.Executor, Actioner: bundle.Actioner, Reviewer: bundle.Reviewer,
+		Analyzer:                 bundle.Analyzer, Executor: bundle.Executor, Actioner: bundle.Actioner,
 		Logger: logger, Diagnostic: a.errOut,
 	}
 	if externalReceiver && a.runtimeWake != nil {
@@ -324,7 +317,7 @@ func (a *app) runtimeSetupCommand() *cobra.Command {
 			if err := a.cfg.RuntimeSetup.apply(cmd); err != nil {
 				return err
 			}
-			for name, value := range map[string]int{"analysis-concurrency": scheduling.AnalysisConcurrency, "execution-concurrency": scheduling.ExecutionConcurrency, "analysis-timeout-seconds": scheduling.AnalysisTimeoutSeconds, "execution-timeout-seconds": scheduling.ExecutionTimeoutSeconds, "review-timeout-seconds": scheduling.ReviewTimeoutSeconds} {
+			for name, value := range map[string]int{"analysis-concurrency": scheduling.AnalysisConcurrency, "execution-concurrency": scheduling.ExecutionConcurrency, "analysis-timeout-seconds": scheduling.AnalysisTimeoutSeconds, "execution-timeout-seconds": scheduling.ExecutionTimeoutSeconds} {
 				if cmd.Flags().Changed(name) && value <= 0 {
 					return core.Fail("invalid_input", "%s must be positive", name)
 				}
@@ -513,7 +506,6 @@ func (a *app) runtimeSetupCommand() *cobra.Command {
 	cmd.Flags().IntVar(&scheduling.ExecutionConcurrency, "execution-concurrency", 0, "执行并发，旧配置默认 1，范围 1—32")
 	cmd.Flags().IntVar(&scheduling.AnalysisTimeoutSeconds, "analysis-timeout-seconds", 0, "分析截止秒数，默认 120")
 	cmd.Flags().IntVar(&scheduling.ExecutionTimeoutSeconds, "execution-timeout-seconds", 0, "任务总截止秒数，默认 900")
-	cmd.Flags().IntVar(&scheduling.ReviewTimeoutSeconds, "review-timeout-seconds", 0, "审查截止秒数，默认 120")
 	cmd.Flags().BoolVar(&pilot, "pilot", false, "使用 1 条或 30 秒触发的验证参数")
 	return cmd
 }

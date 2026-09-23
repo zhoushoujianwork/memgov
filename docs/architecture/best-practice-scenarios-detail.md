@@ -1,6 +1,6 @@
 # 最佳落地场景与对齐标准：验收详细稿
 
-主文档：[最佳落地场景与对齐标准](best-practice-scenarios.md)。本文规定 Personal Jarvis、DWS 值守、`memgov-memory` skill 和群挂载 Jarvis 的验收方式；它不是当前运行结果。每项结果必须区分源码、安装版本、实际进程和真实平台证据。
+主文档：[最佳落地场景与对齐标准](best-practice-scenarios.md)。本文规定 Personal Jarvis、DWS 值守、`memgov-workspace` skill 和群挂载 Jarvis 的验收方式；它不是当前运行结果。每项结果必须区分源码、安装版本、实际进程和真实平台证据。
 
 ## 验收对象和身份
 
@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | Personal Jarvis 根任务 | 已核验 Owner 私聊，或 DWS 发现的 Owner 事项 | `owner_request`（私聊）或 `owner_delegated`（后台） | Owner 私聊通知、任务记录和证据 |
 | 群挂载 Jarvis | 有效群 @ 与该群路由 | 该机器人/群 preset 的现有策略 | 原群回复、群任务和群审计 |
-| 外部 Agent 的 memgov 接入 | Agent 明确调用 skill | skill 声明的 memory capability | `state.db` 的 Source/Candidate/Review/Memory 与操作记录 |
+| 外部 Agent 的 memgov 接入 | Agent 明确调用 skill | runtime-bound Workspace operations | Workspace files/history and operation metadata |
 
 同一个服务进程可以托管这些对象，但测试必须证明 channel、conversation、actor、workspace、受众和发送身份没有被混用。Owner 在群中发言仍按群 Jarvis 策略处理；群请求不能通过 Personal Jarvis 中转获取 Owner 私聊或私有授权。
 
@@ -33,32 +33,25 @@
 
 | 案例 | 必须观察到的行为 |
 | --- | --- |
-| 有效群 @ | 仍由挂载机器人在原群回复，使用原有 preset、模型、技能、工具和共享记忆配置 |
+| 有效群 @ | 仍由挂载机器人在原群回复，使用原有 preset、模型、技能、工具和Workspace 和显式只读资料配置 |
 | Owner 在群内 @ | 仍按群策略处理，不升级为 Personal Jarvis，不切换到 DWS 本人身份 |
-| 群 Jarvis 使用 skill | 只读或治理其被配置可见的 memgov 数据；查询仍经过群受众披露检查 |
+| 群 Jarvis 使用 skill | 只读或治理当前群的 Workspace 文件；运行时核验任务与受众 |
 | 群工具和目录 | 已配置能力继续可用；Personal Jarvis 的配置迁移不删除或收紧群声明 |
 | 群失败或待确认 | 失败结论、未知状态和确认留在原群；不自动转发到 Owner 私聊 |
 | 多机器人/多群 | 各自路由、preset、上下文和记忆范围不串线；一个群的策略变化不改其他群 |
 | 未来限制 | 若增加群侧限制，必须有单独策略版本、迁移提示和验收记录；本期不得静默引入 |
 
-## `memgov-memory` skill 验收
+## Workspace acceptance
 
-### 读取
+- Owner private chat writes a dated, sourced note; proactive work reads it. A background index update appears in the next turn of an already-active private session.
+- A new session and service restart retain the same knowledge. Changing presets does not change workspace ownership.
+- Two groups using the same preset cannot see one another's files; neither can select Owner scope or write configured read-only references.
+- A write must use the current digest and succeed before the Agent reports saved knowledge. A stale writer rereads and merges. Revision metadata preserves actor/request/time/digests.
+- Cancelled tasks, stale attempts, invalid routes, traversal, symlinks and over-budget indexes are rejected. Source text cannot modify authority.
+- Old Memory and AgentHome notes are archived, not imported. Current search excludes history and migration archives.
+- Archive verification failure prevents destructive schema migration. Preserve messages, internal Source evidence, retention, confirmations and uncertain delivery recovery.
 
-- Agent 首次使用检查 `version`、帮助、`config show`、workspace 和 `doctor`；健康字段与退出状态分别判断。
-- 读取默认使用显式 workspace、有限结果和字符预算；跨 workspace 只有用户或宿主明确授权才执行。
-- `recall` 命中正式 Memory 时展示状态、版本、适用条件、观察时间和证据；`search --kind source` 命中时明确标为原始证据，不冒充已批准记忆。
-- Source、Candidate、Review、Memory 的正文、版本和历史可分别读取；空结果不等于数据不存在。
-
-### 写入
-
-1. 写入稳定 URI 的最小 Source，并保存正确的 `observed_at`、fragment 和 digest。
-2. Candidate create/update 绑定目标、workspace 和 `expected_version`。
-3. `candidate validate`、`candidate show` 和语义 Review 必须在 Apply 前完成。
-4. Apply 使用返回的 candidate digest；冲突时重新读取，不盲目重试。
-5. 用 `memory show` 或 focused recall 验证正式 Memory，不能把“候选已提交”报告成“记忆已保存”。
-
-每个写操作记录 `actor`、`agent_id`、`workspace`、`request_id`、幂等键、证据引用、前后版本、结果和错误。Skill 失败时保留真实 envelope 和原因，不扩大 workspace、权限或受众作为兜底。
+Exact storage and tool behavior is defined in [Workspace details](../design/agent-workspace-design-detail.md). These cases replace the former Source/Candidate/Review/Apply skill acceptance.
 
 ## 配置和迁移验收
 
@@ -71,9 +64,11 @@
 - 应用前停止受影响 runtime，应用后再启动；重复 runtime、未授权扩权和同名路由阻断；
 - 计划/应用不得删除或隐式收紧已挂载群 Jarvis 的能力。
 
-迁移测试需在临时 HOME 和临时 `state.db` 中完成，验证旧配置可读、主配置生成、回滚备份可用、旧运行对象不会重复启动，以及群路由映射保持不变。
+迁移测试需在临时 HOME 和临时 `state.db` 中完成，验证旧配置显式转换、主配置生成、回滚备份可用、旧运行对象不会重复启动，以及群路由映射保持不变。
 
 ## 通知与投递验收
+
+The root/child and proactive-notification cases below remain product-target acceptance. Current proactive completion is `record_only`; the Workspace change does not implement automatic notifications.
 
 每条 Owner 通知都应能回到根任务和子任务，并包含已完成动作、证据/产物、未完成事项、需要的决策、目标会话和平台回执。用稳定幂等键重复提交同一内容应返回既有投递；同键换正文必须冲突；`accepted`、`failed`、`unknown` 分别保留，未知状态不自动重发。
 
@@ -90,7 +85,7 @@
 | 重复处理率 | 同一事项被重复执行的多余次数 / 执行总次数 |
 | Owner 补背景成本 | 因缺少已授权上下文而新增的说明轮数 |
 | 有依据交付比例 | 关键结论有可定位证据且状态准确的交付 / 抽检交付 |
-| 有效记忆复用比例 | 正确使用适用 Memory 的任务 / 人工确认存在适用 Memory 的任务 |
+| 有效知识复用比例 | 正确使用适用 Workspace knowledge 的任务 / 人工确认存在适用 Workspace knowledge 的任务 |
 | 群通道回归通过率 | 原有群收发、工具、技能、记忆和回复案例通过数 / 抽检数 |
 | 无效打扰数 | 无变化案例中的额外通知、心跳或重复回复数量；目标为零 |
 
@@ -98,6 +93,6 @@
 
 ## 证据记录与交付说明
 
-每个案例记录场景、授权范围、输入来源/版本、关联依据、任务和产物 ID、采用的 Memory 版本、验证证据、投递状态和未解决项。报告中不复制真实账号、消息正文或凭据；敏感平台结果留在受控环境。
+每个案例记录场景、授权范围、输入来源/版本、关联依据、任务和产物 ID、采用的 Workspace 路径与内容摘要、验证证据、投递状态和未解决项。报告中不复制真实账号、消息正文或凭据；敏感平台结果留在受控环境。
 
 交付说明必须标明对应主文档场景、源码/安装/运行/真实平台验证层级，以及未覆盖项。纯文档变更只需运行文档链接和格式检查；涉及运行行为时再补相应离线与真实验收。未经另行授权，不为验收向真实群发送消息、联系他人或改动生产系统。

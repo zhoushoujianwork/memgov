@@ -1,5 +1,7 @@
 # `memgov-memory` 跨 Agent 记忆接入：实现详细稿
 
+> **Superseded historical design (2026-09-23).** The database memory pipeline, publication model, hotword ingestion and old AgentHome knowledge loading described here are removed by the [Agent Workspace design](agent-workspace-design.md). Use the [current runtime guide](../guides/runtime-user-guide.md) and [workspace details](agent-workspace-design-detail.md) for current behavior. The remainder records the previous design and its original validation; its commands and delivery claims do not apply to the new version.
+
 范围以[主设计](memgov-memory-skill-design.md)为准。当前仓库中的 `.agents/skills/memgov-memory/SKILL.md` 是使用约束；本稿定义把它作为 Personal Jarvis 和其他 Agent 的稳定接入协议时必须保持的边界。具体命令仍以目标二进制帮助为准。
 
 ## 接入原则

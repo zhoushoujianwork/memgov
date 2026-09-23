@@ -50,25 +50,12 @@ func TestCLIInitializationAndMachineErrors(t *testing.T) {
 		t.Fatal(code)
 	}
 }
-func TestDailyIngestDeduplicatesAndVersionsSources(t *testing.T) {
-	home := t.TempDir()
-	invoke(t, home, "", "init")
-	one := `{"uri":"task://42","content":"一次部署记录，验证结果未知"}`
-	code, first := invoke(t, home, one, "source", "ingest", "--input", "-")
-	if code != 0 {
-		t.Fatal(first)
-	}
-	_, again := invoke(t, home, one, "source", "ingest", "--input", "-")
-	if first["data"].(map[string]any)["id"] != again["data"].(map[string]any)["id"] {
-		t.Fatal("duplicate source made another run")
-	}
-	code, next := invoke(t, home, `{"uri":"task://42","content":"部署后补充记录：测试通过"}`, "source", "ingest", "--input", "-")
-	if code != 0 || first["data"].(map[string]any)["id"] == next["data"].(map[string]any)["id"] {
-		t.Fatal(next)
-	}
-	_, list := invoke(t, home, "", "source", "list")
-	if len(list["data"].([]any)) != 2 {
-		t.Fatal(list)
+func TestRetiredKnowledgeCommandsAreAbsent(t *testing.T) {
+	for _, command := range []string{"source", "candidate", "memory", "audience", "review", "recall", "ingest"} {
+		code, out := invoke(t, t.TempDir(), "", command, "list")
+		if code != 2 {
+			t.Fatalf("retired command remains: %s %+v", command, out)
+		}
 	}
 }
 
@@ -101,7 +88,7 @@ func TestRuntimeHarnessDiagnosticsDoNotRequireDatabase(t *testing.T) {
 			continue
 		}
 		foundClaude = true
-		if item["available"] != true || item["analyzer"] != true || item["executor"] != true || item["reviewer"] != true {
+		if item["available"] != true || item["analyzer"] != true || item["executor"] != true {
 			t.Fatalf("claude contract is not healthy: %+v", item)
 		}
 	}

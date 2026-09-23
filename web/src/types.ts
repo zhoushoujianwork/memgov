@@ -1,68 +1,29 @@
-export type Category =
-  | "fact"
-  | "preference"
-  | "constraint"
-  | "decision"
-  | "procedure"
-  | "lesson";
-export interface MemoryCard {
+export interface AgentWorkspace {
   id: string;
-  category: Category;
-  title: string;
-  summary: string;
-  status: string;
-  workspace_id: string;
+  kind: string;
+  owner_principal_id?: string;
+  channel_id?: string;
+  conversation_id?: string;
+  created_at: string;
+}
+export interface WorkspaceFile {
+  path: string;
+  digest: string;
+  bytes: number;
   updated_at: string;
-  version: number;
+  snippet?: string;
 }
-export interface Evidence {
-  source_id: string;
-  fragment_id: string;
-  quote?: string;
-}
-export interface Memory extends MemoryCard {
+export interface WorkspaceDocument extends WorkspaceFile {
   content: string;
-  applicability?: string[];
-  tags?: string[];
-  entities?: string[];
-  valid_from?: string;
-  valid_until?: string;
-  evidence?: Evidence[];
 }
-export interface MemoryList {
-  cards: MemoryCard[];
-  total: number;
-  page: number;
-  page_size: number;
-}
-export interface MemoryDetail {
-  memory: Memory;
-  updated_at: string;
-  expires_at?: string;
-}
-export interface MemorySources {
-  expires_at?: string;
-  sources: {
-    id: string;
-    availability: string;
-    locations?: string[];
-    fragments?: { locator: string; content: string }[];
-  }[];
-}
-export interface MemoryHistory {
-  expires_at?: string;
-  revisions: (Memory & {
-    operation: {
-      created_at: string;
-      kind: string;
-      actor: string;
-      reason: string;
-    };
-  })[];
-}
-export interface Workspace {
-  id: string;
-  name: string;
+export interface WorkspaceRevision {
+  path: string;
+  digest: string;
+  previous_digest: string;
+  actor: string;
+  request_id: string;
+  created_at: string;
+  bytes: number;
 }
 export interface Task {
   id: string;
@@ -71,8 +32,6 @@ export interface Task {
   preview?: string;
   result_summary?: string;
   status: string;
-  memory_status?: string;
-  memory_error_code?: string;
   work_phase?: string;
   work_deadline?: string;
   work_heartbeat?: string;
@@ -125,7 +84,13 @@ export interface TaskDetail {
     purpose?: string;
     transport?: string;
   }[];
-  actions: { kind: string; status: string; target?: string; payload?: string; confirmation_token?: string }[];
+  actions: {
+    kind: string;
+    status: string;
+    target?: string;
+    payload?: string;
+    confirmation_token?: string;
+  }[];
   communications?: {
     id: string;
     state: string;
@@ -146,11 +111,18 @@ export interface LogEvent {
 }
 export interface Runtime {
   work?: {
-    analysis_active: number; execution_active: number; review_active: number;
-    analysis_limit: number; execution_limit: number; queued_tasks: number; queued_reviews: number;
-    oldest_waiting_seconds: number; last_analysis_at: string;
-    retry_batches: number; analysis_gaps: number; timed_out: number;
-    analysis_health: string; task_health: string;
+    analysis_active: number;
+    execution_active: number;
+    analysis_limit: number;
+    execution_limit: number;
+    queued_tasks: number;
+    oldest_waiting_seconds: number;
+    last_analysis_at: string;
+    retry_batches: number;
+    analysis_gaps: number;
+    timed_out: number;
+    analysis_health: string;
+    task_health: string;
   };
   id: string;
   name: string;
@@ -227,7 +199,6 @@ export interface AgentView {
   preset: string;
   model: string;
   profile: string;
-  memory_scope: string;
   bash: boolean;
   external_actions: string;
   inherit: string;

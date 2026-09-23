@@ -8,20 +8,16 @@ import (
 // RuntimeAgentPolicy is resolved from the currently applied declaration for the
 // task's exact group. Unmanaged runtimes retain their explicit runtime settings.
 type RuntimeAgentPolicy struct {
-	ExcludedMemoryCategories []string           `json:"excluded_memory_categories,omitempty"`
-	SharedMemoryWorkspaces   []string           `json:"shared_memory_workspaces,omitempty"`
-	Agent                    string             `json:"agent"`
-	Home                     string             `json:"home,omitempty"`
-	Preset                   string             `json:"preset"`
-	ClaudeProfile            string             `json:"claude_profile"`
-	ExecutionModel           string             `json:"execution_model"`
-	MemoryScope              string             `json:"memory_scope"`
-	Capabilities             []string           `json:"capabilities"`
-	Directories              []string           `json:"directories"`
-	Skills                   RuntimeSkillPolicy `json:"skills"`
-	BashEnabled              bool               `json:"bash"`
-	ExternalActions          string             `json:"external_actions"`
-	Managed                  bool               `json:"managed"`
+	Agent           string             `json:"agent"`
+	Preset          string             `json:"preset"`
+	ClaudeProfile   string             `json:"claude_profile"`
+	ExecutionModel  string             `json:"execution_model"`
+	Capabilities    []string           `json:"capabilities"`
+	Directories     []string           `json:"directories"`
+	Skills          RuntimeSkillPolicy `json:"skills"`
+	BashEnabled     bool               `json:"bash"`
+	ExternalActions string             `json:"external_actions"`
+	Managed         bool               `json:"managed"`
 }
 
 type RuntimeSkill struct {
@@ -38,7 +34,7 @@ type RuntimeSkillPolicy struct {
 }
 
 func ResolveRuntimeTaskAgent(ctx context.Context, q Queryer, c RuntimeConfig, t RuntimeTask) (RuntimeAgentPolicy, error) {
-	out := RuntimeAgentPolicy{Preset: c.AgentPreset, ClaudeProfile: c.ClaudeProfile, ExecutionModel: c.ExecutionModel, MemoryScope: c.MemoryScope, Capabilities: append([]string{}, c.AgentCapabilities...), Skills: RuntimeSkillPolicy{Inherit: "none", Paths: []string{}, Resolved: []RuntimeSkill{}}, BashEnabled: c.AgentBash, ExternalActions: c.ExternalActions}
+	out := RuntimeAgentPolicy{Preset: c.AgentPreset, ClaudeProfile: c.ClaudeProfile, ExecutionModel: c.ExecutionModel, Capabilities: append([]string{}, c.AgentCapabilities...), Skills: RuntimeSkillPolicy{Inherit: "none", Paths: []string{}, Resolved: []RuntimeSkill{}}, BashEnabled: c.AgentBash, ExternalActions: c.ExternalActions}
 	if out.ExternalActions == "" {
 		out.ExternalActions = "owner_confirmation"
 	}
@@ -145,9 +141,6 @@ func ResolveRuntimeTaskAgent(ctx context.Context, q Queryer, c RuntimeConfig, t 
 	if !ok || selected.Preset == "" {
 		return out, Fail("denied", "task Agent declaration is missing")
 	}
-	if c.ApplicationMode == "group_mention" && selected.MemoryScope != "conversation_published" {
-		return out, Fail("denied", "group Agent cannot use owner memory")
-	}
 	if selected.ExternalActions == "" {
 		selected.ExternalActions = "owner_confirmation"
 	}
@@ -156,10 +149,6 @@ func ResolveRuntimeTaskAgent(ctx context.Context, q Queryer, c RuntimeConfig, t 
 	}
 	if selected.BashEnabled && len(selected.Directories) > 0 {
 		return out, Fail("denied", "full Bash cannot be combined with bounded directory snapshots")
-	}
-	if c.ApplicationMode == "group_mention" {
-		selected.SharedMemoryWorkspaces = append([]string(nil), groupApplication.SharedMemoryWorkspaces...)
-		selected.ExcludedMemoryCategories = append([]string(nil), groupApplication.ExcludedMemoryCategories...)
 	}
 	selected.Agent, selected.Managed = name, true
 	return selected, nil
@@ -190,11 +179,9 @@ type runtimeOwnerApplication struct {
 	Agent   string `json:"agent"`
 }
 type runtimeGroupApplication struct {
-	Enabled                  bool     `json:"enabled"`
-	DefaultAgent             string   `json:"default_agent"`
-	SharedMemoryWorkspaces   []string `json:"shared_memory_workspaces"`
-	ExcludedMemoryCategories []string `json:"excluded_memory_categories"`
-	Bindings                 []struct {
+	Enabled      bool   `json:"enabled"`
+	DefaultAgent string `json:"default_agent"`
+	Bindings     []struct {
 		ConversationID string `json:"conversation_id"`
 		Agent          string `json:"agent"`
 	} `json:"bindings"`

@@ -70,6 +70,30 @@ func TestInspectSkillAcceptsTopLevelSymlinkAndRejectsNestedSymlink(t *testing.T)
 	}
 }
 
+func TestRetiredMemorySkillAliasesCannotBeInheritedOrConfigured(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := filepath.Join(home, ".claude", "skills")
+	managed := writeTestSkill(t, root, "memgov-memory", "retired")
+	alias := filepath.Join(root, "old-notes")
+	if err := os.Symlink(managed, alias); err != nil {
+		t.Fatal(err)
+	}
+	copy := writeTestSkill(t, root, "renamed-notes", "retired copy")
+	if err := os.WriteFile(filepath.Join(copy, "SKILL.md"), []byte("---\nname: memgov-memory\n---\nOld governance instructions"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := resolveClaudeSkills(core.RuntimeSkillPolicy{Inherit: "executor"})
+	if err != nil || len(resolved) != 0 {
+		t.Fatal(resolved, err)
+	}
+	for _, path := range []string{alias, copy} {
+		if _, err := resolveClaudeSkills(core.RuntimeSkillPolicy{Inherit: "none", Paths: []string{path}}); core.ErrorCode(err) != "conflict" {
+			t.Fatal(path, err)
+		}
+	}
+}
+
 func TestLoadConfigResolvesSkillPathsFromYAMLDirectoryAndHome(t *testing.T) {
 	root, home := t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)
@@ -85,8 +109,8 @@ func TestLoadConfigResolvesSkillPathsFromYAMLDirectoryAndHome(t *testing.T) {
 
 func TestSkillInheritanceDefaultsOnlyForOwnerPrivateAgent(t *testing.T) {
 	cfg := Config{Agents: map[string]AgentDeclaration{
-		"owner":  {MemoryScope: "owner_authorized"},
-		"helper": {MemoryScope: "owner_authorized"},
+		"owner":  {},
+		"helper": {},
 	}, Applications: ApplicationDeclarations{OwnerPrivate: &OwnerPrivateApplication{Agent: "owner"}}}
 	normalized, err := NormalizeDualModeConfig(cfg)
 	if err != nil {

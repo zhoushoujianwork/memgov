@@ -78,7 +78,7 @@ func TestConfigDefaultsPrecedenceAndOfflineReads(t *testing.T) {
 func TestLegacyDualConfigRequiresExplicitMigration(t *testing.T) {
 	home := t.TempDir()
 	legacy := filepath.Join(home, "config.dual.yaml")
-	raw := []byte("timeout: 11s\nagents:\n  group-helper:\n    preset: claude-default\n    memory_scope: conversation_published\napplications:\n  bots:\n    app-main:\n      default_agent: group-helper\n      group_mention:\n        enabled: false\n")
+	raw := []byte("timeout: 11s\nagents:\n  group-helper:\n    preset: claude-default\napplications:\n  bots:\n    app-main:\n      default_agent: group-helper\n      group_mention:\n        enabled: false\n")
 	if err := os.WriteFile(legacy, raw, 0600); err != nil {
 		t.Fatal(err)
 	}

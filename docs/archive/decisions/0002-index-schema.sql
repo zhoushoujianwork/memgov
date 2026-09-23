@@ -1,6 +1,6 @@
 -- 历史存档：memgov 旧记忆索引（index.db），不用于当前建库或升级。
 --
--- 已被 memgov v2 取代：当前使用 Source、Candidate、Review、Memory，
+-- Historical only. Current knowledge lives in Agent Workspace files; SQLite retains operational state and internal evidence.
 -- SQLite state.db 是唯一真相源；0003 的记忆卡/战斗设计同样已归档。
 -- 现行架构见 docs/architecture/architecture.md，Schema 由 internal/core 的版本迁移链维护。
 -- 以下 DDL 和说明只保留当时记录，不是当前产品约束。

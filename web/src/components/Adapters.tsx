@@ -1,6 +1,6 @@
 // Isolated DOM adapters preserve the existing editor and SSE controller behavior.
 import { useEffect, useRef } from "react";
-import { markdown } from "../shared/memory-markdown.js";
+import { markdown } from "../shared/markdown.js";
 import { mountTerminal, clearTerminal } from "../adapters/terminal.js";
 import {
   renderAgentDeclarations,
@@ -12,7 +12,7 @@ export function Markdown({ content }: { content: string }) {
   useEffect(() => {
     ref.current!.replaceChildren(markdown(content));
   }, [content]);
-  return <div className="memory-markdown" ref={ref} />;
+  return <div className="markdown-reader" ref={ref} />;
 }
 export function Terminal({ detail }: { detail: TaskDetail }) {
   const ref = useRef<HTMLDivElement>(null);

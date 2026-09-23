@@ -64,8 +64,8 @@ func TestPrepareServiceDatabase(t *testing.T) {
 	if err != nil || verified.SHA256 != b.SHA256 {
 		t.Fatalf("published backup invalid: %+v %v", verified, err)
 	}
-	if _, err := VerifyBackup(ctx, b.Path); err == nil {
-		t.Fatal("ordinary restore verification accepted old schema")
+	if _, err := VerifyBackup(ctx, b.Path); err != nil {
+		t.Fatal("old archive verification", err)
 	}
 	if info, err := os.Stat(b.Path); err != nil || info.Mode().Perm() != 0600 {
 		t.Fatalf("backup permissions: %v %v", info, err)
@@ -86,7 +86,7 @@ func TestPrepareServiceDatabaseBackupFailure(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "backups"), []byte("blocked"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PrepareServiceDatabase(context.Background(), path); err == nil || !strings.Contains(err.Error(), "backup failed") {
+	if _, err := PrepareServiceDatabase(context.Background(), path); err == nil || !strings.Contains(err.Error(), "archive failed") {
 		t.Fatalf("backup failure: %v", err)
 	}
 	assertServiceSchema(t, path, 21)

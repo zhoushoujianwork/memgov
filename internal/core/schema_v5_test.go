@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"strings"
 	"testing"
 )
 
@@ -13,15 +12,18 @@ import (
 func TestSchemaFiveRescopesAudienceKeysAndWithdrawsSharedPublications(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
+	dropSchema27(t, s)
 	c, r := fixtureChannel(t, s, ChannelDwsPersonal, "cid:group1")
-	m := createMemory(t, s, fixtureMemory(t, s, "global"))
+	if _, err := s.DB.Exec("INSERT INTO memories VALUES('old','global','fact','title','summary','content','active',1,'{}',?)", Now()); err != nil {
+		t.Fatal(err)
+	}
 	// Reproduce the pre-migration state: the shared key on the route, a
 	// publication under it, and a draft that was written against it.
 	if _, err := s.DB.ExecContext(ctx, "UPDATE channel_routes SET audience_key='local_private' WHERE id=?", r.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.DB.ExecContext(ctx, "INSERT INTO memory_publications(memory_id,audience_key,version,reason,created_at) VALUES(?,'local_private',?,?,?)",
-		m.ID, m.Version, "旧的共享键披露", Now()); err != nil {
+		"old", 1, "旧的共享键披露", Now()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.DB.ExecContext(ctx, `INSERT INTO outbox(id,channel_id,route_id,route_version,conversation_id,audience_key,input_digest,state,created_at,updated_at)
@@ -44,14 +46,9 @@ func TestSchemaFiveRescopesAudienceKeysAndWithdrawsSharedPublications(t *testing
 	if a.AudienceKey != "local_private:"+c.ID+":"+r.ConversationID {
 		t.Fatalf("the audience key was not rescoped: %q", a.AudienceKey)
 	}
-	// The ambiguous permission is gone, so disclosure is refused until it is
-	// published again for this exact conversation.
-	d, err := CheckDisclosure(ctx, s.DB, a, m.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if d.Allowed || !strings.Contains(strings.Join(d.Reasons, ";"), "publish it explicitly") {
-		t.Fatalf("a shared-key publication survived the migration: %+v", d)
+	var publications int
+	if err = s.DB.QueryRow("SELECT count(*) FROM memory_publications").Scan(&publications); err != nil || publications != 0 {
+		t.Fatal(publications, err)
 	}
 	var state, expires string
 	if err = s.DB.QueryRowContext(ctx, "SELECT state FROM outbox WHERE id='draft-1'").Scan(&state); err != nil {

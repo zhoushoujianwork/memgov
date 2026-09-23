@@ -207,7 +207,7 @@ func classifyPermissionChange(c *PlanChange, before, after any) {
 		skillExpanded, skillReduced := setDifference(beforeSkills, afterSkills)
 		c.PermissionExpansion = c.PermissionExpansion || skillExpanded
 		c.PermissionReduction = c.PermissionReduction || skillReduced
-		c.BoundaryChange = b.MemoryScope != a.MemoryScope || b.Preset != a.Preset || b.ExternalActions != a.ExternalActions || b.Skills.Inherit != a.Skills.Inherit || core.Digest(b.Skills) != core.Digest(a.Skills)
+		c.BoundaryChange = b.Preset != a.Preset || b.ExternalActions != a.ExternalActions || b.Skills.Inherit != a.Skills.Inherit || core.Digest(b.Skills) != core.Digest(a.Skills)
 	case DataSourceConfig:
 		a, ok := after.(DataSourceConfig)
 		if !ok {
@@ -232,11 +232,7 @@ func classifyPermissionChange(c *PlanChange, before, after any) {
 		if !ok {
 			return
 		}
-		c.PermissionExpansion, c.PermissionReduction = setDifference(b.SharedMemoryWorkspaces, a.SharedMemoryWorkspaces)
-		exclusionAdded, exclusionRemoved := setDifference(b.ExcludedMemoryCategories, a.ExcludedMemoryCategories)
-		c.PermissionExpansion = c.PermissionExpansion || exclusionRemoved
-		c.PermissionReduction = c.PermissionReduction || exclusionAdded
-		c.BoundaryChange = b.Owner != a.Owner || b.Source != a.Source || b.Channel != a.Channel || b.DefaultAgent != a.DefaultAgent || core.Digest(b.SharedMemoryWorkspaces) != core.Digest(a.SharedMemoryWorkspaces) || core.Digest(b.ExcludedMemoryCategories) != core.Digest(a.ExcludedMemoryCategories)
+		c.BoundaryChange = b.Owner != a.Owner || b.Source != a.Source || b.Channel != a.Channel || b.DefaultAgent != a.DefaultAgent
 	case *OwnerPrivateApplication:
 		a, ok := after.(*OwnerPrivateApplication)
 		if !ok {

@@ -10,18 +10,16 @@ import (
 )
 
 // HarnessBundle is the execution contract used by Personal Jarvis. A harness
-// supplies model analysis, task execution, confirmed actions, and memory
-// review; channels, tasks, evidence, and permissions remain harness-neutral.
+// supplies model analysis, task execution, confirmed actions; channels, tasks, evidence, and permissions remain harness-neutral.
 type HarnessBundle struct {
 	Name     string
 	Analyzer Analyzer
 	Executor Executor
 	Actioner ActionExecutor
-	Reviewer Reviewer
 }
 
 // HarnessFactory creates one isolated harness for a runtime. Factories must
-// not own channel routing or memory state; those belong to the host runtime.
+// not own channel routing or knowledge state; those belong to the host runtime.
 type HarnessFactory func(analysisModel, executionModel string) (HarnessBundle, error)
 
 // HarnessProfileSetter opts one harness component into the runtime's profile.
@@ -31,10 +29,10 @@ type HarnessProfileSetter interface {
 }
 
 // ConfigureProfile applies the same authentication profile to every role.
-// Validate all roles first so a split harness cannot silently analyze or review
+// Validate all roles first so a split harness cannot silently analyze
 // using the ambient account while only its executor receives the profile.
 func (b HarnessBundle) ConfigureProfile(profile string) error {
-	components := []any{b.Analyzer, b.Executor, b.Reviewer}
+	components := []any{b.Analyzer, b.Executor}
 	if b.Actioner != nil {
 		components = append(components, b.Actioner)
 	}
@@ -64,7 +62,6 @@ type HarnessDiagnostic struct {
 	// ActionerFallback is true when Service can use the Executor's
 	// ActionExecutor implementation because the bundle omitted Actioner.
 	ActionerFallback bool   `json:"actioner_fallback,omitempty"`
-	Reviewer         bool   `json:"reviewer"`
 	Error            string `json:"error,omitempty"`
 }
 
@@ -123,7 +120,6 @@ func DiagnoseHarness(name, analysisModel, executionModel string) HarnessDiagnost
 	if !diagnostic.Actioner {
 		_, diagnostic.ActionerFallback = bundle.Executor.(ActionExecutor)
 	}
-	diagnostic.Reviewer = bundle.Reviewer != nil
 	return diagnostic
 }
 
@@ -158,7 +154,7 @@ func NewHarness(name, analysisModel, executionModel string) (HarnessBundle, erro
 	if bundle.Name == "" {
 		bundle.Name = name
 	}
-	if bundle.Analyzer == nil || bundle.Executor == nil || bundle.Reviewer == nil {
+	if bundle.Analyzer == nil || bundle.Executor == nil {
 		return HarnessBundle{}, fmt.Errorf("harness %q returned an incomplete adapter", name)
 	}
 	if bundle.Actioner == nil {
@@ -172,6 +168,6 @@ func NewHarness(name, analysisModel, executionModel string) (HarnessBundle, erro
 func init() {
 	_ = RegisterHarness("claude", func(analysisModel, executionModel string) (HarnessBundle, error) {
 		model := NewClaude(analysisModel, executionModel)
-		return HarnessBundle{Name: "claude", Analyzer: model, Executor: model, Actioner: model, Reviewer: model}, nil
+		return HarnessBundle{Name: "claude", Analyzer: model, Executor: model, Actioner: model}, nil
 	})
 }

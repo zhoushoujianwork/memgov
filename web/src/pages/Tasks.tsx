@@ -288,17 +288,25 @@ function Detail({
         </KV>
         <KV label="Agent 活性">{processLabels[t.process_state]}</KV>
         {t.work_phase && <KV label="当前阶段">{t.work_phase}</KV>}
-        {t.work_deadline && <KV label="执行截止"><Time value={t.work_deadline} /></KV>}
-        {t.work_heartbeat && <KV label="控制心跳（不代表进展）"><Time value={t.work_heartbeat} /></KV>}
-        {t.work_phase && <KV label="最近模型输出"><Time value={t.model_activity_at} empty="尚未收到输出" /></KV>}
+        {t.work_deadline && (
+          <KV label="执行截止">
+            <Time value={t.work_deadline} />
+          </KV>
+        )}
+        {t.work_heartbeat && (
+          <KV label="控制心跳（不代表进展）">
+            <Time value={t.work_heartbeat} />
+          </KV>
+        )}
+        {t.work_phase && (
+          <KV label="最近模型输出">
+            <Time value={t.model_activity_at} empty="尚未收到输出" />
+          </KV>
+        )}
         <KV label="最近状态变化">
           <Time value={t.updated_at} />
         </KV>
       </Section>
-      {t.memory_status && <Section title="记忆沉淀（与业务结果分开）">
-        <KV label="状态">{({pending: "等待审查", reviewing: "独立审查中", applied: "已应用", rejected: "候选被拒绝", failed: "沉淀失败"} as Record<string,string>)[t.memory_status] || t.memory_status}</KV>
-        {t.memory_error_code && <KV label="原因">{t.memory_error_code}</KV>}
-      </Section>}
       {data.can_resume ? (
         <Section title="继续处理">
           <button
@@ -400,15 +408,15 @@ function Detail({
               ? "接收回执"
               : d.purpose === "runtime_processing_receipt"
                 ? "处理中标记"
-              : d.purpose === "runtime_completion_receipt"
-                ? "完成标记"
-              : d.purpose === "runtime_failure_receipt"
-                ? "失败回执"
-              : d.purpose === "confirmation"
-                ? "私聊确认"
-                : d.transport === "bot_group"
-                  ? "群聊答复"
-                  : "答复"}{" "}
+                : d.purpose === "runtime_completion_receipt"
+                  ? "完成标记"
+                  : d.purpose === "runtime_failure_receipt"
+                    ? "失败回执"
+                    : d.purpose === "confirmation"
+                      ? "私聊确认"
+                      : d.transport === "bot_group"
+                        ? "群聊答复"
+                        : "答复"}{" "}
             · {deliveryLabels[d.state] || d.state} ·{" "}
             <Time value={d.updated_at} />
           </KV>
@@ -447,12 +455,19 @@ function Detail({
       {!!data.actions.length && (
         <Section title="相关操作">
           {data.actions.map((a, i) => (
-            <div key={i}><KV label={a.kind}>
-              {labels[a.status] || a.status}
-            </KV>
-            {a.target && <KV label="具体目标">{a.target}</KV>}
-            {a.payload && <pre>{a.payload}</pre>}
-            {a.confirmation_token && <><p className="muted">核对目标、影响及恢复方式后，在已绑定的 Owner 私聊中发送以下完整确认。历史消息或引用不能授权。</p><pre>{a.confirmation_token}</pre></>}
+            <div key={i}>
+              <KV label={a.kind}>{labels[a.status] || a.status}</KV>
+              {a.target && <KV label="具体目标">{a.target}</KV>}
+              {a.payload && <pre>{a.payload}</pre>}
+              {a.confirmation_token && (
+                <>
+                  <p className="muted">
+                    核对目标、影响及恢复方式后，在已绑定的 Owner
+                    私聊中发送以下完整确认。历史消息或引用不能授权。
+                  </p>
+                  <pre>{a.confirmation_token}</pre>
+                </>
+              )}
             </div>
           ))}
           <small className="muted">

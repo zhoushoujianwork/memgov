@@ -23,6 +23,9 @@ memgov service stop     # 停止并关闭自动拉起；service start 恢复
 
 未安装托管时，`service start` / `restart` 仍为前台运行，Ctrl-C 停止；`restart` 会迁移旧独立模块。前台模式支持 `--port 0`。本期系统托管只支持 macOS 当前用户登录会话，不保证注销、关机或睡眠期间持续在线；Linux 系统托管另行实现。
 
+
+Schema 27 Workspace upgrade: stop the old service and run `memgov --config /path/to/config.yaml config migrate-workspaces` first. The service and explicit `init` path both verify a full old database/knowledge archive before destructive migration. Old AgentHome notes are archived and new workspaces start empty; configuration conversion does not apply runtime state. See [Workspace migration](agent-workspace-design-detail.md#destructive-migration).
+
 ## 核心行为与范围
 
 - 一个服务进程管理已启用的数据源及应用。本人私聊和群内 @ 共用同一个机器人通道接收器。

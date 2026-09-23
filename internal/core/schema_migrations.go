@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"path/filepath"
 )
 
 //go:embed schema_v2.sql
@@ -81,11 +82,15 @@ var schemaV25 string
 //go:embed schema_v26.sql
 var schemaV26 string
 
+//go:embed schema_v27.sql
+var schemaV27 string
+
 func init() {
 	databaseMigrations = append(databaseMigrations, databaseMigration{Version: 23, SQL: schemaV23})
 	databaseMigrations = append(databaseMigrations, databaseMigration{Version: 24, SQL: schemaV24})
 	databaseMigrations = append(databaseMigrations, databaseMigration{Version: 25, SQL: schemaV25})
 	databaseMigrations = append(databaseMigrations, databaseMigration{Version: 26, SQL: schemaV26})
+	databaseMigrations = append(databaseMigrations, databaseMigration{Version: 27, SQL: schemaV27})
 }
 
 type databaseMigration struct {
@@ -134,6 +139,22 @@ func (s *Store) upgradeSchema(ctx context.Context, current int, allow bool, migr
 	}
 	if current < target && !allow {
 		return Fail("invalid_input", "schema upgrade required; run memgov init with this binary")
+	}
+	if current < target && allow && !s.newDatabase {
+		if err := s.validateSchemaLedger(ctx, current, migrations); err != nil {
+			return err
+		}
+		destination := filepath.Join(filepath.Dir(s.Path), "backups", "service-upgrades", fmt.Sprintf("v%d-to-v%d-%s.db", current, target, NewID()))
+		backup, err := s.createBackup(ctx, destination, true)
+		if err != nil {
+			return fmt.Errorf("database upgrade archive failed; schema unchanged: %w", err)
+		}
+		s.upgradeArchive = &backup
+		if current < 27 && target >= 27 {
+			if err = s.archiveLegacyKnowledge(ctx, s.upgradeArchive); err != nil {
+				return fmt.Errorf("legacy knowledge archive failed; schema unchanged: %w", err)
+			}
+		}
 	}
 	conn, err := s.DB.Conn(ctx)
 	if err != nil {
@@ -185,6 +206,11 @@ func (s *Store) upgradeSchema(ctx context.Context, current int, allow bool, migr
 		}
 		if _, err = conn.ExecContext(ctx, m.SQL); err != nil {
 			return err
+		}
+		if m.Version == 27 {
+			if err = stripLegacyAppliedMemoryConfig(ctx, conn); err != nil {
+				return err
+			}
 		}
 		if _, err = conn.ExecContext(ctx, "INSERT INTO schema_migrations VALUES(?,?,?)", m.Version, Hash([]byte(m.SQL)), Now()); err != nil {
 			return err

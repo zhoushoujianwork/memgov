@@ -42,9 +42,6 @@ func TestRetentionPreservesTaskConclusionAndState(t *testing.T) {
 	if _, err := f.s.DB.ExecContext(ctx, "UPDATE runtime_tasks SET status='completed',result_summary=? WHERE id=?", conclusion+"原请求："+raw, task.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.s.DB.ExecContext(ctx, `INSERT INTO runtime_reviews(id,task_id,task_version,runtime_id,source_attempt_id,candidate_input,deadline_at,created_at) VALUES(?,?,?,?,'retention',?,?,?)`, NewID(), task.ID, task.Version, task.RuntimeID, JSON(map[string]string{"raw": raw}), Now(), Now()); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := f.s.DB.ExecContext(ctx, "UPDATE messages SET sent_at=? WHERE id IN (SELECT message_id FROM runtime_task_messages WHERE task_id=?)", time.Now().AddDate(0, 0, -8).Format(time.RFC3339Nano), task.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -68,10 +65,6 @@ func TestRetentionPreservesTaskConclusionAndState(t *testing.T) {
 		t.Fatalf("read expiry did not advance context epoch: %s %v", epoch, err)
 	}
 	runtimeMutate(t, f.s, "retention.apply", func(tx *Tx) (any, error) { return tx.ApplyDataSourceRetention(ctx, source.ID, time.Now(), 200) })
-	var reviewRaw string
-	if err := f.s.DB.QueryRowContext(ctx, "SELECT candidate_input FROM runtime_reviews WHERE task_id=?", task.ID).Scan(&reviewRaw); err != nil || reviewRaw != "null" {
-		t.Fatalf("review retained expired evidence: %q %v", reviewRaw, err)
-	}
 	after, err := ReadRuntimeTask(ctx, f.s.DB, task.ID)
 	if err != nil || after.Status != "completed" || !strings.Contains(after.ResultSummary, conclusion) || strings.Contains(after.ResultSummary, raw) {
 		t.Fatalf("retained task conclusion: %+v %v", after, err)
@@ -159,12 +152,6 @@ func TestDirectCollectionStartsAtEnableBoundaryAndRetentionRedactsRawText(t *tes
 	if err != nil || len(groupRoutes) != 0 {
 		t.Fatalf("group scope exposed private route: %v %v", groupRoutes, err)
 	}
-	var fragmentID, fragmentDigest string
-	if err = s.DB.QueryRowContext(ctx, "SELECT id,digest FROM fragments WHERE source_id=?", intakeResult.SourceID).Scan(&fragmentID, &fragmentDigest); err != nil {
-		t.Fatal(err)
-	}
-	memory := createMemory(t, s, Memory{Category: "fact", Title: "同事需求", Summary: "同事提出待跟进需求", Content: "需要跟进", WorkspaceID: "global", Evidence: []Evidence{{SourceID: intakeResult.SourceID, FragmentID: fragmentID, SHA256: fragmentDigest, Quote: event.Body}}})
-
 	oldSent := time.Now().UTC().AddDate(0, 0, -8).Format(time.RFC3339Nano)
 	if _, err = s.DB.ExecContext(ctx, "UPDATE messages SET sent_at=? WHERE id=?", oldSent, intakeResult.MessageID); err != nil {
 		t.Fatal(err)
@@ -176,10 +163,6 @@ func TestDirectCollectionStartsAtEnableBoundaryAndRetentionRedactsRawText(t *tes
 	messageBeforeCleanup, err := ReadMessage(ctx, s.DB, intakeResult.MessageID)
 	if err != nil || messageBeforeCleanup.Body != "" || messageBeforeCleanup.Revisions[0].Body != "" {
 		t.Fatalf("message read leaked pending expiration: %+v %v", messageBeforeCleanup, err)
-	}
-	memoryBeforeCleanup, err := ReadMemory(ctx, s.DB, memory.ID, "global", 0)
-	if err != nil || memoryBeforeCleanup.Evidence[0].Quote != "" || memoryBeforeCleanup.Summary == "" {
-		t.Fatalf("memory read leaked expired quote: %+v %v", memoryBeforeCleanup, err)
 	}
 	searchBeforeCleanup, err := Search(ctx, s.DB, event.Body, SearchOptions{Kind: "source", Scope: "global"})
 	if err != nil || len(searchBeforeCleanup) != 0 {
@@ -212,14 +195,6 @@ func TestDirectCollectionStartsAtEnableBoundaryAndRetentionRedactsRawText(t *tes
 	}
 	if content != "" || redacted != 1 || state != "expired" || uri == "" {
 		t.Fatalf("expired evidence content=%q redacted=%d state=%q uri=%q", content, redacted, state, uri)
-	}
-	redactedMemory, err := ReadMemory(ctx, s.DB, memory.ID, "global", 0)
-	if err != nil || len(redactedMemory.Evidence) != 1 || redactedMemory.Evidence[0].Quote != "" || redactedMemory.Summary == "" {
-		t.Fatalf("memory quote was not selectively redacted: %+v %v", redactedMemory, err)
-	}
-	historyRows, err := History(ctx, s.DB, memory.ID, "global")
-	if err != nil || len(historyRows) != 1 || historyRows[0].Evidence[0].Quote != "" {
-		t.Fatalf("historical quote remained: %+v %v", historyRows, err)
 	}
 	query, err = MessageQuery(ctx, s.DB, c.ID, MessageQueryInput{ConversationType: "direct", Limit: 10})
 	if err != nil || len(query.Messages) != 0 {

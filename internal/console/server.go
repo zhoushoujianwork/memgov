@@ -191,7 +191,7 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		switch r.URL.Path {
-		case "/tasks", "/memories", "/running", "/settings", "/tasks/", "/memories/", "/running/", "/settings/":
+		case "/tasks", "/workspaces", "/running", "/settings", "/tasks/", "/workspaces/", "/running/", "/settings/":
 			index := r.Clone(r.Context())
 			index.URL.Path = "/"
 			files.ServeHTTP(w, index)

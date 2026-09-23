@@ -33,7 +33,7 @@ SELECT ?,channel_id,route_id,route_version,job_id,conversation_id,audience_key,c
 		if err != nil {
 			return nil, err
 		}
-		return tx.ConfigureRuntime(ctx, RuntimeConfigInput{Name: current.Name, Channel: f.channel.ID, RouteIDs: []string{f.watch.ID}, DeliveryRouteID: f.direct.ID, Owner: f.owner, AgentCapabilities: []string{"memory_read"}, ExpectedVersion: current.Version})
+		return tx.ConfigureRuntime(ctx, RuntimeConfigInput{Name: current.Name, Channel: f.channel.ID, RouteIDs: []string{f.watch.ID}, DeliveryRouteID: f.direct.ID, Owner: f.owner, AgentCapabilities: []string{"conversation_history_read"}, ExpectedVersion: current.Version})
 	})
 	var status string
 	var version int

@@ -69,7 +69,7 @@ func (a *app) loadConfig(raw []byte) error {
 	d.KnownFields(true)
 	if err := d.Decode(&a.cfg); err != nil && err != io.EOF {
 		// yaml type errors can echo values. Keep credentials out of diagnostics.
-		return core.Fail("invalid_input", "invalid configuration: unknown field, duplicate key, invalid type or malformed YAML; see config.local.yaml.example")
+		return core.Fail("invalid_input", "invalid configuration: unknown field, duplicate key, invalid type or malformed YAML; for retired memory fields run config migrate-workspaces; see config.local.yaml.example")
 	}
 	var extra any
 	if err := d.Decode(&extra); err != io.EOF {
@@ -98,22 +98,6 @@ func (a *app) loadConfig(raw []byte) error {
 	}
 	home, _ := os.UserHomeDir()
 	for name, agent := range a.cfg.Agents {
-		if agent.Home != "" {
-			value := agent.Home
-			if value == "~" {
-				value = home
-			} else if strings.HasPrefix(value, "~/") {
-				value = filepath.Join(home, strings.TrimPrefix(value, "~/"))
-			}
-			if !filepath.IsAbs(value) {
-				value = filepath.Join(base, value)
-			}
-			absolute, err := filepath.Abs(value)
-			if err != nil {
-				return core.Fail("invalid_input", "agents.home: cannot resolve path")
-			}
-			agent.Home = filepath.Clean(absolute)
-		}
 		for i, value := range agent.Skills.Paths {
 			if value == "~" {
 				value = home
@@ -257,7 +241,6 @@ func (c RuntimeSetupConfig) apply(cmd *cobra.Command) error {
 		"execution-concurrency":     strconv.Itoa(c.ExecutionConcurrency),
 		"analysis-timeout-seconds":  strconv.Itoa(c.AnalysisTimeoutSeconds),
 		"execution-timeout-seconds": strconv.Itoa(c.ExecutionTimeoutSeconds),
-		"review-timeout-seconds":    strconv.Itoa(c.ReviewTimeoutSeconds),
 	}
 	for name, value := range values {
 		if value != "" && !cmd.Flags().Changed(name) {
@@ -274,6 +257,9 @@ func (c RuntimeSetupConfig) apply(cmd *cobra.Command) error {
 
 func (a *app) configCommands() {
 	root := &cobra.Command{Use: "config", Short: "YAML 系统默认值与消息通道配置"}
+	root.AddCommand(a.simple("migrate-workspaces", "Archive and remove retired memory settings and AgentHome notes", cobra.NoArgs, func(context.Context, []string) (any, error) {
+		return a.migrateWorkspaceConfig()
+	}))
 	root.AddCommand(a.simple("show", "显示配置和生效的系统默认值（不读取密钥）", cobra.NoArgs, func(context.Context, []string) (any, error) {
 		result := map[string]any{"home": a.home, "db_path": a.dbPath(), "config_path": a.configPath, "config_status": a.configStatus(),
 			"default_workspace": a.cfg.DefaultWorkspace, "timeout": a.timeout.String(), "format": a.format, "actor": a.actor,

@@ -71,9 +71,9 @@ func dualOwnerPrivateFixture(t *testing.T) (string, core.RuntimeConfig) {
 	return home, runtime
 }
 
-func TestManagedRuntimeLegacyPermissionSnapshotAndRealDrift(t *testing.T) {
+func TestManagedRuntimePermissionSnapshotAndRealDrift(t *testing.T) {
 	home, original := dualOwnerPrivateFixture(t)
-	cfg := configFile(t, "agents:\n  owner-chat: {preset: claude-default, memory_scope: owner_authorized, bash: false}\napplications:\n  owner_private: {enabled: true, runtime: owner-private, agent: owner-chat}\n")
+	cfg := configFile(t, "agents:\n  owner-chat: {preset: claude-default, bash: false}\napplications:\n  owner_private: {enabled: true, runtime: owner-private, agent: owner-chat}\n")
 	code, raw := invoke(t, home, "", "--config", cfg, "config", "plan")
 	if code != 0 || data(t, raw)["ready"] != true {
 		t.Fatalf("restricted owner binding should be ready: %v", raw)
@@ -92,10 +92,10 @@ func TestManagedRuntimeLegacyPermissionSnapshotAndRealDrift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// This is the schema-18 runtime snapshot shape, before the Bash columns.
-	legacy := core.Digest(map[string]any{"channel_id": current.ChannelID, "delivery_route_id": current.DeliveryRouteID, "owner_principal_id": current.OwnerPrincipalID, "owner_id_type": current.OwnerIDType, "owner_id_value": current.OwnerIDValue, "application_mode": current.ApplicationMode, "context_channel_id": current.ContextChannelID, "agent_capabilities": current.AgentCapabilities, "memory_scope": current.MemoryScope, "claude_profile": current.ClaudeProfile, "analysis_model": current.AnalysisModel, "execution_model": current.ExecutionModel, "agent_preset": current.AgentPreset, "item_threshold": current.ItemThreshold, "max_wait_seconds": current.MaxWaitSeconds, "reconcile_seconds": current.ReconcileSeconds})
+	// Default Bash policy is omitted; real authority changes must still show drift.
+	legacy := core.Digest(map[string]any{"channel_id": current.ChannelID, "delivery_route_id": current.DeliveryRouteID, "owner_principal_id": current.OwnerPrincipalID, "owner_id_type": current.OwnerIDType, "owner_id_value": current.OwnerIDValue, "application_mode": current.ApplicationMode, "context_channel_id": current.ContextChannelID, "agent_capabilities": current.AgentCapabilities, "claude_profile": current.ClaudeProfile, "analysis_model": current.AnalysisModel, "execution_model": current.ExecutionModel, "agent_preset": current.AgentPreset, "item_threshold": current.ItemThreshold, "max_wait_seconds": current.MaxWaitSeconds, "reconcile_seconds": current.ReconcileSeconds})
 	if core.Digest(runtimeManagedSnapshot(current)) != legacy {
-		t.Fatal("new default-permission runtime snapshot differs from schema-18 shape")
+		t.Fatal("new default-permission runtime snapshot differs from current shape")
 	}
 	applied, err := core.ReadAppliedConfig(ctx, store.DB, 0)
 	if err != nil {
@@ -119,7 +119,7 @@ func TestManagedRuntimeLegacyPermissionSnapshotAndRealDrift(t *testing.T) {
 	}
 	code, raw = invoke(t, home, "", "--config", cfg, "config", "plan")
 	if code != 0 || data(t, raw)["ready"] != true || planContainsCode(t, raw, "managed_object_drift") {
-		t.Fatalf("schema-18 default policy manifest was falsely reported as drift: %v", raw)
+		t.Fatalf("current default policy manifest was falsely reported as drift: %v", raw)
 	}
 	_, err = store.Mutate(ctx, core.Request{Scope: "global", Command: "test.actual.bash.drift"}, func(tx *core.Tx) (any, error) {
 		_, e := tx.Conn.ExecContext(ctx, "UPDATE runtime_configs SET agent_bash=1 WHERE id=?", original.ID)
@@ -179,7 +179,7 @@ func TestOwnerPrivateBuiltInAndExplicitAgentPolicy(t *testing.T) {
 	if err != nil || !current.AgentBash || current.ExternalActions != "owner_request" || current.OwnerPrincipalID != original.OwnerPrincipalID || current.DeliveryRouteID != original.DeliveryRouteID || current.RouteIDs[0] != original.RouteIDs[0] || current.ClaudeProfile != "cc" {
 		t.Fatalf("built-in overlay changed identity, routing or model: %+v %v", current, err)
 	}
-	explicitConfig := configFile(t, "agents:\n  owner-chat:\n    preset: claude-default\n    memory_scope: owner_authorized\n    capabilities: [memory_read, local_read]\n    bash: false\n    external_actions: owner_confirmation\napplications:\n  owner_private: {enabled: true, runtime: owner-private, agent: owner-chat}\n")
+	explicitConfig := configFile(t, "agents:\n  owner-chat:\n    preset: claude-default\n    capabilities: [local_read]\n    bash: false\n    external_actions: owner_confirmation\napplications:\n  owner_private: {enabled: true, runtime: owner-private, agent: owner-chat}\n")
 	code, raw = invoke(t, home, "", "--config", explicitConfig, "config", "plan")
 	if code != 0 {
 		t.Fatal(raw)
@@ -197,7 +197,7 @@ func TestOwnerPrivateBuiltInAndExplicitAgentPolicy(t *testing.T) {
 	}
 	current, err = core.ReadRuntime(ctx, store.DB, original.ID)
 	store.Close()
-	if err != nil || current.AgentBash || current.ExternalActions != "owner_confirmation" || current.OwnerPrincipalID != original.OwnerPrincipalID || current.RouteIDs[0] != original.RouteIDs[0] || len(current.AgentCapabilities) != 2 {
+	if err != nil || current.AgentBash || current.ExternalActions != "owner_confirmation" || current.OwnerPrincipalID != original.OwnerPrincipalID || current.RouteIDs[0] != original.RouteIDs[0] || len(current.AgentCapabilities) != 1 {
 		t.Fatalf("explicit false was not applied to same direct instance: %+v %v", current, err)
 	}
 }

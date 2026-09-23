@@ -147,7 +147,7 @@ func TestGroupServiceExecutesSelectedPresetAndRecordsActualAttempt(t *testing.T)
 	if _, err = service.Store.DB.ExecContext(ctx, "UPDATE workspaces SET path=? WHERE id=?", t.TempDir(), route.WorkspaceID); err != nil {
 		t.Fatal(err)
 	}
-	declaration := core.JSON(map[string]any{"agents": map[string]core.RuntimeAgentPolicy{"base": {Preset: "claude-default", MemoryScope: "conversation_published", ExternalActions: "owner_confirmation", Capabilities: []string{}}, "special": {Preset: preset.Name, ExecutionModel: "group-only-model", MemoryScope: "conversation_published", ExternalActions: "owner_confirmation", Capabilities: []string{}}}, "applications": map[string]any{"group_mention": map[string]any{"enabled": true, "default_agent": "base", "bindings": []map[string]string{{"conversation_id": "watch", "agent": "special"}}}}})
+	declaration := core.JSON(map[string]any{"agents": map[string]core.RuntimeAgentPolicy{"base": {Preset: "claude-default", ExternalActions: "owner_confirmation", Capabilities: []string{}}, "special": {Preset: preset.Name, ExecutionModel: "group-only-model", ExternalActions: "owner_confirmation", Capabilities: []string{}}}, "applications": map[string]any{"group_mention": map[string]any{"enabled": true, "default_agent": "base", "bindings": []map[string]string{{"conversation_id": "watch", "agent": "special"}}}}})
 	err = service.mutate(ctx, "global", "test.group.apply", func(tx *core.Tx) (any, error) {
 		return tx.CommitAppliedConfig(ctx, 0, 1, []byte(declaration), []core.ManagedConfigObject{{Kind: "application", Name: "group_mention", ObjectType: "runtime", ObjectID: cfg.ID}})
 	})
@@ -190,7 +190,7 @@ func TestGroupServiceExecutesSelectedPresetAndRecordsActualAttempt(t *testing.T)
 		}
 		t.Fatalf("selected input %+v calls=%d", executor.input, executor.calls)
 	}
-	if executor.input.MemoryContext != "" || len(executor.input.ConversationContext) != 0 {
+	if len(executor.input.ConversationContext) != 0 {
 		t.Fatal("undeclared context capabilities were exposed")
 	}
 	if executor.input.WorkspacePath != "" {

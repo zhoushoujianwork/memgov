@@ -10,28 +10,6 @@ import (
 	"time"
 )
 
-func redactExpiredEvidenceQuotes(raw string, expired map[string]bool) (string, bool) {
-	var value Memory
-	if json.Unmarshal([]byte(raw), &value) != nil {
-		return raw, false
-	}
-	changed := false
-	for i := range value.Evidence {
-		if expired[value.Evidence[i].SourceID] && (value.Evidence[i].Quote != "" || strings.Contains(raw, `"quote":""`)) {
-			value.Evidence[i].Quote = ""
-			changed = true
-		}
-	}
-	if !changed {
-		return raw, false
-	}
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return raw, false
-	}
-	return string(encoded), true
-}
-
 // Retention is enforced on reads before the asynchronous physical cleanup.
 // The predicate only covers routes actually owned by the source.
 func retainedSourcePredicate(id string) string {
@@ -209,22 +187,6 @@ func redactCachedRetentionCopy(ctx context.Context, q Queryer, raw string, texts
 	return string(encoded), err
 }
 
-func redactReadMemoryQuotes(ctx context.Context, q Queryer, m *Memory) error {
-	for i := range m.Evidence {
-		if m.Evidence[i].Quote == "" {
-			continue
-		}
-		expired, err := sourceRawExpired(ctx, q, m.Evidence[i].SourceID)
-		if err != nil {
-			return err
-		}
-		if expired {
-			m.Evidence[i].Quote = ""
-		}
-	}
-	return nil
-}
-
 type DirectContact struct {
 	ChannelID      string `json:"channel_id"`
 	ConversationID string `json:"conversation_id"`
@@ -298,7 +260,7 @@ func (tx *Tx) AdmitDataSourceDirectConversation(ctx context.Context, sourceValue
 	}
 	r, err := RouteFor(ctx, tx.Conn, d.ChannelID, conversation)
 	if ErrorCode(err) == "denied" {
-		r, err = tx.AddRoute(ctx, d.ChannelID, RouteInput{ConversationID: conversation, ConversationType: "direct", Workspace: d.WorkspaceID, Mode: "collect", AudiencePolicy: "local_private", MemoryPolicy: "explicit_only", SendPolicy: "draft_only"})
+		r, err = tx.AddRoute(ctx, d.ChannelID, RouteInput{ConversationID: conversation, ConversationType: "direct", Workspace: d.WorkspaceID, Mode: "collect", AudiencePolicy: "local_private", SendPolicy: "draft_only"})
 	}
 	if err != nil {
 		return Route{}, err
@@ -478,8 +440,6 @@ func (tx *Tx) ApplyDataSourceRetention(ctx context.Context, sourceValue string, 
 			"UPDATE runtime_batches SET output='' WHERE id IN (SELECT batch_id FROM runtime_batch_messages WHERE message_id=?)",
 			"UPDATE runtime_attempts SET output='' WHERE task_id IN (SELECT task_id FROM runtime_task_messages WHERE message_id=?)",
 			"UPDATE runtime_tasks SET instructions='',result='' WHERE id IN (SELECT task_id FROM runtime_task_messages WHERE message_id=?)",
-			"UPDATE runtime_reviews SET candidate_input='null',status=CASE WHEN status IN ('pending','running') THEN 'failed' ELSE status END,error_code=CASE WHEN status IN ('pending','running') THEN 'memory_evidence_unavailable' ELSE error_code END WHERE task_id IN (SELECT task_id FROM runtime_task_messages WHERE message_id=?)",
-			"UPDATE runtime_tasks SET memory_status='failed',memory_error_code='memory_evidence_unavailable' WHERE memory_status IN ('pending','reviewing') AND id IN (SELECT task_id FROM runtime_task_messages WHERE message_id=?)",
 			"UPDATE runtime_pending_actions SET payload='',payload_digest='',status=CASE WHEN status IN ('pending','confirmed') THEN 'stale' WHEN status='executing' THEN 'unknown' ELSE status END WHERE task_id IN (SELECT task_id FROM runtime_task_messages WHERE message_id=?)",
 			"UPDATE runtime_action_attempts SET result='' WHERE task_id IN (SELECT task_id FROM runtime_task_messages WHERE message_id=?)",
 		} {
@@ -512,9 +472,6 @@ OR EXISTS(SELECT 1 FROM json_each(runtime_message_actions.evidence_message_ids) 
 	if expiredErr != nil {
 		return out, expiredErr
 	}
-	if err = tx.redactRetentionQuotes(ctx, expiredSources, rawOriginals); err != nil {
-		return out, err
-	}
 	if err = tx.redactRuntimeConclusions(ctx, rawOriginals); err != nil {
 		return out, err
 	}
@@ -522,85 +479,6 @@ OR EXISTS(SELECT 1 FROM json_each(runtime_message_actions.evidence_message_ids) 
 	out.LastRunAt = now.UTC().Format(time.RFC3339Nano)
 	_, err = tx.Conn.ExecContext(ctx, "UPDATE data_sources SET last_retention_at=?,last_retention_count=?,retention_error_code='',updated_at=? WHERE id=?", out.LastRunAt, out.Expired, Now(), d.ID)
 	return out, err
-}
-
-// Scan each document collection once per batch. Scanning all revisions also
-// removes evidence that is no longer present in the current memory index.
-func (tx *Tx) redactRetentionQuotes(ctx context.Context, expired map[string]bool, originals map[string]bool) error {
-	if len(expired) == 0 {
-		return nil
-	}
-	for _, table := range []string{"memories", "revisions", "candidates"} {
-		identity := "id"
-		if table == "revisions" {
-			identity = "memory_id,version"
-		}
-		rows, err := tx.Conn.QueryContext(ctx, "SELECT "+identity+",document FROM "+table+` WHERE instr(document,'"quote"')>0`)
-		if err != nil {
-			return err
-		}
-		type update struct {
-			id       string
-			version  int
-			document string
-		}
-		updates := []update{}
-		for rows.Next() {
-			var u update
-			var document string
-			if table == "revisions" {
-				err = rows.Scan(&u.id, &u.version, &document)
-			} else {
-				err = rows.Scan(&u.id, &document)
-			}
-			if err != nil {
-				rows.Close()
-				return err
-			}
-			var memory Memory
-			if err = json.Unmarshal([]byte(document), &memory); err != nil {
-				rows.Close()
-				return err
-			}
-			for _, evidence := range memory.Evidence {
-				if expired[evidence.SourceID] && evidence.Quote != "" {
-					originals[evidence.Quote] = true
-				}
-			}
-			if redacted, changed := redactExpiredEvidenceQuotes(document, expired); changed {
-				u.document = redacted
-				updates = append(updates, u)
-			}
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return err
-		}
-		for _, u := range updates {
-			var memory Memory
-			if err = json.Unmarshal([]byte(u.document), &memory); err != nil {
-				return err
-			}
-			switch table {
-			case "memories":
-				_, err = tx.Conn.ExecContext(ctx, "UPDATE memories SET document=? WHERE id=?", u.document, u.id)
-			case "revisions":
-				_, err = tx.Conn.ExecContext(ctx, "UPDATE revisions SET document=?,digest=? WHERE memory_id=? AND version=?", u.document, Digest(memory), u.id, u.version)
-			case "candidates":
-				candidate, candidateErr := scanCandidate(tx.Conn.QueryRowContext(ctx, "SELECT "+candidateColumns+" FROM candidates WHERE id=?", u.id))
-				if candidateErr != nil {
-					return candidateErr
-				}
-				candidate.Memory = memory
-				_, err = tx.Conn.ExecContext(ctx, "UPDATE candidates SET document=?,digest=? WHERE id=?", u.document, candidateDigest(candidate.CandidateInput), u.id)
-			}
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 // Retain semantic execution conclusions, stripping known source originals and
@@ -626,8 +504,7 @@ func (tx *Tx) redactRuntimeConclusions(ctx context.Context, originals map[string
 			// Legacy file-migration snapshots are outside managed chat sources.
 			// Scan them only when a migration actually references expired chat
 			// sources; otherwise tens of MB of unrelated snapshots delay renewal.
-			filter += ` AND (instr(result,'"content"')>0 OR instr(result,'"body"')>0 OR instr(result,'"quote"')>0 OR instr(result,'"result"')>0)
-			AND (command NOT LIKE '% migration %' OR EXISTS(SELECT 1 FROM migration_sources ms JOIN source_availability av ON av.source_id=ms.source_id WHERE av.state='expired'))`
+			filter += ` AND (instr(result,'"content"')>0 OR instr(result,'"body"')>0 OR instr(result,'"quote"')>0 OR instr(result,'"result"')>0)`
 		}
 		rows, err := tx.Conn.QueryContext(ctx, "SELECT "+identity+","+target.field+" FROM "+target.table+" WHERE "+filter)
 		if err != nil {

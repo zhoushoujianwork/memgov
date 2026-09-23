@@ -4,7 +4,6 @@ import { platform } from "../shared/platform.js";
 let activeDialog = null;
 const capabilities = [
   "conversation_history_read",
-  "memory_read",
   "artifact_create",
   "local_read",
   "local_write",
@@ -91,13 +90,6 @@ function edit(config, item, operation, onSaved) {
   const preset = input(a.preset),
     profile = input(a.claude_profile),
     model = input(a.execution_model);
-  const memory = select(
-    [
-      ["owner_authorized", "所有者授权范围"],
-      ["conversation_published", "当前群已发布记忆"],
-    ],
-    a.memory_scope,
-  );
   const inherit = select(
     [
       ["executor", "继承执行器全局技能"],
@@ -133,7 +125,6 @@ function edit(config, item, operation, onSaved) {
       field("Preset", preset),
       field("Claude 配置别名", profile),
       field("执行模型（使用别名时填 profile）", model),
-      field("记忆范围", memory),
       field("技能继承", inherit),
       field("技能目录（每行一个，支持 ~ 和相对路径）", paths),
       field("允许读取的目录（每行一个绝对路径）", directories),
@@ -173,7 +164,6 @@ function edit(config, item, operation, onSaved) {
             preset: preset.value.trim(),
             claude_profile: profile.value.trim(),
             execution_model: model.value.trim(),
-            memory_scope: memory.value,
             capabilities: [...caps]
               .filter(([, c]) => c.checked)
               .map(([cap]) => cap),
@@ -228,7 +218,7 @@ function edit(config, item, operation, onSaved) {
         previewBox.append(
           el(
             "p",
-            "记忆范围、技能或执行策略发生变化；应用前会重新校验边界。",
+            "技能或执行策略发生变化；应用前会重新校验边界。",
             "notice",
           ),
         );

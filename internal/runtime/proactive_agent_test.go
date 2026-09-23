@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -38,10 +37,10 @@ func TestProactiveAgentUsesOwnerSkillsWithIndependentTaskContext(t *testing.T) {
 		if values["--input-format"] != "" || values["--session-id"] == in.SessionID || workdir != in.WorkDir {
 			t.Fatal("proactive task reused the private conversation transport")
 		}
-		if values["--setting-sources"] != "user,project" {
+		if values["--setting-sources"] != "project" {
 			t.Fatal("owner executor skill inheritance was lost")
 		}
-		for _, tool := range []string{"Read", "Edit", "Bash", "Skill(dws)", "Skill(memgov-memory)"} {
+		for _, tool := range []string{"Read", "Edit", "Bash", "Skill(dws)", "Skill(memgov-workspace)"} {
 			if !strings.Contains(values["--allowedTools"], tool) {
 				t.Fatalf("owner capability unavailable: %s", tool)
 			}
@@ -51,63 +50,10 @@ func TestProactiveAgentUsesOwnerSkillsWithIndependentTaskContext(t *testing.T) {
 	if _, err := c.Execute(context.Background(), in); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"skills/memgov-memory/SKILL.md", "tools/memgov-message"} {
+	for _, path := range []string{"skills/memgov-workspace/SKILL.md", "tools/memgov-message"} {
 		if _, err := os.Stat(filepath.Join(in.WorkDir, ".claude", path)); err != nil {
 			t.Fatal(err)
 		}
-	}
-}
-
-func TestProactiveMemoryTaskReturnsCandidateForBackendReview(t *testing.T) {
-	c, in, _ := directAgentFixture(t)
-	in.ApplicationMode, in.ExternalActions, in.BashEnabled = "proactive", "owner_delegated", true
-	in.Task.ID, in.Task.Kind, in.AttemptID = core.NewID(), "memory", core.NewID()
-	in.Task.Messages = []core.RuntimeMessage{{ID: "message-1", SourceID: "source-1", FragmentID: "fragment-1", SHA256: "sha-1", Body: "S3 proxy signed URLs are not externally usable."}}
-	c.Run = func(_ context.Context, workdir string, _ []byte, args ...string) ([]byte, error) {
-		values := claudeArgumentValues(args)
-		prompt := values["--append-system-prompt"]
-		for _, want := range []string{"governed memory proposal task", "required candidate field", "Do not call source ingest", "backend will submit", "independent review"} {
-			if !strings.Contains(prompt, want) {
-				t.Fatalf("memory proposal policy missing %q", want)
-			}
-		}
-		var schema struct {
-			Required []string `json:"required"`
-		}
-		if err := json.Unmarshal([]byte(values["--json-schema"]), &schema); err != nil || !slices.Contains(schema.Required, "candidate") {
-			t.Fatalf("memory execution schema does not require candidate: required=%v err=%v", schema.Required, err)
-		}
-		for _, tool := range strings.Split(values["--allowedTools"], ",") {
-			if tool == "Bash" || tool == "Write" || tool == "Edit" {
-				t.Fatalf("memory proposal retained mutating tool %q", tool)
-			}
-		}
-		wrapper, err := os.ReadFile(filepath.Join(workdir, ".claude", "tools", "memgov"))
-		if err != nil || !strings.Contains(string(wrapper), `"write":"no"`) {
-			t.Fatalf("memory lookup wrapper is not read-only: err=%v body=%s", err, wrapper)
-		}
-		return claudeResult(t, map[string]any{
-			"result":          "Prepared a governed memory candidate.",
-			"summary":         "Candidate ready for backend review.",
-			"artifacts":       []string{},
-			"tool_kinds":      []string{"memgov.recall"},
-			"pending_actions": []any{},
-			"candidate": map[string]any{
-				"action": "create",
-				"reason": "Preserve the observed S3 proxy limitation.",
-				"memory": map[string]any{
-					"category": "fact",
-					"title":    "S3 proxy signed URL limitation",
-					"summary":  "S3 proxy signed URLs are not externally usable.",
-					"content":  "The observed S3 proxy supports ordinary file operations, but signed URLs retain the proxy domain and cannot be used externally.",
-					"evidence": []map[string]string{{"source_id": "source-1", "fragment_id": "fragment-1", "sha256": "sha-1"}},
-				},
-			},
-		}), nil
-	}
-	result, err := c.Execute(context.Background(), in)
-	if err != nil || result.Candidate == nil || result.Candidate.Memory.Title != "S3 proxy signed URL limitation" {
-		t.Fatalf("memory candidate contract failed: result=%+v err=%v", result, err)
 	}
 }
 
@@ -132,7 +78,7 @@ func TestProactiveRestrictedPolicyDoesNotEnableGeneralBash(t *testing.T) {
 				t.Fatal("restricted proactive policy obtained general Bash")
 			}
 		}
-		for _, controlled := range []string{"memgov *)", "memgov-message *)"} {
+		for _, controlled := range []string{"memgov-workspace *)", "memgov-message *)"} {
 			if !strings.Contains(values["--allowedTools"], controlled) {
 				t.Fatal("controlled owner tool unavailable")
 			}
@@ -141,32 +87,6 @@ func TestProactiveRestrictedPolicyDoesNotEnableGeneralBash(t *testing.T) {
 	}
 	if _, err := c.Execute(context.Background(), in); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestProactivePublishedMemoryScopeUsesConversationBoundTool(t *testing.T) {
-	c, in, _ := directAgentFixture(t)
-	in.ApplicationMode, in.MemoryScope = "proactive", "conversation_published"
-	in.ChannelID, in.ConversationID = "observation-channel", "verified-group"
-	c.Run = func(_ context.Context, _ string, _ []byte, args ...string) ([]byte, error) {
-		values := claudeArgumentValues(args)
-		if strings.Contains(values["--allowedTools"], "Skill(memgov-memory)") || !strings.Contains(values["--allowedTools"], "memgov-group-memory *)") {
-			t.Fatalf("published memory scope widened: %s", values["--allowedTools"])
-		}
-		if !strings.Contains(values["--append-system-prompt"], "do not use owner-wide recall") {
-			t.Fatal("published memory prompt omitted scope")
-		}
-		return claudeResult(t, map[string]any{"result": "recorded"}), nil
-	}
-	if _, err := c.Execute(context.Background(), in); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(in.WorkDir, ".claude", "skills", "memgov-memory", "SKILL.md")); !os.IsNotExist(err) {
-		t.Fatal("owner-wide memory skill survived a narrowed policy")
-	}
-	body, err := os.ReadFile(filepath.Join(in.WorkDir, ".claude", "tools", "memgov-group-memory"))
-	if err != nil || !strings.Contains(string(body), "observation-channel") || !strings.Contains(string(body), "verified-group") {
-		t.Fatal("controlled memory tool lost conversation binding")
 	}
 }
 

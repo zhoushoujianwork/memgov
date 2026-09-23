@@ -159,7 +159,7 @@ func TestGroupMentionRuntimeUsesBoundDWSContextAndRepliesToTrigger(t *testing.T)
 			DeliveryRouteID: appRoute.ID, Owner: owner, ApplicationMode: "group_mention", ContextChannel: dwsChannel.ID, ReconcileSeconds: 10})
 		return cfg, err
 	})
-	if cfg.ItemThreshold != 1 || cfg.MemoryScope != "conversation_published" || cfg.ContextChannelID != dwsChannel.ID {
+	if cfg.ItemThreshold != 1 || cfg.ContextChannelID != dwsChannel.ID {
 		t.Fatalf("group runtime was not constrained: %+v", cfg)
 	}
 	runtimeMutate(t, s, "group.runtime.start", func(tx *Tx) (any, error) { return tx.SetRuntimeStatus(ctx, cfg.ID, "running", "") })
@@ -212,7 +212,7 @@ func TestGroupMentionRuntimeUsesBoundDWSContextAndRepliesToTrigger(t *testing.T)
 		return task, err
 	})
 	runtimeMutate(t, s, "group.task.complete", func(tx *Tx) (any, error) {
-		return tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "项目代号是 Aurora。", Summary: "已回答"}, "")
+		return tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "项目代号是 Aurora。", Summary: "已回答"})
 	})
 	var delivery OutboxView
 	runtimeMutate(t, s, "group.delivery", func(tx *Tx) (any, error) {
@@ -278,7 +278,7 @@ func TestGroupMentionRuntimeUsesBoundDWSContextAndRepliesToTrigger(t *testing.T)
 		return secondTask, err
 	})
 	runtimeMutate(t, s, "group.task.complete.second", func(tx *Tx) (any, error) {
-		return tx.CompleteRuntimeTask(ctx, secondTask.ID, secondTask.Version, secondAttempt.ID, RuntimeAttemptResult{Result: "第二个群的回答。", Summary: "已回答"}, "")
+		return tx.CompleteRuntimeTask(ctx, secondTask.ID, secondTask.Version, secondAttempt.ID, RuntimeAttemptResult{Result: "第二个群的回答。", Summary: "已回答"})
 	})
 	var secondDelivery OutboxView
 	runtimeMutate(t, s, "group.delivery.second", func(tx *Tx) (any, error) {
@@ -435,7 +435,7 @@ func TestGroupMentionRuntimeWithTwoGroupsDeliversEachTaskToItsOwnTrigger(t *test
 		var completed RuntimeTask
 		runtimeMutate(t, s, "group.task.complete."+key, func(tx *Tx) (any, error) {
 			var err error
-			completed, err = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: result, Summary: "已回答", Actions: actions}, "")
+			completed, err = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: result, Summary: "已回答", Actions: actions})
 			return completed, err
 		})
 		return completed
@@ -816,14 +816,14 @@ func TestRuntimeTaskVersionStopsOldResultsAndRecallHidesBody(t *testing.T) {
 		return tx.Intake(context.Background(), f.channel.ID, NormalizedEvent{Kind: EventEdit, Adapter: "fake", ParseVersion: "1", Origin: "stream", ProviderMessageID: "task-versioned", ConversationID: f.watch.ConversationID, Tenant: f.channel.Tenant, Sender: Sender{IDType: "union_id", IDValue: "alice"}, Body: "please do the revised version", EditedAt: time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339Nano), EventAt: time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339Nano)})
 	})
 	_, completionErr := f.s.Mutate(context.Background(), Request{Scope: "global", Command: "runtime.complete.before-sync"}, func(tx *Tx) (any, error) {
-		return tx.CompleteRuntimeTask(context.Background(), task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "obsolete"}, "")
+		return tx.CompleteRuntimeTask(context.Background(), task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "obsolete"})
 	})
 	if ErrorCode(completionErr) != "conflict" {
 		t.Fatalf("old result was accepted before message-state sync: %v", completionErr)
 	}
 	runtimeMutate(t, f.s, "runtime.sync.edit", func(tx *Tx) (any, error) { return tx.SyncRuntimeMessages(context.Background(), f.config.ID) })
 	_, completionErr = f.s.Mutate(context.Background(), Request{Scope: "global", Command: "runtime.complete.old"}, func(tx *Tx) (any, error) {
-		return tx.CompleteRuntimeTask(context.Background(), task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "obsolete"}, "")
+		return tx.CompleteRuntimeTask(context.Background(), task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "obsolete"})
 	})
 	if ErrorCode(completionErr) != "conflict" {
 		t.Fatalf("old result accepted: %v", completionErr)
@@ -851,7 +851,7 @@ func TestRuntimeBlocksDeliveryWhenSourceChangedBeforeSync(t *testing.T) {
 		return claimed, err
 	})
 	runtimeMutate(t, f.s, "runtime.complete.delivery-stale", func(tx *Tx) (any, error) {
-		return tx.CompleteRuntimeTask(context.Background(), claimed.ID, claimed.Version, attempt.ID, RuntimeAttemptResult{Result: "old result", Summary: "old"}, "")
+		return tx.CompleteRuntimeTask(context.Background(), claimed.ID, claimed.Version, attempt.ID, RuntimeAttemptResult{Result: "old result", Summary: "old"})
 	})
 	runtimeMutate(t, f.s, "runtime.edit.before-delivery", func(tx *Tx) (any, error) {
 		return tx.Intake(context.Background(), f.channel.ID, NormalizedEvent{Kind: EventEdit, Adapter: "fake", ParseVersion: "1", Origin: "stream", ProviderMessageID: "task-delivery-stale", ConversationID: f.watch.ConversationID, Tenant: f.channel.Tenant, Sender: Sender{IDType: "union_id", IDValue: "alice"}, Body: "changed before delivery", EditedAt: time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339Nano), EventAt: time.Now().Add(2 * time.Hour).UTC().Format(time.RFC3339Nano)})
@@ -876,7 +876,7 @@ func TestRuntimeDeliveryQuotesQuestionAndShowsModelAndThinkingTime(t *testing.T)
 	})
 	runtimeMutate(t, f.s, "runtime.complete.styled", func(tx *Tx) (any, error) {
 		return tx.CompleteRuntimeTask(context.Background(), claimed.ID, claimed.Version, attempt.ID,
-			RuntimeAttemptResult{Result: "测试已经通过。", Summary: "通过", Usage: map[string]any{"model": "claude-sonnet-test"}}, "")
+			RuntimeAttemptResult{Result: "测试已经通过。", Summary: "通过", Usage: map[string]any{"model": "claude-sonnet-test"}})
 	})
 	if _, err := f.s.DB.Exec("UPDATE runtime_attempts SET started_at=?,finished_at=? WHERE id=?", "2026-09-15T01:00:00Z", "2026-09-15T01:01:06Z", attempt.ID); err != nil {
 		t.Fatal(err)
@@ -911,7 +911,7 @@ func TestRuntimeConfirmationRequiresExactOwnerDirectMessageAndExecutesOnce(t *te
 	var completed RuntimeTask
 	runtimeMutate(t, f.s, "runtime.complete.external", func(tx *Tx) (any, error) {
 		var err error
-		completed, err = tx.CompleteRuntimeTask(context.Background(), claimed.ID, claimed.Version, attempt.ID, RuntimeAttemptResult{Result: "准备完成", Summary: "等待确认", Actions: []RuntimeAction{{Kind: "git_push", Target: "origin/main", Payload: "push commit abc"}}}, "")
+		completed, err = tx.CompleteRuntimeTask(context.Background(), claimed.ID, claimed.Version, attempt.ID, RuntimeAttemptResult{Result: "准备完成", Summary: "等待确认", Actions: []RuntimeAction{{Kind: "git_push", Target: "origin/main", Payload: "push commit abc"}}})
 		return completed, err
 	})
 	if completed.Status != "awaiting_confirmation" || len(completed.Actions) != 1 {
@@ -1123,7 +1123,7 @@ func TestGroupMentionRuntimeFirstSyncCreatesAssistantRouteForNewGroup(t *testing
 		t.Fatal(err)
 	}
 	if newAppRoute.Mode != "assistant" || newAppRoute.SendPolicy != "reply_to_trigger" || newAppRoute.AudiencePolicy != "conversation" ||
-		newAppRoute.MemoryPolicy != "explicit_only" || !contains(newAppRoute.Triggers, "mention") {
+		!contains(newAppRoute.Triggers, "mention") {
 		t.Fatalf("new group route did not use the fixed assistant policy: %+v", newAppRoute)
 	}
 	if newAppRoute.WorkspaceID != f.dwsB.WorkspaceID {

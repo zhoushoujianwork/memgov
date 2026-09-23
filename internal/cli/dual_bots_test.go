@@ -53,7 +53,7 @@ applications:
 
 func TestBotPersonasNormalizeOwnerAndGroupIndependently(t *testing.T) {
 	body := `agents:
-  helper: {preset: claude-default, execution_model: bot-model, memory_scope: conversation_published}
+  helper: {preset: claude-default, execution_model: bot-model}
   special: {preset: claude-default, capabilities: []}
 applications:
   bots:
@@ -75,15 +75,14 @@ applications:
 	bot := v.Declaration.Applications.Bots["app-main"]
 	owner := v.Declaration.Agents[bot.OwnerPrivate.Agent]
 	group := v.Declaration.Agents[bot.GroupMention.DefaultAgent]
-	if !owner.Bash || owner.ExternalActions != "owner_request" || owner.MemoryScope != "owner_authorized" || owner.ExecutionModel != "bot-model" {
+	if !owner.Bash || owner.ExternalActions != "owner_request" || owner.ExecutionModel != "bot-model" {
 		t.Fatalf("owner default did not inherit persona with full permissions: %+v", owner)
 	}
-	if group.Bash || group.MemoryScope != "conversation_published" || group.ExternalActions != "owner_confirmation" {
+	if group.Bash || group.ExternalActions != "owner_confirmation" {
 		t.Fatalf("group acquired owner permissions: %+v", group)
 	}
 	for _, bad := range []string{
 		strings.Replace(body, "default_agent: helper", "default_agent: absent", 1),
-		strings.Replace(body, "memory_scope: conversation_published", "memory_scope: owner_authorized", 1),
 		strings.Replace(body, "  bots:", "  owner_private: {enabled: true, runtime: owner-private}\n  bots:", 1),
 		strings.Replace(body, "  bots:", "  group_mention: {channel: app-main, enabled: false}\n  bots:", 1),
 		strings.Replace(body, "capabilities: []", "capabilities: [], external_actions: owner_delegated", 1),
@@ -166,7 +165,7 @@ applications:
 		if e != nil {
 			t.Fatal(e)
 		}
-		if policy.ExecutionModel != tt.model || policy.MemoryScope != "conversation_published" || policy.BashEnabled || policy.ExternalActions != "owner_confirmation" {
+		if policy.ExecutionModel != tt.model || policy.BashEnabled || policy.ExternalActions != "owner_confirmation" {
 			t.Fatalf("wrong bot policy: %+v", policy)
 		}
 	}
@@ -206,7 +205,7 @@ applications:
 
 func TestLegacyOwnerBindingMigratesToBotWithoutDuplicateDisabledManifest(t *testing.T) {
 	home, private := dualOwnerPrivateFixture(t)
-	agents := "agents:\n  helper: {preset: claude-default}\n  limited: {preset: claude-default, memory_scope: owner_authorized, bash: false, capabilities: [memory_read], skills: {inherit: none}}\n"
+	agents := "agents:\n  helper: {preset: claude-default}\n  limited: {preset: claude-default, bash: false, capabilities: [conversation_history_read], skills: {inherit: none}}\n"
 	legacy := configFile(t, agents+"applications:\n  owner_private: {enabled: true, runtime: owner-private, agent: limited}\n")
 	plan := channelPlan(t, home, legacy)
 	if plan["ready"] != true {
@@ -336,7 +335,7 @@ func TestLegacyOwnerCannotBeShadowedByBotDeclaration(t *testing.T) {
 	home, _ := dualOwnerPrivateFixture(t)
 	cfg := configFile(t, `agents:
   helper: {preset: claude-default}
-  limited: {preset: claude-default, memory_scope: owner_authorized, bash: false, capabilities: [memory_read]}
+  limited: {preset: claude-default, bash: false, capabilities: [conversation_history_read]}
 applications:
   owner_private: {enabled: true, runtime: owner-private, agent: limited}
   bots:

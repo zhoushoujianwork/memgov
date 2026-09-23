@@ -254,7 +254,7 @@ func runWithCache(ctx context.Context, req Request, run Runner, cache identityCa
 }
 
 // Main is shared with the executable so input validation can be tested without
-// reading fixture paths, environment answers or the authoritative memory DB.
+// reading fixture paths, environment answers or the runtime database or private Agent workspaces.
 func Main(ctx context.Context, in io.Reader, out io.Writer, run Runner) error {
 	b, err := io.ReadAll(io.LimitReader(in, 65537))
 	if err != nil {

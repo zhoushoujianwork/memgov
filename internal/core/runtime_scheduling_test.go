@@ -110,7 +110,7 @@ func TestSchedulingAtomicSharedPools(t *testing.T) {
 		return nil, e
 	})
 	_, err := f.s.Mutate(ctx, Request{Scope: "global", Command: "late"}, func(tx *Tx) (any, error) {
-		return tx.CompleteRuntimeTask(ctx, attempts[0].TaskID, attempts[0].TaskVersion, attempts[0].ID, RuntimeAttemptResult{Result: "late"}, "")
+		return tx.CompleteRuntimeTask(ctx, attempts[0].TaskID, attempts[0].TaskVersion, attempts[0].ID, RuntimeAttemptResult{Result: "late"})
 	})
 	if ErrorCode(err) != "conflict" {
 		t.Fatalf("late result accepted: %v", err)

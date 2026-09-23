@@ -44,6 +44,9 @@ func agentSessionState(in ExecutionInput, id string) core.RuntimeAgentSession {
 }
 
 func continuationPolicyDigest(in ExecutionInput) string {
+	// Workspace notes can change while a task is stopped. They are reloaded
+	// data, not an authorization change that prevents continuation.
+	in.WorkspaceBootstrap.Digest = ""
 	return core.Digest(map[string]any{"policy": directPolicyDigest(in, in.ClaudeProfile, in.ExecutionModel),
 		"effective_agent_policy": in.AgentPolicyDigest,
 		"mode":                   in.ApplicationMode, "channel": in.ChannelID, "conversation": in.ConversationID,
@@ -52,7 +55,7 @@ func continuationPolicyDigest(in ExecutionInput) string {
 
 func continuationContextDigest(in ExecutionInput) string {
 	return core.Digest(map[string]any{"messages": in.Task.Messages, "instructions": in.Task.Instructions,
-		"history": in.ConversationContext, "memory": in.MemoryContext, "snapshots": in.DirectorySnapshots})
+		"history": in.ConversationContext, "snapshots": in.DirectorySnapshots})
 }
 
 func previousResumeAttempt(task core.RuntimeTask) (core.RuntimeAttempt, error) {

@@ -33,10 +33,11 @@ test:
 	go test ./...
 
 test-runtime:
-	go test ./internal/agent ./internal/channel/dws ./internal/core ./internal/runlog ./internal/runtime -count=1
+	go test ./internal/agent ./internal/agentworkspace ./internal/channel/dws ./internal/core ./internal/runlog ./internal/runtime -count=1
 
+# Race-instrumented SQLite migration fixtures exceed Go's default ten minutes.
 test-runtime-race:
-	go test -race ./internal/channel ./internal/channel/dws ./internal/core ./internal/runlog ./internal/runtime
+	go test -race -timeout=30m ./internal/agentworkspace ./internal/channel ./internal/channel/dws ./internal/core ./internal/runlog ./internal/runtime
 
 # Framework replay only; no actual DingTalk access.
 test-scenarios:
@@ -51,7 +52,7 @@ test-scenario1-acceptance:
 # integration pass, which needs application credentials and a live Stream.
 test-app-channel:
 	go test ./internal/channel/dingtalkapp -count=1 -v
-	go test ./internal/cli -run 'TestApp|TestAudienceStaysSeparate' -count=1 -v
+	go test ./internal/cli -run 'TestApp' -count=1 -v
 
 build-scenario-driver:
 	go build -o .memgov/bin/scenario-driver ./cmd/scenario-driver
@@ -70,6 +71,6 @@ check: web-check fmt-check vet test
 release: check
 	bash scripts/release.sh '$(VERSION)'
 
-# Only generated binaries and release archives; never remove memory data.
+# Only generated binaries and release archives; never remove Workspace or operational data.
 clean:
 	rm -rf .memgov/bin dist

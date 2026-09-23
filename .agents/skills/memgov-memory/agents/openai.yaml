@@ -1,4 +1,0 @@
-interface:
-  display_name: "Memgov Memory"
-  short_description: "Recall and govern evidence-backed local memory"
-  default_prompt: "Use $memgov-memory to recall relevant project memory and capture durable outcomes when authorized."

@@ -128,27 +128,6 @@ func ReadContext(ctx context.Context, q Queryer, id string) (RequestContext, err
 	return out, err
 }
 
-// ContextRecall answers inside one trusted context. The audience comes from the
-// stored context, so a remote caller cannot widen the scope by passing extra
-// parameters; the question is the only thing it supplies.
-func ContextRecall(ctx context.Context, q Queryer, contextID, question string, budget int, explain bool) (any, error) {
-	rc, err := ReadContext(ctx, q, contextID)
-	if err != nil {
-		return nil, err
-	}
-	if rc.ExpiresAt < Now() {
-		return nil, Fail("denied", "request context %s expired at %s", rc.ID, rc.ExpiresAt)
-	}
-	a, err := audienceForContext(ctx, q, rc)
-	if err != nil {
-		return nil, err
-	}
-	if a.RouteVersion != rc.RouteVersion {
-		return nil, Fail("conflict", "route changed from version %d to %d since the context was opened", rc.RouteVersion, a.RouteVersion)
-	}
-	return AudienceRecall(ctx, q, a, question, budget, explain)
-}
-
 // audienceForContext rebuilds the audience from the route the context was opened
 // against. The route is re-read, so a policy change between opening a context
 // and producing a draft is noticed rather than inherited.
@@ -163,7 +142,7 @@ func audienceForContext(ctx context.Context, q Queryer, rc RequestContext) (Audi
 	}
 	return Audience{ChannelID: c.ID, ChannelName: c.Name, Kind: c.Kind, Tenant: c.Tenant,
 		ConversationID: r.ConversationID, AudienceKey: r.AudienceKey, WorkspaceID: r.WorkspaceID,
-		RouteID: r.ID, RouteVersion: r.Version, MemoryPolicy: r.MemoryPolicy, SendPolicy: r.SendPolicy, Mode: r.Mode}, nil
+		RouteID: r.ID, RouteVersion: r.Version, SendPolicy: r.SendPolicy, Mode: r.Mode}, nil
 }
 
 // Draft is one reply awaiting a deliberate decision. It is never a send: it
@@ -232,19 +211,11 @@ func (tx *Tx) Draft(ctx context.Context, in DraftInput) (any, error) {
 	if a.RouteVersion != rc.RouteVersion {
 		return nil, Fail("conflict", "route changed from version %d to %d while the reply was produced; re-check the audience", rc.RouteVersion, a.RouteVersion)
 	}
-	// Citations are the claim that these memories were used. Each one must be
-	// disclosable to this conversation right now, not merely readable locally.
-	seq := map[string]int{}
-	for _, id := range in.Citations {
-		d, err := CheckDisclosure(ctx, tx.Conn, a, id)
-		if err != nil {
-			return nil, err
-		}
-		if !d.Allowed {
-			return nil, Fail("denied", "memory %s may not be disclosed to %s: %s", id, a.AudienceKey, strings.Join(d.Reasons, "; "))
-		}
-		seq[id] = d.Version
+	// Legacy database memory citations are archived and cannot authorize new sends.
+	if len(in.Citations) != 0 {
+		return nil, Fail("denied", "database memory citations have been removed; prepare a new workspace-based reply")
 	}
+	seq := map[string]int{}
 	c, err := ReadChannel(ctx, tx.Conn, rc.ChannelID)
 	if err != nil {
 		return nil, err

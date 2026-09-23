@@ -10,19 +10,10 @@ import (
 )
 
 // Owner private turns and independent observation tasks share installed skills,
-// memory access and the execution environment, but never their conversation.
+// workspace access and the execution environment, but never their conversation.
 func prepareOwnerAgentTools(in *ExecutionInput) (string, error) {
 	if err := prepareClaudeSkills(in); err != nil {
 		return "", err
-	}
-	ownerMemory := hasAgentCapability(in.Capabilities, "memory_read") && in.MemoryScope != "conversation_published"
-	if ownerMemory {
-		if err := installDirectMemorySkill(in.WorkDir, in.Home); err != nil {
-			return "", err
-		}
-	} else {
-		_ = os.Remove(filepath.Join(in.WorkDir, ".claude", "tools", "memgov"))
-		_ = os.RemoveAll(filepath.Join(in.WorkDir, ".claude", "skills", "memgov-memory"))
 	}
 	binary, err := directMemgovBinary(in.Home)
 	if err != nil {
@@ -31,10 +22,9 @@ func prepareOwnerAgentTools(in *ExecutionInput) (string, error) {
 	if in.BashEnabled {
 		_ = os.Remove(filepath.Join(in.WorkDir, ".claude", "tools", "memgov"))
 		_ = os.Remove(filepath.Join(in.WorkDir, ".claude", "tools", "memgov-action"))
-	} else if ownerMemory && !in.DirectoryBounded {
-		if err = installDirectMemoryTool(*in, binary); err != nil {
-			return "", err
-		}
+	}
+	if _, err = prepareWorkspaceTool(*in); err != nil {
+		return "", err
 	}
 	in.MemgovBinary = binary
 	return binary, nil
@@ -47,7 +37,7 @@ func ownerAgentEnvironment(in ExecutionInput, profileEnv []string, binary string
 	}
 	path := toolDir + string(os.PathListSeparator) + os.Getenv("PATH")
 	return mergeEnvironment(os.Environ(), append(profileEnv,
-		"MEMGOV_HOME="+in.Home, "MEMGOV_WORKSPACE="+in.WorkspaceID, "PATH="+path))
+		"CLAUDE_CODE_DISABLE_AUTO_MEMORY=1", "CLAUDE_CODE_DISABLE_CLAUDE_MDS=1", "MEMGOV_HOME="+in.Home, "MEMGOV_WORKSPACE="+in.WorkspaceID, "PATH="+path))
 }
 
 func prepareOwnerMessageTool(in ExecutionInput, binary string) (string, error) {

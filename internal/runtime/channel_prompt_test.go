@@ -9,7 +9,7 @@ import (
 
 func TestDingTalkChannelSystemPromptsKeepConversationBoundaries(t *testing.T) {
 	direct := channelSystemPrompt(core.Channel{Provider: "dingtalk", Kind: core.ChannelDingTalkApp}, core.Route{ConversationType: "direct"}, "direct", "corp-owner", "work-chat")
-	for _, expected := range []string{`memgov message query "work-chat"`, "returned conversation type and watermark", "empty result is not proof of absence", "one-to-one DingTalk chat", "before considering broad long-term-memory recall", "invoke the installed dws skill", "report that concrete failure", "Do not search all memgov memory first", "invoke memgov-memory", "runtime session directory is scratch space", `profile "corp-owner"`, "never guess an identity from memory", "Ordinary answers", "application bot", "chat +messages-send", "--as user", "--format json", "DWS owner user", "AI marker", "preserve idempotency", "parent-command help probe"} {
+	for _, expected := range []string{`memgov message query "work-chat"`, "returned conversation type and watermark", "empty result is not proof of absence", "one-to-one DingTalk chat", "before considering broad long-term-memory recall", "invoke the installed dws skill", "report that concrete failure", "Do not search all workspace knowledge first", "query the controlled workspace tool", "runtime session directory is scratch space", `profile "corp-owner"`, "never guess an identity from memory", "Ordinary answers", "application bot", "chat +messages-send", "--as user", "--format json", "DWS owner user", "AI marker", "preserve idempotency", "parent-command help probe"} {
 		if !strings.Contains(direct, expected) {
 			t.Fatalf("direct channel prompt omitted %q: %s", expected, direct)
 		}

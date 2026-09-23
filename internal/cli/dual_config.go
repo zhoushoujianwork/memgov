@@ -40,11 +40,9 @@ type HistoryImportConfig struct {
 	Days    *int  `yaml:"days" json:"days"`
 }
 type AgentDeclaration struct {
-	Home            string                  `yaml:"home" json:"home"`
 	Preset          string                  `yaml:"preset" json:"preset"`
 	ClaudeProfile   string                  `yaml:"claude_profile" json:"claude_profile"`
 	ExecutionModel  string                  `yaml:"execution_model" json:"execution_model"`
-	MemoryScope     string                  `yaml:"memory_scope" json:"memory_scope"`
 	Capabilities    []string                `yaml:"capabilities" json:"capabilities"`
 	Directories     []string                `yaml:"directories" json:"directories"`
 	Skills          core.RuntimeSkillPolicy `yaml:"skills" json:"skills"`
@@ -59,8 +57,8 @@ func (a *AgentDeclaration) UnmarshalYAML(node *yaml.Node) error {
 		return dualInvalid("agents", "must be a mapping")
 	}
 	allowed := map[string]bool{"preset": true, "claude_profile": true, "execution_model": true,
-		"memory_scope": true, "capabilities": true, "directories": true, "skills": true,
-		"external_actions": true, "bash": true, "home": true}
+		"capabilities": true, "directories": true, "skills": true,
+		"external_actions": true, "bash": true}
 	seen := map[string]bool{}
 	for i := 0; i < len(node.Content); i += 2 {
 		key, value := node.Content[i].Value, node.Content[i+1]
@@ -120,17 +118,15 @@ type ProactiveApplication struct {
 	Delivery        string           `yaml:"delivery" json:"delivery"`
 }
 type GroupMentionApplication struct {
-	Owner                    ApplicationOwner    `yaml:"-" json:"owner,omitempty"`
-	ExcludedMemoryCategories []string            `yaml:"excluded_memory_categories" json:"excluded_memory_categories,omitempty"`
-	SharedMemoryWorkspaces   []string            `yaml:"shared_memory_workspaces" json:"shared_memory_workspaces,omitempty"`
-	Enabled                  *bool               `yaml:"enabled" json:"enabled"`
-	Source                   string              `yaml:"source" json:"source"`
-	Channel                  string              `yaml:"channel" json:"channel"`
-	Trigger                  string              `yaml:"trigger" json:"trigger"`
-	DefaultAgent             string              `yaml:"default_agent" json:"default_agent"`
-	Agent                    string              `yaml:"agent" json:"agent,omitempty"`
-	ReplyPolicy              string              `yaml:"reply_policy" json:"reply_policy"`
-	Bindings                 []GroupAgentBinding `yaml:"bindings" json:"bindings"`
+	Owner        ApplicationOwner    `yaml:"-" json:"owner,omitempty"`
+	Enabled      *bool               `yaml:"enabled" json:"enabled"`
+	Source       string              `yaml:"source" json:"source"`
+	Channel      string              `yaml:"channel" json:"channel"`
+	Trigger      string              `yaml:"trigger" json:"trigger"`
+	DefaultAgent string              `yaml:"default_agent" json:"default_agent"`
+	Agent        string              `yaml:"agent" json:"agent,omitempty"`
+	ReplyPolicy  string              `yaml:"reply_policy" json:"reply_policy"`
+	Bindings     []GroupAgentBinding `yaml:"bindings" json:"bindings"`
 }
 type GroupAgentBinding struct {
 	ConversationID string `yaml:"conversation_id" json:"conversation_id"`
@@ -258,14 +254,7 @@ func NormalizeDualModeConfig(c Config) (DualModeValidation, error) {
 		if !declarationName.MatchString(name) {
 			return out, dualInvalid("agents", "invalid declaration name")
 		}
-		if a.Home != "" && (!filepath.IsAbs(a.Home) || strings.ContainsAny(a.Home, "\r\n\x00")) {
-			return out, dualInvalid("agents.home", "must be an absolute path after configuration loading")
-		}
-		if a.Home != "" {
-			a.Home = filepath.Clean(a.Home)
-		}
 		defaultString(&a.Preset, "claude-default")
-		defaultString(&a.MemoryScope, "conversation_published")
 		defaultString(&a.ExternalActions, "owner_confirmation")
 		if err := ref("preset", a.Preset); err != nil {
 			return out, err
@@ -287,19 +276,16 @@ func NormalizeDualModeConfig(c Config) (DualModeValidation, error) {
 		if a.ExecutionModel == "profile" && a.ClaudeProfile == "" {
 			return out, dualInvalid("agents.execution_model", "profile requires claude_profile")
 		}
-		if a.MemoryScope != "owner_authorized" && a.MemoryScope != "conversation_published" {
-			return out, dualInvalid("agents.memory_scope", "must be owner_authorized or conversation_published")
-		}
 		if a.ExternalActions != "owner_confirmation" && a.ExternalActions != "owner_request" && a.ExternalActions != "owner_delegated" {
 			return out, dualInvalid("agents.external_actions", "must be owner_confirmation, owner_request or owner_delegated")
 		}
 		if a.Capabilities == nil {
-			a.Capabilities = []string{"conversation_history_read", "memory_read"}
+			a.Capabilities = []string{"conversation_history_read"}
 		}
 		seen := map[string]bool{}
 		for _, cap := range a.Capabilities {
 			switch cap {
-			case "conversation_history_read", "memory_read", "artifact_create", "local_read", "local_write", "local_test":
+			case "conversation_history_read", "artifact_create", "local_read", "local_write", "local_test":
 			default:
 				return out, dualInvalid("agents.capabilities", "unsupported capability")
 			}
@@ -349,12 +335,9 @@ func NormalizeDualModeConfig(c Config) (DualModeValidation, error) {
 		if name == "" && !required {
 			return nil
 		}
-		a, ok := d.Agents[name]
+		_, ok := d.Agents[name]
 		if !ok {
 			return dualInvalid("applications.agent", "agent must be declared in agents")
-		}
-		if group && a.MemoryScope != "conversation_published" {
-			return dualInvalid("applications.group_mention", "group agents require conversation_published memory")
 		}
 		return nil
 	}
@@ -410,12 +393,6 @@ func NormalizeDualModeConfig(c Config) (DualModeValidation, error) {
 			return out, dualInvalid("applications.group_mention.agent", "conflicts with default_agent")
 		}
 		g.DefaultAgent, g.Agent = g.Agent, ""
-	}
-	if len(g.ExcludedMemoryCategories) > 1 || (len(g.ExcludedMemoryCategories) == 1 && g.ExcludedMemoryCategories[0] != "preference") {
-		return out, dualInvalid("applications.group_mention.excluded_memory_categories", "仅支持 [preference] 或 []")
-	}
-	if len(g.SharedMemoryWorkspaces) > 1 || (len(g.SharedMemoryWorkspaces) == 1 && g.SharedMemoryWorkspaces[0] != "global") {
-		return out, dualInvalid("applications.group_mention.shared_memory_workspaces", "currently supports only [global] or []")
 	}
 	defaultBool(&g.Enabled, false)
 	defaultString(&g.Trigger, "mention")
@@ -473,9 +450,6 @@ func NormalizeDualModeConfig(c Config) (DualModeValidation, error) {
 	}
 	if o.Agent != "" && d.Agents[o.Agent].ExternalActions == "owner_delegated" {
 		return out, dualInvalid("applications.owner_private.agent", "owner_delegated is only allowed for proactive")
-	}
-	if o.Agent != "" && d.Agents[o.Agent].MemoryScope != "owner_authorized" {
-		return out, dualInvalid("applications.owner_private.agent", "owner_private requires owner_authorized memory")
 	}
 	if err := validateBotApplications(d, ref, agentRef, sourceRef, &out.Diagnostics); err != nil {
 		return out, err

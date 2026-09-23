@@ -17,7 +17,7 @@ import (
 )
 
 // Execution uses the same policy and result contract, with incremental output.
-// Analysis, review and confirmed actions keep their existing non-stream calls.
+// Analysis and confirmed actions keep their existing non-stream calls.
 func (c *Claude) invokeExecution(ctx context.Context, in ExecutionInput, input []byte, args ...string) ([]byte, error) {
 	if c.Run != nil {
 		return c.Run(ctx, in.WorkDir, input, args...)
@@ -40,7 +40,7 @@ func (c *Claude) invokeExecution(ctx context.Context, in ExecutionInput, input [
 	finishProcess := processtree.Bind(cmd)
 	defer finishProcess()
 	cmd.Dir = in.WorkDir
-	cmd.Env = mergeEnvironment(os.Environ(), env)
+	cmd.Env = mergeEnvironment(os.Environ(), append(env, "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1", "CLAUDE_CODE_DISABLE_CLAUDE_MDS=1"))
 	if in.ApplicationMode == "proactive" && in.MemgovBinary != "" {
 		cmd.Env = ownerAgentEnvironment(in, env, in.MemgovBinary)
 	}

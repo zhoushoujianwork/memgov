@@ -82,7 +82,7 @@ func TestUpgradeFromV1PreservesData(t *testing.T) {
 	for _, table := range []string{"channels", "channel_routes", "principals", "identity_aliases", "conversations",
 		"inbox_events", "messages", "message_revisions", "message_observations", "message_relations",
 		"message_attachments", "message_recalls", "source_origins", "source_availability",
-		"memory_publications", "request_contexts", "outbox", "delivery_attempts", "channel_leases",
+		"request_contexts", "outbox", "delivery_attempts", "channel_leases",
 		"coverage_windows", "channel_watermarks", "runtime_configs", "runtime_message_states", "runtime_batches",
 		"runtime_batch_messages", "runtime_tasks", "runtime_task_messages", "runtime_attempts", "runtime_pending_actions",
 		"runtime_action_attempts", "runtime_direct_sessions", "runtime_direct_turns"} {
@@ -91,13 +91,9 @@ func TestUpgradeFromV1PreservesData(t *testing.T) {
 			t.Fatalf("missing table %s: %v", table, err)
 		}
 	}
-	// An existing migration_runs row gains defaults rather than a NULL purpose.
-	var purpose, route string
-	if err = up.DB.QueryRowContext(ctx, "SELECT purpose,route_id FROM migration_runs WHERE id='r1'").Scan(&purpose, &route); err != nil {
-		t.Fatal(err)
-	}
-	if purpose != "migration" || route != "" {
-		t.Fatalf("unexpected defaults %q %q", purpose, route)
+	archives, err := filepath.Glob(filepath.Join(filepath.Dir(path), "backups", "service-upgrades", "*.db"))
+	if err != nil || len(archives) != 1 {
+		t.Fatal(archives, err)
 	}
 	report, err := up.Doctor(ctx)
 	if err != nil || report["healthy"] != true {

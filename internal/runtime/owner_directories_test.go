@@ -207,7 +207,6 @@ func TestOwnerDeclaredServiceRejectsResultAfterConfigurationEpochChanges(t *test
 	os.WriteFile(filepath.Join(root, "notes.txt"), []byte("input"), 0600)
 	policy := ownerDirectoryPolicy(root)
 	policy.Preset = preset.Name
-	policy.MemoryScope = "owner_authorized"
 	policy.ExternalActions = "owner_confirmation"
 	declaration := map[string]any{"agents": map[string]core.RuntimeAgentPolicy{"owner": policy}, "applications": map[string]any{"proactive": map[string]any{"enabled": true, "agent": "owner"}}}
 	objects := []core.ManagedConfigObject{{Kind: "application", Name: "proactive", ObjectType: "runtime", ObjectID: cfg.ID}}

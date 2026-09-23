@@ -151,7 +151,7 @@ func TestGroupMentionsReplyToGreetingsWithoutClassifier(t *testing.T) {
 			t.Fatalf("processing acknowledgement used wrong group or trigger: %+v", last)
 		}
 	}}
-	s.Analyzer, s.Executor, s.Reviewer = models, executor, models
+	s.Analyzer, s.Executor = models, executor
 	preset, err := agent.Enable(ctx, s.Home, "claude", "claude-default")
 	if err != nil {
 		t.Fatal(err)
@@ -237,7 +237,7 @@ func TestFailedGroupMentionReplacesAcknowledgementAndRecordsOutcome(t *testing.T
 	s, cfg, app, group, _ := setupGroupMentionService(t)
 	ctx := context.Background()
 	models := &fakeModels{}
-	s.Analyzer, s.Executor, s.Reviewer = models, &failingMentionExecutor{}, models
+	s.Analyzer, s.Executor = models, &failingMentionExecutor{}
 	preset, err := agent.Enable(ctx, s.Home, "claude", "claude-default")
 	if err != nil {
 		t.Fatal(err)
@@ -281,7 +281,7 @@ func TestFailedGroupMentionStillAddsFailureMarkWhenReceiptRemovalFails(t *testin
 	s, cfg, app, group, _ := setupGroupMentionService(t)
 	ctx := context.Background()
 	models := &fakeModels{}
-	s.Analyzer, s.Executor, s.Reviewer = models, &failingMentionExecutor{}, models
+	s.Analyzer, s.Executor = models, &failingMentionExecutor{}
 	adapter := s.Adapter.(*fakeAdapter)
 	adapter.removeErr = core.Fail("unavailable", "receipt removal failed")
 	preset, err := agent.Enable(ctx, s.Home, "claude", "claude-default")
@@ -331,7 +331,7 @@ func TestGroupActionUnknownReportsExistingResultInsteadOfOnlyFailureMark(t *test
 	s.acknowledge(ctx, cfg, task.ID)
 	if err := s.mutate(ctx, "global", "failure-result.complete", func(tx *core.Tx) (any, error) {
 		var err error
-		task, err = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, core.RuntimeAttemptResult{Result: "已经查到可反馈的结论。", Summary: "查询已有结论", Actions: []core.RuntimeAction{{Kind: "external_change", Target: "target", Payload: "continue"}}}, "")
+		task, err = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, core.RuntimeAttemptResult{Result: "已经查到可反馈的结论。", Summary: "查询已有结论", Actions: []core.RuntimeAction{{Kind: "external_change", Target: "target", Payload: "continue"}}})
 		return task, err
 	}); err != nil {
 		t.Fatal(err)
@@ -374,7 +374,7 @@ func TestRuntimeStartReconcilesFailureMarkAfterRecoveryCrash(t *testing.T) {
 	s, cfg, app, group, _ := setupGroupMentionService(t)
 	ctx := context.Background()
 	models := &fakeModels{}
-	s.Analyzer, s.Executor, s.Reviewer = models, models, models
+	s.Analyzer, s.Executor = models, models
 	s.Tick = time.Hour
 	if _, err := agent.Enable(ctx, s.Home, "claude", "claude-default"); err != nil {
 		t.Fatal(err)
@@ -461,7 +461,7 @@ func TestRuntimeStartReconcilesCompletionMarkAfterStateCommitCrash(t *testing.T)
 	s, cfg, app, group, _ := setupGroupMentionService(t)
 	ctx := context.Background()
 	models := &fakeModels{}
-	s.Analyzer, s.Executor, s.Reviewer = models, models, models
+	s.Analyzer, s.Executor = models, models
 	s.Tick = time.Hour
 	if _, err := agent.Enable(ctx, s.Home, "claude", "claude-default"); err != nil {
 		t.Fatal(err)
@@ -492,7 +492,7 @@ func TestRuntimeStartReconcilesCompletionMarkAfterStateCommitCrash(t *testing.T)
 	s.acknowledge(ctx, cfg, task.ID)
 	s.processingAcknowledgement(ctx, cfg, task.ID)
 	if err := s.mutate(ctx, "global", "completion-receipt.recovery.crash-window", func(tx *core.Tx) (any, error) {
-		return tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, core.RuntimeAttemptResult{Result: "已完成", Summary: "已完成"}, "")
+		return tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, core.RuntimeAttemptResult{Result: "已完成", Summary: "已完成"})
 	}); err != nil {
 		t.Fatal(err)
 	}

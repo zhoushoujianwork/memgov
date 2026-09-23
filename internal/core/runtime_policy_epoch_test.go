@@ -59,7 +59,7 @@ func TestExecutionAttemptPinsAppliedConfigurationEpoch(t *testing.T) {
 		t.Fatalf("policy change did not stop execution: %v", err)
 	}
 	_, err := f.s.Mutate(ctx, Request{Scope: "global", Command: "policy.task.stale-complete"}, func(tx *Tx) (any, error) {
-		return tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "stale result"}, "")
+		return tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "stale result"})
 	})
 	if ErrorCode(err) != "conflict" {
 		t.Fatalf("stale result was committed: %v", err)
@@ -88,7 +88,7 @@ func TestConfirmedActionAttemptPinsAppliedConfigurationEpoch(t *testing.T) {
 	var completed RuntimeTask
 	runtimeMutate(t, f.s, "policy.action.task.complete", func(tx *Tx) (any, error) {
 		var err error
-		completed, err = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "prepared", Actions: []RuntimeAction{{Kind: "git_push", Target: "origin/main", Payload: "push commit"}}}, "")
+		completed, err = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "prepared", Actions: []RuntimeAction{{Kind: "git_push", Target: "origin/main", Payload: "push commit"}}})
 		return completed, err
 	})
 	action := completed.Actions[0]

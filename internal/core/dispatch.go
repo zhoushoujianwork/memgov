@@ -122,64 +122,22 @@ func PreviewDraft(ctx context.Context, q Queryer, id string) (Preview, error) {
 					return Preview{}, sourceErr
 				}
 				versionDigest := Digest(map[string]any{"task": task.ID, "version": task.Version, "result": d.Content})
-				check.Passed = RuntimeCompletionPolicy(config) != "record_only" && admitted && current && d.InputDigest == versionDigest && contains([]string{"completed", "awaiting_confirmation", "clarification"}, task.Status)
+				check.Passed = task.Kind != "memory" && RuntimeCompletionPolicy(config) != "record_only" && admitted && current && d.InputDigest == versionDigest && contains([]string{"completed", "awaiting_confirmation", "clarification"}, task.Status)
 				if RuntimeCompletionPolicy(config) == "record_only" {
 					check.Detail = "background automatic delivery is disabled; Agent communication uses its audited action interface"
+				}
+				if task.Kind == "memory" {
+					check.Detail = "legacy memory task is archived and cannot be delivered"
 				}
 			}
 		}
 		out.Checks = append(out.Checks, check)
 	}
 
-	audience := Audience{ChannelID: c.ID, ChannelName: c.Name, Kind: c.Kind, Tenant: c.Tenant,
-		ConversationID: d.ConversationID, AudienceKey: d.AudienceKey}
-	if routeErr == nil {
-		audience.AudienceKey = route.AudienceKey
-		audience.WorkspaceID = route.WorkspaceID
-		audience.RouteID = route.ID
-		audience.RouteVersion = route.Version
-		audience.MemoryPolicy = route.MemoryPolicy
-		audience.SendPolicy = route.SendPolicy
+	for _, id := range d.Citations {
+		out.Citations = append(out.Citations, Citation{MemoryID: id, UsedAt: used[id], Unknown: true, SourceNote: "legacy memory reference archived"})
 	}
-	disclosable := true
-	for _, memoryID := range d.Citations {
-		cite := Citation{MemoryID: memoryID, UsedAt: used[memoryID]}
-		if routeErr != nil {
-			cite.Reasons = []string{"the route is gone, so disclosure cannot be evaluated"}
-			out.Citations = append(out.Citations, cite)
-			disclosable = false
-			continue
-		}
-		decision, err := CheckDisclosure(ctx, q, audience, memoryID)
-		if err != nil {
-			if ErrorCode(err) != "not_found" {
-				return Preview{}, err
-			}
-			cite.Unknown = true
-			cite.SourceNote = "the cited memory no longer exists"
-			out.Citations = append(out.Citations, cite)
-			disclosable = false
-			continue
-		}
-		cite.Version = decision.Version
-		cite.Disclosed = decision.Allowed
-		cite.Reasons = decision.Reasons
-		cite.Sources = decision.Evidence
-		if cite.UsedAt != 0 && decision.Version != cite.UsedAt {
-			cite.SourceNote = fmt.Sprintf("the reply used version %d; the memory is now at version %d", cite.UsedAt, decision.Version)
-		}
-		if !decision.Allowed {
-			disclosable = false
-		}
-		out.Citations = append(out.Citations, cite)
-	}
-	if len(d.Citations) == 0 {
-		out.Checks = append(out.Checks, Check{Name: "citations", Passed: true, Detail: "the reply cites no memory"})
-	} else if disclosable {
-		out.Checks = append(out.Checks, Check{Name: "citations", Passed: true})
-	} else {
-		out.Checks = append(out.Checks, Check{Name: "citations", Detail: "at least one cited memory may not be disclosed to this conversation"})
-	}
+	out.Checks = append(out.Checks, Check{Name: "citations", Passed: len(d.Citations) == 0, Detail: "legacy memory references cannot be dispatched"})
 
 	length := len([]rune(d.Content))
 	out.Checks = append(out.Checks, Check{Name: "length", Passed: length <= maxDraftChars,

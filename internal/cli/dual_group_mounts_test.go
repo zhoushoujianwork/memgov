@@ -18,8 +18,7 @@ const mountSourceYAML = `data_sources:
 const mountGroupYAML = `agents:
   helper:
     preset: claude-default
-    memory_scope: conversation_published
-    capabilities: [conversation_history_read, memory_read]
+    capabilities: [conversation_history_read]
 applications:
   group_mention:
     enabled: true

@@ -87,7 +87,7 @@ func planMissingGroupMountsFor(ctx context.Context, p *DualConfigPlan, s dualPla
 			}
 			continue
 		} // Existing policies are never overwritten.
-		route := core.Route{ID: "planned-group:" + sourceRoute.ID, ChannelID: app.ID, ConversationID: group.ID, ConversationType: "group", WorkspaceID: sourceRoute.WorkspaceID, Mode: "assistant", Triggers: []string{"mention"}, AudiencePolicy: "conversation", MemoryPolicy: "explicit_only", SendPolicy: "reply_to_trigger", Status: "active"}
+		route := core.Route{ID: "planned-group:" + sourceRoute.ID, ChannelID: app.ID, ConversationID: group.ID, ConversationType: "group", WorkspaceID: sourceRoute.WorkspaceID, Mode: "assistant", Triggers: []string{"mention"}, AudiencePolicy: "conversation", SendPolicy: "reply_to_trigger", Status: "active"}
 		if s.Routes[app.ID] == nil {
 			s.Routes[app.ID] = map[string]core.Route{}
 		}
@@ -118,7 +118,7 @@ func applyGroupMounts(ctx context.Context, tx *core.Tx, p DualConfigPlan) error 
 		if source.ConversationID != mount.ConversationID || source.WorkspaceID != mount.WorkspaceID || source.Mode == "ignore" || source.Status != "active" {
 			return core.Fail("conflict", "source group route changed during application")
 		}
-		if _, err = tx.AddRoute(ctx, mount.ChannelID, core.RouteInput{ConversationID: mount.ConversationID, ConversationType: "group", Workspace: mount.WorkspaceID, Mode: "assistant", Triggers: []string{"mention"}, AudiencePolicy: "conversation", MemoryPolicy: "explicit_only", SendPolicy: "reply_to_trigger"}); err != nil {
+		if _, err = tx.AddRoute(ctx, mount.ChannelID, core.RouteInput{ConversationID: mount.ConversationID, ConversationType: "group", Workspace: mount.WorkspaceID, Mode: "assistant", Triggers: []string{"mention"}, AudiencePolicy: "conversation", SendPolicy: "reply_to_trigger"}); err != nil {
 			return err
 		}
 	}

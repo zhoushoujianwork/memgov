@@ -34,7 +34,7 @@ func readDualPlanState(ctx context.Context, q core.Queryer) (dualPlanState, erro
 		s.Routes[c.ID] = map[string]core.Route{}
 		for _, r := range c.Routes {
 			s.Routes[c.ID][r.ConversationID] = r
-			add("route", c.Name+"/"+r.ConversationID, r.ID, r.Version, r.Status, map[string]any{"channel_id": r.ChannelID, "conversation_id": r.ConversationID, "workspace_id": r.WorkspaceID, "mode": r.Mode, "triggers": r.Triggers, "audience_policy": r.AudiencePolicy, "memory_policy": r.MemoryPolicy, "send_policy": r.SendPolicy, "status": r.Status, "version": r.Version})
+			add("route", c.Name+"/"+r.ConversationID, r.ID, r.Version, r.Status, core.RouteManagedSnapshot(r))
 		}
 		add("channel", c.Name, c.ID, c.ConfigVersion, c.Status, map[string]any{"kind": c.Kind, "tenant": c.Tenant, "identity": c.Identity, "config_version": c.ConfigVersion, "status": c.Status, "capabilities": c.Capabilities, "credential_ref_digest": core.Digest(c.CredentialRef)})
 	}
@@ -89,29 +89,7 @@ func readDualPlanState(ctx context.Context, q core.Queryer) (dualPlanState, erro
 // Omitting them only at their exact old defaults preserves those snapshots while
 // still detecting an enabled Bash policy or changed external-action authority.
 func runtimeManagedSnapshot(r core.RuntimeConfig) map[string]any {
-	value := map[string]any{"channel_id": r.ChannelID, "delivery_route_id": r.DeliveryRouteID, "owner_principal_id": r.OwnerPrincipalID, "owner_id_type": r.OwnerIDType, "owner_id_value": r.OwnerIDValue, "application_mode": r.ApplicationMode, "context_channel_id": r.ContextChannelID, "agent_capabilities": r.AgentCapabilities, "memory_scope": r.MemoryScope, "claude_profile": r.ClaudeProfile, "analysis_model": r.AnalysisModel, "execution_model": r.ExecutionModel, "agent_preset": r.AgentPreset, "item_threshold": r.ItemThreshold, "max_wait_seconds": r.MaxWaitSeconds, "reconcile_seconds": r.ReconcileSeconds}
-	if r.AgentBash {
-		value["agent_bash"] = true
-	}
-	if r.ExternalActions != "owner_confirmation" {
-		value["external_actions"] = r.ExternalActions
-	}
-	if r.Concurrency != 1 {
-		value["execution_concurrency"] = r.Concurrency
-	}
-	if r.AnalysisConcurrency != 8 {
-		value["analysis_concurrency"] = r.AnalysisConcurrency
-	}
-	if r.AnalysisTimeoutSeconds != 120 {
-		value["analysis_timeout_seconds"] = r.AnalysisTimeoutSeconds
-	}
-	if r.ExecutionTimeoutSeconds != 900 {
-		value["execution_timeout_seconds"] = r.ExecutionTimeoutSeconds
-	}
-	if r.ReviewTimeoutSeconds != 120 {
-		value["review_timeout_seconds"] = r.ReviewTimeoutSeconds
-	}
-	return value
+	return core.RuntimeManagedSnapshot(r)
 }
 
 func validateDualPlanReferences(p *DualConfigPlan, s dualPlanState, issue func(bool, string, string, string, string)) {

@@ -31,7 +31,7 @@ type Scheduling struct {
 	ExecutionConcurrency    int `json:"execution_concurrency,omitempty" yaml:"execution_concurrency,omitempty"`
 	AnalysisTimeoutSeconds  int `json:"analysis_timeout_seconds,omitempty" yaml:"analysis_timeout_seconds,omitempty"`
 	ExecutionTimeoutSeconds int `json:"execution_timeout_seconds,omitempty" yaml:"execution_timeout_seconds,omitempty"`
-	ReviewTimeoutSeconds    int `json:"review_timeout_seconds,omitempty" yaml:"review_timeout_seconds,omitempty"`
+	ReviewTimeoutSeconds    int `json:"-" yaml:"-"`
 }
 
 // Virtual ready time advances on each dispatch, so a large old backlog cannot
@@ -208,7 +208,7 @@ func schedulingOnlyChange(c RuntimeConfig, in RuntimeConfigInput, channel, owner
 	if c.ApplicationMode == "proactive" {
 		c.DeliveryRouteID = in.DeliveryRouteID
 	}
-	return c.ChannelID == channel && c.OwnerPrincipalID == owner && c.OwnerIDType == in.Owner.IDType && c.OwnerIDValue == in.Owner.IDValue && c.DeliveryRouteID == in.DeliveryRouteID && Digest(c.RouteIDs) == Digest(in.RouteIDs) && c.ClaudeProfile == in.ClaudeProfile && c.AnalysisModel == in.AnalysisModel && c.ExecutionModel == in.ExecutionModel && c.AgentPreset == in.AgentPreset && c.ApplicationMode == in.ApplicationMode && c.ContextChannelID == in.ContextChannel && Digest(c.AgentCapabilities) == Digest(in.AgentCapabilities) && c.MemoryScope == in.MemoryScope && c.AgentBash == *in.AgentBash && c.ExternalActions == in.ExternalActions
+	return c.ChannelID == channel && c.OwnerPrincipalID == owner && c.OwnerIDType == in.Owner.IDType && c.OwnerIDValue == in.Owner.IDValue && c.DeliveryRouteID == in.DeliveryRouteID && Digest(c.RouteIDs) == Digest(in.RouteIDs) && c.ClaudeProfile == in.ClaudeProfile && c.AnalysisModel == in.AnalysisModel && c.ExecutionModel == in.ExecutionModel && c.AgentPreset == in.AgentPreset && c.ApplicationMode == in.ApplicationMode && c.ContextChannelID == in.ContextChannel && Digest(c.AgentCapabilities) == Digest(in.AgentCapabilities) && c.AgentBash == *in.AgentBash && c.ExternalActions == in.ExternalActions
 }
 
 func (tx *Tx) RenewWorkLease(ctx context.Context, id string) error {

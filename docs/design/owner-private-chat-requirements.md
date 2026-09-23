@@ -1,5 +1,7 @@
 # 本人私聊机器人：记忆盘点与任务执行
 
+> **Superseded historical design (2026-09-23).** The database memory pipeline, publication model, hotword ingestion and old AgentHome knowledge loading described here are removed by the [Agent Workspace design](agent-workspace-design.md). Use the [current runtime guide](../guides/runtime-user-guide.md) and [workspace details](agent-workspace-design-detail.md) for current behavior. The remainder records the previous design and its original validation; its commands and delivery claims do not apply to the new version.
+
 状态：根据 2026 年 9 月 15—16 日本人和“OpenClaw小钉-周守健”的私聊整理的开发需求。记忆盘点与工具诊断仍是开发准备范围；新增的热词和执行器技能配置已完成源码实现，见[语音热词与 Agent 技能配置](hotword-agent-skills-design.md)。实现依据和其余验收细节见[详细稿](owner-private-chat-requirements-detail.md)。
 
 ## 目标体验
