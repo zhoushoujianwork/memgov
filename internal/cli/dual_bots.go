@@ -60,6 +60,10 @@ func normalizeBotApplications(d *DualModeDeclaration, diagnostics *[]ConfigDiagn
 			if !bounded(g.ExecutionConcurrency, 1, 32) {
 				return dualInvalid("applications.bots.group_mention.execution_concurrency", "must be 1..32")
 			}
+			defaultInt(&g.ExecutionTimeoutSeconds, 900)
+			if !bounded(g.ExecutionTimeoutSeconds, 1, 86400) {
+				return dualInvalid("applications.bots.group_mention.execution_timeout_seconds", "must be 1..86400")
+			}
 		}
 		if b.OwnerPrivate != nil {
 			o := b.OwnerPrivate

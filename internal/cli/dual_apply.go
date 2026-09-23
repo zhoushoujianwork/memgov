@@ -358,7 +358,7 @@ func applyDualModePlan(ctx context.Context, tx *core.Tx, plan DualConfigPlan) (c
 			} else if core.ErrorCode(err) != "not_found" {
 				return old, err
 			}
-			_, err = tx.ConfigureRuntime(ctx, core.RuntimeConfigInput{Name: binding.Runtime, Channel: app.ID, RouteIDs: routeIDs, DeliveryRouteID: routeIDs[0], Owner: owner, ApplicationMode: "group_mention", ContextChannel: contextChannel, AgentCapabilities: agent.Capabilities, AgentBash: &agent.Bash, ExternalActions: agent.ExternalActions, ClaudeProfile: agent.ClaudeProfile, ExecutionModel: agent.ExecutionModel, AgentPreset: agent.Preset, Concurrency: *g.ExecutionConcurrency, ExpectedVersion: version})
+			_, err = tx.ConfigureRuntime(ctx, core.RuntimeConfigInput{Scheduling: core.Scheduling{ExecutionTimeoutSeconds: *g.ExecutionTimeoutSeconds}, Name: binding.Runtime, Channel: app.ID, RouteIDs: routeIDs, DeliveryRouteID: routeIDs[0], Owner: owner, ApplicationMode: "group_mention", ContextChannel: contextChannel, AgentCapabilities: agent.Capabilities, AgentBash: &agent.Bash, ExternalActions: agent.ExternalActions, ClaudeProfile: agent.ClaudeProfile, ExecutionModel: agent.ExecutionModel, AgentPreset: agent.Preset, Concurrency: *g.ExecutionConcurrency, ExpectedVersion: version})
 			if err != nil {
 				return old, err
 			}

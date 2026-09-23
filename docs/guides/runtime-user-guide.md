@@ -58,13 +58,14 @@ applications:
       group_mention:
         enabled: true
         execution_concurrency: 4
+        execution_timeout_seconds: 3600
         bindings: []
         # source: work_chat  # 可选同群历史
 ```
 
 不要同时为同一机器人保留冲突的旧 group_mention，或让两个 Owner 声明绑定同一 runtime。其他机器人可用各自 channel 名重复声明。仅使用机器人交互时可以不配置 data_sources；Owner 身份核验仍不可省略。
 
-Group history labels each speaker and identifies the current requester separately. Different members' questions can execute concurrently, while the same member's follow-ups in one group stay ordered. `execution_concurrency` defaults to 4 (range 1–32) across that runtime's groups; 1 requests serial execution. The legacy `applications.group_mention` form accepts the same setting. Apply the configuration to update an existing runtime. Each answer remains bound to its original message. Recent history is limited to 30 messages: quote the earlier question when asking to continue someone else's issue; this does not automatically reopen that task's process or artifacts.
+Group history labels each speaker and identifies the current requester separately. Different members' questions can execute concurrently, while the same member's follow-ups in one group stay ordered. `execution_concurrency` defaults to 4 (range 1–32) across that runtime's groups; 1 requests serial execution. The legacy `applications.group_mention` form accepts the same setting. `execution_timeout_seconds: 3600` gives long-running requests one hour; omission retains the 900-second default. Valid values are 1–86400 seconds; zero does not disable the deadline. Stop the managed service, preview/apply the configuration and restart to update an existing runtime. Each answer remains bound to its original message. Recent history is limited to 30 messages: quote the earlier question when asking to continue someone else's issue; this does not automatically reopen that task's process or artifacts.
 
 仅为一个群开放 Bash 时，复制出独立 Agent，设置 `bash: true`，再通过 `applications.group_mention.bindings` 绑定目标群；不要修改共享默认 Agent。Full Bash enables normal capability-based file tools, Bash, web search/fetch and selected skills. It cannot be combined with bounded `directories` snapshots; use `directories: []` for an executable Agent. Configure `skills: {inherit: executor, paths: []}` to refresh compatible installed executor skills on each task. This uses the service account, so scoped knowledge APIs do not imply host filesystem isolation. 配置应用及重启方法见下文；`runtime status` 和私聊 `/status` 可查看 Bash 与外部操作策略。权限变化后旧执行与会话失效。
 
