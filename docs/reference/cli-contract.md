@@ -115,6 +115,8 @@ A complete recovery set must separately preserve `<home>/agent-workspaces/`, `<h
 
 `agent preset enable <harness> [--name NAME]` 显式创建受控 Git 规则目录；省略名称时使用 `<harness>-default`，同名目录不能跨 harness 复用。`status/sync/disable` 分别检查、提交规则副本和停用；`sync --from-policy FILE` 适用于任意 harness，`--from-claude-md` 是 Claude 兼容入口。普通 `init` 不创建 preset。`runtime harness [name]` 只读显示已注册 harness 的契约状态，不初始化数据库、不调用模型。
 
+Enabling an existing preset preserves its committed policy; it does not refresh it from a newer template. A newly named preset uses the installed binary's current template. Task preparation separately refreshes the managed Workspace skill and tools without resetting knowledge files. Explicit skill configuration rejects retired memory skills and native/global knowledge writers (`memgov-memory`, `touch-memory`, `error-reflection`), including aliases; inherited executor discovery skips them. `memgov-workspace` is supplied by the runtime rather than configured as an external skill.
+
 `runtime configure --input -` 输入 name、channel、route_ids 和 owner，可选 Agent 策略、claude_profile、模型、preset 与调度参数。当前 proactive 任务使用 `record_only`，完成结果不自动推送 Owner。direct/group_mention 派生为 `reply_to_trigger`，并核验对应私聊/原群出站路由。group_mention 的 context_channel 可省略；提供时仍要求同企业同群。owner 必须是 DWS 已验证稳定身份。修改已有配置需要 expected version，running 状态不能修改。harness 和平台适配器由运行时注册表选择，群 Jarvis 仍保留其独立 Agent、技能、工具、独立 Workspace 和原群回复路径。
 
 `runtime start ID` 是持续前台命令，输出 `schema_version=1` 的 JSONL 日志；它不使用普通 JSON envelope。统一服务提供提交后即时唤醒，独立前台入口仍以默认 1 秒扫描消费。`runtime pause/resume/stop` 修改持久状态。`runtime restart ID` 先写入 stopped 状态，等待当前机器上同名的旧 `memgov runtime start` 或 `memgov runtime restart` 进程退出，再由当前命令以前台流模式启动；等待超过全局 `--timeout` 时失败且不启动并行进程。pause 和日志 degraded 状态继续采集消息，但不创建新 AI 任务。

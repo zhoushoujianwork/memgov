@@ -43,6 +43,12 @@ func (c *Claude) invokeExecution(ctx context.Context, in ExecutionInput, input [
 	cmd.Env = mergeEnvironment(os.Environ(), append(env, "CLAUDE_CODE_DISABLE_AUTO_MEMORY=1", "CLAUDE_CODE_DISABLE_CLAUDE_MDS=1"))
 	if in.ApplicationMode == "proactive" && in.MemgovBinary != "" {
 		cmd.Env = ownerAgentEnvironment(in, env, in.MemgovBinary)
+	} else if in.ApplicationMode == "group_mention" && in.BashEnabled {
+		memgovBinary, resolveErr := directMemgovBinary(in.Home)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		cmd.Env = ownerAgentEnvironment(in, env, memgovBinary)
 	}
 	cmd.Stdin = strings.NewReader(string(input))
 	cmd.WaitDelay = 5 * time.Second

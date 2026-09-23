@@ -35,7 +35,7 @@ Agent 规则、会话、任务和日志分开保存：
 
 普通 `memgov init` 不创建 preset；显式执行 `memgov agent preset enable <harness> --name <name>` 后才建立规则目录和初始提交。每次执行前检查 preset 启用、Git 工作树干净，并记录实际 commit。Persistent knowledge is independent of preset and session directories. The runtime derives the verified Owner or group workspace and supplies the latest bounded index every turn; detailed files use scoped read/search/write/history tools. Legacy `agents.home` notes are archived and no longer loaded. Harness authentication, model and transient session files remain separate from knowledge authority. Allowed executor skills are staged into the isolated runtime directory. Native automatic memory and ambient `CLAUDE.md` loading are disabled; committed preset rules are still loaded explicitly.
 
-群 Agent 默认关闭 Bash，只提供已授权的同群上下文、本群 Workspace 工具和产物目录。独立群 Agent 可以显式开启 Bash，但不能同时声明受控目录快照。Owner 声明目录时采用只读输入与独立副本，代码副本保留 Git 历史；受控目录模式不运行任意 Shell。权限和目录细节见[能力映射](agent-runtime-design-detail.md#会话-bash-与能力映射)。
+Groups retain their configured execution policy. A group explicitly enabled for full Bash receives normal capability-based file tools, command execution, web search/fetch and its selected skills; it is no longer restricted to artifact editing. Restricted groups keep scoped Workspace and artifact tools. Full Bash cannot be combined with bounded directory snapshots. Owner 声明目录时采用只读输入与独立副本，代码副本保留 Git 历史；受控目录模式不运行任意 Shell。权限和目录细节见[能力映射](agent-runtime-design-detail.md#会话-bash-与能力映射)。
 
 ## 统一系统提示与安全规则
 

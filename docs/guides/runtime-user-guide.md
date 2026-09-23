@@ -63,7 +63,9 @@ applications:
 
 不要同时为同一机器人保留冲突的旧 group_mention，或让两个 Owner 声明绑定同一 runtime。其他机器人可用各自 channel 名重复声明。仅使用机器人交互时可以不配置 data_sources；Owner 身份核验仍不可省略。
 
-仅为一个群开放 Bash 时，复制出独立 Agent，设置 `bash: true`，再通过 `applications.group_mention.bindings` 绑定目标群；不要修改共享默认 Agent。完整 Bash 不能与受控 `directories` 快照模式同时配置。配置应用及重启方法见下文；`runtime status` 和私聊 `/status` 可查看 Bash 与外部操作策略。权限变化后旧执行与会话失效。
+仅为一个群开放 Bash 时，复制出独立 Agent，设置 `bash: true`，再通过 `applications.group_mention.bindings` 绑定目标群；不要修改共享默认 Agent。Full Bash enables normal capability-based file tools, Bash, web search/fetch and selected skills. It cannot be combined with bounded `directories` snapshots; use `directories: []` for an executable Agent. Configure `skills: {inherit: executor, paths: []}` to refresh compatible installed executor skills on each task. This uses the service account, so scoped knowledge APIs do not imply host filesystem isolation. 配置应用及重启方法见下文；`runtime status` 和私聊 `/status` 可查看 Bash 与外部操作策略。权限变化后旧执行与会话失效。
+
+A durable Workspace is a knowledge directory, not a Claude installation. New attempts regenerate managed tools from the running memgov binary and retain existing notes. Upgrading the executable does not rewrite an existing preset: create a current preset with `agent preset enable claude --name <new-name>`, or deliberately sync its policy. Full execution capability does not automatically migrate old reference documents into knowledge.
 
 首次接入默认关注当前账号中已确认最近 30 天有消息的可访问群，并按 `--ignore` 排除不参与值守的群。仅在显式配置机器人筛选时，才要求机器人属于目标群。`runtime setup` 自动完成数据库初始化、Agent preset、项目工作区、当前钉钉身份、本人 `userId`、范围发现、通道、路由、能力探测和运行时配置。
 

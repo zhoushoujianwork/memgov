@@ -20,7 +20,7 @@ Owner private chat and background work share one workspace for the verified Owne
 
 This is a destructive replacement. Archive the complete old database, configuration, and AgentHome notes, verify the archive, then remove the old knowledge tables, APIs, extraction/review jobs, and card UI. New workspaces start empty; no old Memory or AgentHome knowledge is imported and no compatibility read or dual-write path remains.
 
-The implementation includes current-file search, conflict-safe writes, file revision metadata, a runtime-managed `memgov-workspace` skill, CLI access, and a read-only console. Message retention, task controls, source evidence, confirmation, and uncertain delivery results keep their existing responsibilities.
+The implementation includes current-file search, conflict-safe writes, file revision metadata, a runtime-managed `memgov-workspace` skill, CLI access, and a read-only console. The current binary refreshes task tools and skills when execution starts; existing knowledge files do not need a software installation or a destructive reinitialization. Message retention, task controls, source evidence, confirmation, and uncertain delivery results keep their existing responsibilities.
 
 Root/child task orchestration, automatic proactive completion notifications and new platform adapters remain separate work. The completed local upgrade and private-chat check do not establish the full business loop or live background/group acceptance.
 

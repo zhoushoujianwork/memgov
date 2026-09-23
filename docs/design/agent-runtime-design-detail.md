@@ -198,13 +198,13 @@ dws 长连接中断后按 1 秒退避重连。接收会话使用 `all-group` 订
 
 ## 按群解析 Agent 与目录快照
 
-`applied_configs` 中的最新声明是托管 Agent 的规则来源。先按任务 channel 选择 applications.bots 中的机器人，再按 Owner 私聊或群入口选择 Agent；群入口按精确会话匹配 bindings，无覆盖才使用 group_mention.agent/default_agent，再回落 bot.default_agent。旧 applications.owner_private/group_mention 仍兼容；同一通道或 runtime 的冲突声明拒绝应用。非托管实例继续使用自身 runtime 配置。解析包含 preset、profile、model、memory、capabilities、directories、Bash、skills 和 external_actions，不读取旧配置当作当前授权。
+`applied_configs` 中的最新声明是托管 Agent 的规则来源。先按任务 channel 选择 applications.bots 中的机器人，再按 Owner 私聊或群入口选择 Agent；群入口按精确会话匹配 bindings，无覆盖才使用 group_mention.agent/default_agent，再回落 bot.default_agent。旧 applications.owner_private/group_mention 仍兼容；同一通道或 runtime 的冲突声明拒绝应用。非托管实例继续使用自身 runtime 配置。解析包含 preset、profile、model、capabilities、directories、Bash、skills 和 external_actions，不读取旧配置当作当前授权。
 
 执行前重新检查所选 preset 已启用且 Git 工作树干净，并把实际 preset 名称、commit、模型及策略摘要写入 `runtime_attempts`。任务开始和结果提交前再次核对策略。任意已引用 Agent 的声明改变都会使该群运行时旧任务、待确认操作和待投递结果失效。确认后的外部操作同样解析所选 Agent，避免回落到默认 Agent 的接入配置。
 
 群目录语义为输入快照：需要显式 `local_read`，只读取声明绝对路径中的 UTF-8 普通文件；原路径不加入 Claude 的工作目录。快照最多 200 个文件、合计 2 MiB、单文件 128 KiB，拒绝符号链接和特殊文件，跳过隐藏文件/隐藏目录、`node_modules` 及非 UTF-8 文件。快照保存在任务的 `inputs/<序号>/` 下，文件权限 `0400`，并作为任务数据提供给模型。使用 Go rooted filesystem 读取，目录内路径不能逃逸出声明根目录。目录路径本身必须是解析符号链接后的真实绝对路径。
 
-默认 `bash=false` 的群模型仅可根据 `artifact_create` 或 `local_write` 使用 Write/Edit，权限统一以 `Edit(./artifacts/**)` 限定到任务产物目录；不开放自由 Bash，关闭项目/用户 settings 加载及 MCP。`local_test` 不能间接开启 Bash。Write 的路径权限应使用 Edit 规则，具体语义参见 [Claude Code 文件权限说明](https://code.claude.com/docs/en/permissions#read-and-edit)。显式 `bash=true` 的独立群 Agent 开放完整 Shell，因此不再具有这些文件工具规则所暗示的完整隔离；禁止同时配置目录快照。
+默认 `bash=false` 的群模型仅可根据 `artifact_create` 或 `local_write` 使用 Write/Edit，权限统一以 `Edit(./artifacts/**)` 限定到任务产物目录；不开放自由 Bash；使用 runtime 管理的 project settings 提供受控技能，关闭用户 settings 加载及 MCP。`local_test` 不能间接开启 Bash。Write 的路径权限应使用 Edit 规则，具体语义参见 [Claude Code 文件权限说明](https://code.claude.com/docs/en/permissions#read-and-edit)。显式 `bash=true` 的独立群 Agent 开放完整 Shell，因此不再具有这些文件工具规则所暗示的完整隔离；禁止同时配置目录快照。
 
 交付前逐个校验产物为 `artifacts/` 内的普通文件，拒绝 URL、越界路径、输入快照和符号链接。`conversation_history_read` 控制额外会话历史。Workspace 工具使用当前群身份，与该能力独立；所有者非空 directories 采用下述独立复制边界。
 
@@ -219,7 +219,7 @@ dws 长连接中断后按 1 秒退避重连。接收会话使用 `all-group` 订
 
 代码任务从已授权仓库建立本地私有克隆，再从该克隆创建 `codex/declared-*` worktree。克隆保留 HEAD 祖先，但不复制源仓库的 hooks 或本地 Git 配置、不使用 hardlink、不修改原仓库或原工作树。源仓库元数据拒绝符号链接、外部 object alternates、外部 common-dir，最多 256 MiB、10 万条元数据项。模型看到的代码以克隆 HEAD 为基准，原目录未提交内容不会自动应用到 worktree。所有者原本的未提交修改保持原状。
 
-该模式模型只能 Read 私有工作区，以及按能力 Edit `work/`、`artifacts/` 或代码 worktree；`.git` 与 `.claude` 控制路径另行拒绝读写。关闭用户/项目 settings、MCP 和其他工具，不开放 Bash。项目脚本的文件访问无法由命令前缀可靠约束，在接入并验证 OS sandbox 前，`local_test` 或 `bash=true` 在非空声明目录中会明确阻止配置和运行。没有声明目录的任务也必须显式开启 Bash 才能执行自由 Shell。
+该模式模型只能 Read 私有工作区，以及按能力 Edit `work/`、`artifacts/` 或代码 worktree；`.git` 与 `.claude` 控制路径另行拒绝读写。使用 runtime 管理的 project settings 提供受控技能，关闭用户 settings、MCP 和其他未授权工具，不开放 Bash。项目脚本的文件访问无法由命令前缀可靠约束，在接入并验证 OS sandbox 前，`local_test` 或 `bash=true` 在非空声明目录中会明确阻止配置和运行。没有声明目录的任务也必须显式开启 Bash 才能执行自由 Shell。
 
 ## 统一系统提示与安全验证
 
@@ -266,8 +266,8 @@ Schema 19 的历史迁移曾将群与 proactive 设为 false/owner_confirmation�
 | 字段 | 封装与生效方式 |
 | --- | --- |
 | `bash` | Claude Bash 工具的自由 Shell 开关。true 使用完整 Bash，不用命令白名单或全局 bypassPermissions。false 不能通过 local_test 等间接开启；仅保留固定路径的受控 Workspace/提案包装器。 |
-| `local_read` | 本人普通模式配置 Claude Read/Glob/Grep；群与 directories 模式只提供声明范围的输入。 |
-| `local_write` | 配置 Edit/Write；目录模式和群产物仍使用相应文件工具范围。 |
+| `local_read` | Normal Owner and full-Bash group execution enable Read/Glob/Grep. Restricted groups and bounded-directory mode read only their supplied inputs. |
+| `local_write` | Enables Edit/Write for normal Owner and full-Bash group execution; bounded directories and restricted groups retain scoped file rules. |
 | `local_test` | 表达测试能力，但不授权自由 Shell；测试命令需要 bash=true。 |
 | `artifact_create` | 群任务可在 artifacts 内写入交付产物。 |
 | `external_actions` | owner_confirmation 使用交互提案/确认；owner_request 仅用于已核验 Owner 私聊的明确请求；owner_delegated 仅用于后台观察的 Owner 预设授权。来源文字不能改变任何策略。 |
@@ -295,3 +295,13 @@ Every Claude process forces `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` and `CLAUDE_CODE
 ## Private stream result correlation (2026-09-21)
 
 Source fix: a Claude result with `origin.kind=task-notification` belongs to a background notification, even when it contains text or reports an error. The private reader skips that envelope and waits for the current turn's result. An empty or failed ordinary result, or a stream ending without the current reply, still fails. This prevents a resumed session's old background notification from producing a false `unavailable` reply. Regression tests cover empty, nonempty and failed notifications, the subsequent current reply, and preservation of the next turn. Installation and live messaging acceptance are separate from these tests.
+
+## Executable Claude initialization
+
+When effective `bash: true` is configured, direct, proactive and group execution expose native `WebSearch`/`WebFetch` alongside Bash and the file tools selected by `local_read`/`local_write`. The group branch uses that same tool contract instead of its restricted artifact-only list. No-Bash groups retain their existing scoped tools. Full-Bash group processes receive the installed memgov binary on PATH plus the configured runtime home and project workspace identity. Tool availability does not change external-action or audience policy; full Bash runs with the service account's filesystem access, not a filesystem sandbox.
+
+Managed or resolved skills are enabled without Claude's `--disable-slash-commands` switch. The runtime still disables ambient automatic memory and CLAUDE.md loading, and uses only its filtered skill staging. `touch-memory` and `error-reflection`, including aliases declaring those identities, are excluded because their native/global knowledge stores bypass audience-scoped Workspace files.
+
+Each attempt initializes the current managed Workspace skill/wrapper from the running binary and refreshes executor-inherited skills. Existing Markdown knowledge is preserved. An old preset is not silently rewritten by upgrading the binary: create a current preset or explicitly synchronize policy. Repository `.claude/skills` roots are staged only inside the task checkout: link targets remain untouched, and regular skill directories are preserved before temporary replacement. Git verification restores unchanged original roots after checking repository and staging provenance; it rejects staged or committed changes to those skill roots and modified staged skill content. Symlinked control parents remain rejected. Runtime support changes must not become business commits or hide unrelated tracked changes.
+
+Workspace commands use the supplied absolute path, one operation per call. A permission denial or tool error must be reported as failure rather than an empty search result. This guidance improves the invocation contract; it is not proof that a model can never misreport an outcome.
