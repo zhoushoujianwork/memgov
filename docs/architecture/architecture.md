@@ -45,4 +45,6 @@ The runtime implementation refreshes task-local tools and filtered skills for ea
 
 Owner chat and group replies keep their configured routes. Proactive completion currently uses `record_only`; independently authorized communication is a separate operation. Personal root/child task graphs, complete environment snapshots and automatic proactive result notifications remain product goals requiring implementation and acceptance.
 
+Group execution identifies the addressed requester separately from shared group history. Different members can run independent tasks within the configured group-runtime capacity; one member's follow-ups remain ordered, with separate task artifacts and replies. Sharing a group Workspace does not merge active tasks. The [runtime contract](../design/agent-runtime-design-detail.md#group-requesters-and-concurrency) defines the context and scheduling limits.
+
 CLI and the local console inspect the same operational state and workspace files. Closing the console does not stop the service. Builds, installed executables, running processes and platform receipts require separate evidence. Future work follows the [best-practice scenarios](best-practice-scenarios.md), with delivery judged by useful outcomes and correct boundaries.

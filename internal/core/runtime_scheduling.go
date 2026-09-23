@@ -128,6 +128,25 @@ func (tx *Tx) saveScheduling(ctx context.Context, id string, s Scheduling) error
 // PoolAvailable counts unreaped workers too: cancelling a task does not mean
 // its process has exited. The smallest live declaration caps the shared pool.
 func PoolAvailable(ctx context.Context, q Queryer, c RuntimeConfig, kind string) (bool, error) {
+	if c.ApplicationMode == "group_mention" {
+		limit := c.Concurrency
+		query := `SELECT count(*) FROM runtime_work_leases WHERE runtime_id=? AND kind=? AND released=0`
+		args := []any{c.ID, kind}
+		if kind == "analysis" {
+			limit = c.AnalysisConcurrency
+		} else {
+			// Old attempts without leases and unreaped cancelled workers both
+			// retain capacity. The UNION counts each worker exactly once.
+			query = `SELECT count(*) FROM (
+SELECT id FROM runtime_work_leases WHERE runtime_id=? AND kind='execution' AND released=0
+UNION SELECT a.id FROM runtime_attempts a JOIN runtime_tasks t ON t.id=a.task_id WHERE t.runtime_id=? AND a.status='running'
+UNION SELECT a.id FROM runtime_action_attempts a JOIN runtime_tasks t ON t.id=a.task_id WHERE t.runtime_id=? AND a.status='running')`
+			args = []any{c.ID, c.ID, c.ID}
+		}
+		var active int
+		err := q.QueryRowContext(ctx, query, args...).Scan(&active)
+		return active < limit, err
+	}
 	if c.ApplicationMode != "proactive" {
 		return true, nil
 	}
@@ -140,7 +159,7 @@ func PoolAvailable(ctx context.Context, q Queryer, c RuntimeConfig, kind string)
 	if err != nil {
 		return false, err
 	}
-	err = q.QueryRowContext(ctx, `SELECT count(*) FROM runtime_work_leases WHERE kind=? AND released=0`, kind).Scan(&active)
+	err = q.QueryRowContext(ctx, `SELECT count(*) FROM runtime_work_leases l JOIN runtime_configs c ON c.id=l.runtime_id WHERE l.kind=? AND l.released=0 AND c.application_mode='proactive'`, kind).Scan(&active)
 	return active < cap, err
 }
 
@@ -279,4 +298,38 @@ func (tx *Tx) LockWorkRoots(ctx context.Context, id string, roots []string) erro
 		}
 	}
 	return nil
+}
+
+// The original trigger identifies a requester's execution lane. Display names
+// are never scheduling identities, and a missing identity serializes the group.
+func runtimeTaskRequesterSQL(task string) string {
+	return `coalesce((SELECT coalesce(nullif(m.sender_principal,''),
+CASE WHEN m.sender_id_type<>'' AND m.sender_id_value<>'' THEN m.sender_id_type||':'||m.sender_id_value ELSE '' END)
+FROM runtime_task_messages tm JOIN messages m ON m.id=tm.message_id
+WHERE tm.task_id=` + task + `.id ORDER BY CASE WHEN tm.role='trigger' THEN 0 ELSE 1 END,tm.rowid LIMIT 1),'')`
+}
+
+func runtimeSameRequesterSQL(left, right string) string {
+	a, b := runtimeTaskRequesterSQL(left), runtimeTaskRequesterSQL(right)
+	return `(` + a + `='' OR ` + b + `='' OR ` + a + `=` + b + `)`
+}
+
+// All entry points use this predicate, so readiness probes cannot disagree with
+// transactional claims or let a cancelled but unreaped process overlap a lane.
+func runtimeExecutionLaneSQL(c RuntimeConfig, task string, pendingOrder bool) string {
+	if c.ApplicationMode != "group_mention" {
+		return "1"
+	}
+	predicate := `NOT EXISTS(SELECT 1 FROM runtime_tasks busy WHERE busy.runtime_id=` + task + `.runtime_id
+AND busy.route_id=` + task + `.route_id AND ` + runtimeSameRequesterSQL("busy", task) + ` AND (
+ EXISTS(SELECT 1 FROM runtime_work_leases l WHERE l.task_id=busy.id AND l.kind='execution' AND l.released=0)
+ OR EXISTS(SELECT 1 FROM runtime_attempts a WHERE a.task_id=busy.id AND a.status='running')
+ OR EXISTS(SELECT 1 FROM runtime_action_attempts a WHERE a.task_id=busy.id AND a.status='running')))`
+	if pendingOrder {
+		predicate += ` AND NOT EXISTS(SELECT 1 FROM runtime_tasks earlier WHERE earlier.runtime_id=` + task + `.runtime_id
+AND earlier.route_id=` + task + `.route_id AND earlier.status='pending' AND earlier.kind<>'memory'
+AND (earlier.created_at<` + task + `.created_at OR (earlier.created_at=` + task + `.created_at AND earlier.rowid<` + task + `.rowid))
+AND ` + runtimeSameRequesterSQL("earlier", task) + `)`
+	}
+	return predicate
 }

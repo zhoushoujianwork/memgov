@@ -10,11 +10,11 @@
 
 分析暂时不可用或超时最多重试两次，退避 5/30 秒加小于 1 秒抖动，不占槽位；拒绝和格式校验失败保留失败证据。耗尽后消息标记 `analysis_failed`，不阻止同会话后续消息。任务超时保留失败状态和已有会话/流式输出，不自动重放。代码沿用独立 worktree，写根规范化并在 SQLite 内做包含关系互斥，读操作无需写锁。
 
-配置增加 `analysis_concurrency`、`execution_concurrency`、`analysis_timeout_seconds`、`execution_timeout_seconds`；旧 `concurrency` 与新执行字段冲突时拒绝。并发 1–32，截止为 1–86400 秒整数；YAML 明确的 0、负数与非整数不能关闭超时。旧配置省略执行字段时保留 1，示例显式启用 8/4。调低额度仅限制新领取，已领取绝对截止不变。
+配置增加 `analysis_concurrency`、`execution_concurrency`、`analysis_timeout_seconds`、`execution_timeout_seconds`；旧 `concurrency` 与新执行字段冲突时拒绝。并发 1–32，截止为 1–86400 秒整数；YAML 明确的 0、负数与非整数不能关闭超时。For legacy runtime/proactive configuration, omission retained an execution limit of 1; the examples explicitly enabled 8/4. Group application configuration now uses the [default of 4](#group-requesters-and-concurrency). 调低额度仅限制新领取，已领取绝对截止不变。
 
-群 `group_mention` 运行时收到有效 @ 后按群独立并发派发给执行 Agent，不占用 proactive 的共享槽位；同一群仍按该会话的接收顺序领取，慢群不会阻塞其他群。
+Group scheduling now follows [requester concurrency](#group-requesters-and-concurrency): unrelated members can execute concurrently, while one member's requests in one group remain ordered. This replaces the earlier serialized group execution gate. Group capacity is separate from proactive capacity.
 
-`runtime status` 与管理台显示共享分析/执行槽位、排队数、最老等待、最后成功分析、重试消息、失败缺口和超时累计；这些指标不把控制心跳当作模型进展。采集连续性继续使用独立来源覆盖与缺口；任务失败、阻塞、澄清和待确认明确标记需处理。
+`runtime status` and the console report the shared proactive analysis/execution pool separately from each group runtime’s own usage and limits. They also show queue depth, oldest wait, last successful analysis, retries, failed gaps and timeout counts; 这些指标不把控制心跳当作模型进展。采集连续性继续使用独立来源覆盖与缺口；任务失败、阻塞、澄清和待确认明确标记需处理。
 
 管理台 Runtime 列表增加一条全局健康快照 SQL，总查询次数固定为 3，不随 Runtime 数量增加；原有 1 秒成功缓存与刷新合并保留。第一期 `make check` 已通过，新增热降并发与跨 Runtime 配额测试也通过定向竞态检查。
 
@@ -177,7 +177,7 @@ Schema 21 源码增加人工 `task resume`：保留原尝试与工作目录，�
 
 ## 并发与故障边界
 
-首期每个运行时只允许一个任务执行并发。SQLite 条件更新保证批次、任务、动作和 Outbox 只能被一个 worker 领取。通道租约阻止同一 channel 的两个接收器并行提交；运行时传给接收器的会话列表只包含 `collect` route 和 owner direct route，`mode=ignore` 的黑名单 route 不进入接收器。
+The initial one-execution-per-runtime limit is historical. Current proactive pools and [group requester scheduling](#group-requesters-and-concurrency) enforce their configured capacity; Owner direct conversations retain their existing sequence. SQLite conditional claims still prevent duplicate execution and delivery. 通道租约阻止同一 channel 的两个接收器并行提交；运行时传给接收器的会话列表只包含 `collect` route 和 owner direct route，`mode=ignore` 的黑名单 route 不进入接收器。
 
 ### 空闲调度与写事务边界
 
@@ -305,3 +305,13 @@ Managed or resolved skills are enabled without Claude's `--disable-slash-command
 Each attempt initializes the current managed Workspace skill/wrapper from the running binary and refreshes executor-inherited skills. Existing Markdown knowledge is preserved. An old preset is not silently rewritten by upgrading the binary: create a current preset or explicitly synchronize policy. Repository `.claude/skills` roots are staged only inside the task checkout: link targets remain untouched, and regular skill directories are preserved before temporary replacement. Git verification restores unchanged original roots after checking repository and staging provenance; it rejects staged or committed changes to those skill roots and modified staged skill content. Symlinked control parents remain rejected. Runtime support changes must not become business commits or hide unrelated tracked changes.
 
 Workspace commands use the supplied absolute path, one operation per call. A permission denial or tool error must be reported as failure rather than an empty search result. This guidance improves the invocation contract; it is not proof that a model can never misreport an outcome.
+
+## Group requesters and concurrency
+
+`RuntimeMessage.sender_principal` remains the stable speaker identity. Optional `sender_display_name` comes from the retained source metadata of that exact message revision; it is not inferred from body text, other groups or a name directory. Missing, expired or recalled source data does not recover a name from elsewhere. Invalid UTF-8 or a label longer than 100 runes is omitted. Names remain untrusted JSON data and never establish Owner status or permissions.
+
+The group model payload includes `current_request` with the triggering message ID, sender principal and available display name. It is derived only from the single task trigger, not the newest item in group history. The group system prompt tells the model whom it is answering, separates other members' concurrent work from this request, and prioritizes an explicit quote when following up on another member's issue. Recent same-group context still contains at most 30 available messages; this is not complete historical recall or automatic task continuation.
+
+Group execution and confirmed actions use a per-runtime capacity and a per-group requester sequence. A running requester does not prevent another requester or another group from being selected. The scheduler skips an occupied requester instead of stopping at that request. Stable sender principals identify the requester; typed sender IDs are a fallback, and missing identity conservatively serializes that group. A cancelled worker retains its capacity and requester ownership until cleanup completes. All task/attempt, permission, cancellation, unknown-result and original-message delivery checks remain in force. Workspace writes continue to use digest conflict checks independently of scheduling.
+
+`applications.group_mention.execution_concurrency` and `applications.bots.<channel>.group_mention.execution_concurrency` default to 4 and accept integers 1–32. The limit covers the selected group runtime's active tasks and actions, across its groups; it is separate from proactive capacity. An explicit value of 1 intentionally serializes execution. Saving YAML does not update an already-applied runtime: preview and apply configuration, then restart as required. Capacity exhaustion, model limits and conflicts on the same real external resource can still require waiting. Independent request scheduling does not make conflicting production writes safe or introduce an automatic root/child task graph.

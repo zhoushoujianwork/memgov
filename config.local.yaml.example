@@ -132,6 +132,7 @@ channels: []
 #         # agent: owner-chat        # 显式 Agent 可收紧；省略则继承 bot 人设/模型 + 完整 Owner 能力
 #       group_mention:
 #         enabled: false
+#         execution_concurrency: 4  # 1–32; different members run independently, same-member follow-ups stay ordered
 #         # source: work_chat        # 可选同群历史；机器人交互不要求启用数据源
 #         # agent: group-helper      # 可覆盖 bot 默认 Agent
 #         bindings: []

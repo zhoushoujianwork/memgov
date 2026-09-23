@@ -16,6 +16,8 @@ Personal Jarvis 的平台入口和 Agent harness 使用同一套任务、权限�
 
 机器人通过 `applications.bots.<channel>` 声明默认 Agent、人设及 Owner 私聊、群助手覆盖。省略 Owner 私聊的 `agent` 时继承机器人默认人设和模型，并使用完整 Owner 权限；显式 Agent 可以收紧。机器人运行不要求启用 DWS 采集或历史导入，但 Owner 仍须由 DWS 身份核验。
 
+Group requests identify the current speaker and label the speakers in recent group history. Different members can work with the Agent concurrently; one member's follow-up requests remain ordered. Each request keeps its own execution context, artifacts and original-message reply. The default is four concurrent requests per group runtime, configurable from one to 32; shared capacity can still cause queuing. Group knowledge remains shared within that group. Referring to another member's question uses the available discussion, without automatically resuming that task's process. See [group context and concurrency](agent-runtime-design-detail.md#group-requesters-and-concurrency).
+
 后台观察的新默认 Agent 与 Owner 私聊同样具备完整 Bash、文件读写、测试、记忆及执行器技能。`owner_delegated` 表示按 Owner 预设授权自主处理；现有显式限制保留，升级不暗中扩大权限。值得调查即可启动，不能把“输入还不齐”当作必然拒绝。普通讨论、重复事项或确无可行下一步则记录原因。
 
 完成任务本身不会发送消息。后台 Agent 确有协作需要时，可按委托通过独立工具，以绑定 DWS Owner 本人身份（--as user）和 AI 标识联系相关私聊或群，不限原会话，无需逐条确认。目标、理由、证据与回执单独记录，经验只指导时机与表达、不扩大权限，详见[沟通协议](dingtalk-integration-design-detail.md#独立沟通工具)。

@@ -28,9 +28,18 @@ func ReadRuntimeWorkStatus(ctx context.Context, q Queryer, c RuntimeConfig) (Run
 
 func readRuntimeWorkStatuses(ctx context.Context, q Queryer) (map[string]RuntimeWorkStatus, error) {
 	out := map[string]RuntimeWorkStatus{}
-	rows, err := q.QueryContext(ctx, `SELECT c.id,c.max_wait_seconds,
- (SELECT count(*) FROM runtime_work_leases WHERE released=0 AND kind='analysis'),
- (SELECT count(*) FROM runtime_work_leases WHERE released=0 AND kind='execution'),
+	rows, err := q.QueryContext(ctx, `WITH execution_workers AS (
+ SELECT id,runtime_id FROM runtime_work_leases WHERE released=0 AND kind='execution'
+ UNION SELECT a.id,t.runtime_id FROM runtime_attempts a JOIN runtime_tasks t ON t.id=a.task_id
+ JOIN runtime_configs r ON r.id=t.runtime_id WHERE a.status='running' AND r.application_mode='group_mention'
+ UNION SELECT a.id,t.runtime_id FROM runtime_action_attempts a JOIN runtime_tasks t ON t.id=a.task_id
+ JOIN runtime_configs r ON r.id=t.runtime_id WHERE a.status='running' AND r.application_mode='group_mention'
+)
+SELECT c.id,c.max_wait_seconds,
+ (SELECT count(*) FROM runtime_work_leases l JOIN runtime_configs r ON r.id=l.runtime_id WHERE l.released=0 AND l.kind='analysis'
+ AND ((c.application_mode='proactive' AND r.application_mode='proactive') OR (c.application_mode<>'proactive' AND l.runtime_id=c.id))),
+ (SELECT count(*) FROM execution_workers w JOIN runtime_configs r ON r.id=w.runtime_id
+ WHERE (c.application_mode='proactive' AND r.application_mode='proactive') OR (c.application_mode<>'proactive' AND w.runtime_id=c.id)),
  (SELECT count(*) FROM runtime_tasks WHERE runtime_id=c.id AND status='pending'),
  (SELECT coalesce(min(first_seen_at),'') FROM runtime_message_states WHERE runtime_id=c.id AND state='pending'),
  (SELECT coalesce(max(finished_at),'') FROM runtime_batches WHERE runtime_id=c.id AND status='completed'),
@@ -38,8 +47,8 @@ func readRuntimeWorkStatuses(ctx context.Context, q Queryer) (map[string]Runtime
  (SELECT count(*) FROM runtime_message_states WHERE runtime_id=c.id AND state='analysis_failed'),
  (SELECT count(*) FROM runtime_batches WHERE runtime_id=c.id AND error_code='analysis_timeout')+
  (SELECT count(*) FROM runtime_attempts a JOIN runtime_tasks t ON t.id=a.task_id WHERE t.runtime_id=c.id AND a.error_code='execution_timeout'),
- (SELECT coalesce(min(analysis_concurrency),8) FROM runtime_configs WHERE application_mode='proactive' AND status IN ('running','paused','degraded')),
- (SELECT coalesce(min(concurrency),1) FROM runtime_configs WHERE application_mode='proactive' AND status IN ('running','paused','degraded')),
+ CASE WHEN c.application_mode='proactive' THEN (SELECT coalesce(min(analysis_concurrency),8) FROM runtime_configs WHERE application_mode='proactive' AND status IN ('running','paused','degraded')) ELSE c.analysis_concurrency END,
+ CASE WHEN c.application_mode='proactive' THEN (SELECT coalesce(min(concurrency),1) FROM runtime_configs WHERE application_mode='proactive' AND status IN ('running','paused','degraded')) ELSE c.concurrency END,
  (SELECT count(*) FROM runtime_tasks WHERE runtime_id=c.id AND (status IN ('failed','blocked','clarification','awaiting_confirmation','action_unknown','action_failed','stale'))),
  (SELECT count(*) FROM runtime_tasks WHERE runtime_id=c.id AND status='running')
  FROM runtime_configs c`)
