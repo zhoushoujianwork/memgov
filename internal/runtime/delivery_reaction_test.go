@@ -17,16 +17,22 @@ type deliveryReactionAdapter struct {
 }
 
 func (a *deliveryReactionAdapter) Send(context.Context, channel.Config, channel.SendRequest) (channel.SendResult, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.sends++
 	return channel.SendResult{State: a.sendState, Receipt: "local-receipt"}, nil
 }
 
 func (a *deliveryReactionAdapter) AddReaction(_ context.Context, _ channel.Config, req channel.ReactionRequest) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.added = append(a.added, req.Emoji)
 	return nil
 }
 
 func (a *deliveryReactionAdapter) RemoveReaction(_ context.Context, _ channel.Config, req channel.ReactionRequest) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.removed = append(a.removed, req.Emoji)
 	return nil
 }

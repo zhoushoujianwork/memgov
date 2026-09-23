@@ -16,12 +16,14 @@ import (
 )
 
 type BackupInfo struct {
-	Path          string `json:"path"`
-	SHA256        string `json:"sha256"`
-	Bytes         int64  `json:"bytes"`
-	SchemaVersion int    `json:"schema_version"`
-	CreatedAt     string `json:"created_at"`
-	Integrity     string `json:"integrity"`
+	KnowledgePath   string `json:"knowledge_path,omitempty"`
+	KnowledgeSHA256 string `json:"knowledge_sha256,omitempty"`
+	Path            string `json:"path"`
+	SHA256          string `json:"sha256"`
+	Bytes           int64  `json:"bytes"`
+	SchemaVersion   int    `json:"schema_version"`
+	CreatedAt       string `json:"created_at"`
+	Integrity       string `json:"integrity"`
 }
 
 func fileHash(path string) (string, int64, error) {
@@ -35,7 +37,7 @@ func fileHash(path string) (string, int64, error) {
 	return hex.EncodeToString(h.Sum(nil)), n, err
 }
 func VerifyBackup(ctx context.Context, path string) (BackupInfo, error) {
-	return verifyBackup(ctx, path, false)
+	return verifyBackup(ctx, path, true)
 }
 
 func verifyBackup(ctx context.Context, path string, allowOlder bool) (BackupInfo, error) {
@@ -99,6 +101,25 @@ func verifyBackup(ctx context.Context, path string, allowOlder bool) (BackupInfo
 	}
 	if info, e := os.Stat(abs); e == nil {
 		b.CreatedAt = info.ModTime().UTC().Format("2006-01-02T15:04:05.999999999Z")
+	}
+	assets := abs + ".knowledge.tar"
+	if info, e := os.Lstat(assets); e == nil {
+		if !info.Mode().IsRegular() {
+			return b, Fail("invalid_input", "knowledge archive must be a regular file")
+		}
+		b.KnowledgePath = assets
+		b.KnowledgeSHA256, _, err = fileHash(assets)
+		if err != nil {
+			return b, err
+		}
+		if err = verifyArchiveMetadata(b); err != nil {
+			return b, err
+		}
+		if err = verifyLegacyKnowledgeArchive(ctx, assets, b.SHA256, nil); err != nil {
+			return b, err
+		}
+	} else if !errors.Is(e, os.ErrNotExist) {
+		return b, e
 	}
 	return b, nil
 }
@@ -200,51 +221,32 @@ func Tombstones(ctx context.Context, q Queryer) ([]Tombstone, error) {
 	}
 	return out, rows.Err()
 }
-func (tx *Tx) EnforceTombstones(ctx context.Context, existing []Tombstone) (PurgeManifest, error) {
-	empty := PurgeManifest{}
+
+// EnforceTombstones prevents restoring raw sources that were previously removed.
+func (tx *Tx) EnforceTombstones(ctx context.Context, existing []Tombstone) ([]string, error) {
 	for _, t := range existing {
 		if _, err := tx.Conn.ExecContext(ctx, "INSERT OR IGNORE INTO tombstones VALUES(?,?,?,?)", t.Kind, t.Fingerprint, t.OperationID, t.CreatedAt); err != nil {
-			return empty, err
+			return nil, err
 		}
 	}
 	all, err := Tombstones(ctx, tx.Conn)
 	if err != nil {
-		return empty, err
+		return nil, err
 	}
 	set := map[string]bool{}
 	for _, t := range all {
 		set[t.Kind+":"+t.Fingerprint] = true
 	}
-	memorySeeds, sourceSeeds := []string{}, []string{}
-	rows, err := tx.Conn.QueryContext(ctx, "SELECT id,content FROM memories")
+	rows, err := tx.Conn.QueryContext(ctx, "SELECT s.id,s.digest,s.lineage,coalesce(l.uri,''),s.content FROM sources s LEFT JOIN source_locations l ON l.source_id=s.id WHERE redacted=0")
 	if err != nil {
-		return empty, err
-	}
-	for rows.Next() {
-		var id, body string
-		if err = rows.Scan(&id, &body); err != nil {
-			rows.Close()
-			return empty, err
-		}
-		if set["memory_id:"+id] || set["content:"+Hash([]byte(strings.TrimSpace(body)))] {
-			memorySeeds = append(memorySeeds, id)
-		}
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return empty, err
-	}
-	rows, err = tx.Conn.QueryContext(ctx, "SELECT s.id,s.digest,s.lineage,coalesce(l.uri,''),s.content FROM sources s LEFT JOIN source_locations l ON l.source_id=s.id WHERE redacted=0")
-	if err != nil {
-		return empty, err
+		return nil, err
 	}
 	seen := map[string]bool{}
 	for rows.Next() {
 		var id, digest, lineage, uri, body string
 		if err = rows.Scan(&id, &digest, &lineage, &uri, &body); err != nil {
 			rows.Close()
-			return empty, err
+			return nil, err
 		}
 		if set["source_id:"+id] || set["source_digest:"+digest] || set["source_lineage:"+lineage] || set["source_uri:"+Hash([]byte(uri))] || set["content:"+Hash([]byte(strings.TrimSpace(body)))] {
 			seen[id] = true
@@ -253,27 +255,35 @@ func (tx *Tx) EnforceTombstones(ctx context.Context, existing []Tombstone) (Purg
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
-		return empty, err
+		return nil, err
 	}
-	sourceSeeds = keys(seen)
-	p, _, err := purgeClosure(ctx, tx.Conn, memorySeeds, sourceSeeds)
-	if err != nil {
-		return p, err
+	ids := keys(seen)
+	for _, id := range ids {
+		for _, stmt := range []string{
+			"UPDATE sources SET content='',redacted=1 WHERE id=?",
+			"UPDATE fragments SET content='' WHERE source_id=?",
+			"UPDATE message_revisions SET body='',snapshot='{}' WHERE message_id IN (SELECT message_id FROM source_origins WHERE source_id=?)",
+			"UPDATE inbox_events SET payload='{}' WHERE message_id IN (SELECT message_id FROM source_origins WHERE source_id=?)",
+			"UPDATE messages SET availability='recalled',availability_reason='source removed before restore' WHERE id IN (SELECT message_id FROM source_origins WHERE source_id=?)",
+		} {
+			if _, err = tx.Conn.ExecContext(ctx, stmt, id); err != nil {
+				return nil, err
+			}
+		}
+		if _, err = tx.Conn.ExecContext(ctx, "INSERT INTO source_availability(source_id,state,reason,updated_at) VALUES(?,'recalled','source removed before restore',?) ON CONFLICT(source_id) DO UPDATE SET state='recalled',reason=excluded.reason,change_seq=source_availability.change_seq+1,updated_at=excluded.updated_at", id, Now()); err != nil {
+			return nil, err
+		}
 	}
 	if len(all) > 0 {
-		op, e := tx.Audit(ctx, "backup.enforce_tombstones", "preserve current removal rules", nil)
-		if e != nil {
-			return p, e
-		}
-		err = tx.redact(ctx, p, op.ID)
+		_, err = tx.Audit(ctx, "backup.enforce_tombstones", "preserve source removal rules", nil)
 	}
-	return p, err
+	return ids, err
 }
 
 // Restore replaces the database only after validation and tombstone enforcement
 // in an isolated staging database. The current lock spans the atomic rename.
 func RestoreBackup(ctx context.Context, path, backup, digest string, req Request) (any, error) {
-	b, err := VerifyBackup(ctx, backup)
+	b, err := verifyBackup(ctx, backup, false)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +348,7 @@ func RestoreBackup(ctx context.Context, path, backup, digest string, req Request
 	}
 	defer stage.Close()
 	// Restored command caches and leases are not safe to replay into a new run.
-	if _, err = stage.DB.ExecContext(ctx, "DELETE FROM idempotency; UPDATE jobs SET status='pending',lease_token='',lease_until='',worker='' WHERE status='leased'"); err != nil {
+	if _, err = stage.DB.ExecContext(ctx, "DELETE FROM idempotency"); err != nil {
 		return nil, err
 	}
 	result, err := stage.Mutate(ctx, req, func(tx *Tx) (any, error) {
@@ -350,7 +360,7 @@ func RestoreBackup(ctx context.Context, path, backup, digest string, req Request
 			return nil, e
 		}
 		op, e := tx.Audit(ctx, "backup.restore", digest, nil)
-		return map[string]any{"restored_from": b.Path, "backup_sha256": digest, "preserved_tombstones": len(tombs), "redacted_memories": len(p.Memories), "operation": op}, e
+		return map[string]any{"restored_from": b.Path, "backup_sha256": digest, "preserved_tombstones": len(tombs), "redacted_sources": len(p), "operation": op}, e
 	})
 	if err != nil {
 		return nil, err

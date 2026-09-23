@@ -37,7 +37,7 @@ Schema 22 固定企业/profile/userId 及证据修订。配置变化期间到达
 
 ### 机器人配置与权限
 
-`applications.bots` 按应用通道名配置 `default_agent`、`owner_private` 与 `group_mention`。默认人设控制 preset 与模型；Owner 未显式指定 Agent 时继承人设并获得本人默认完整能力。Owner 显式 Agent 可收紧权限。群未覆盖时使用机器人默认 Agent，各群 `bindings` 可覆盖；群 Agent 必须使用 `conversation_published` 和 `owner_confirmation`，不能使用 `owner_request` 或 `owner_delegated`。
+`applications.bots` 按应用通道名配置 `default_agent`、`owner_private` 与 `group_mention`。默认人设控制 preset 与模型；Owner 未显式指定 Agent 时继承人设并获得本人默认完整能力。Owner 显式 Agent 可收紧权限。群未覆盖时使用机器人默认 Agent，各群 `bindings` 可覆盖；群 Agent 使用由 channel/conversation 派生的 Workspace 和 `owner_confirmation`，不能使用 `owner_request` 或 `owner_delegated`。
 
 `owner_private.runtime` 绑定现有已核验本人运行实例。群 `source` 可省略；显式配置时才按同企业、同群及工作区读 DWS 背景，来源可以停止采集。没有历史通道时可在机器人条目填写 `owner: {id_type: user_id, id_value: ...}`，该 ID 必须已有 DWS 本人核验证据。旧 `applications.owner_private`、`applications.group_mention` 仍兼容，同一机器人或运行实例的重复冲突声明拒绝。
 
@@ -47,7 +47,7 @@ Schema 22 固定企业/profile/userId 及证据修订。配置变化期间到达
 
 群 @ 的通道提示不注入 DWS profile。普通回答只返回结果，由 `reply_to_trigger` 使用挂载的应用机器人发送到触发群；不得调用 DWS 本人身份发送，即使发起人是 Owner。跨群或私聊只有运行时显式提供且绑定精确目标的机器人身份工具才可执行，否则保留为群策略下的待处理操作。提示词负责让 Agent 正确选路，真正的普通答复受应用通道、原群路由和 Outbox 门禁约束；显式开启的完整 Bash 仍不是 OS 沙箱，不能把提示词描述成系统级进程隔离。
 
-验收见[后台观察与机器人交互验收](../architecture/best-practice-scenarios-detail.md#后台观察与机器人交互验收)。
+验收见[后台观察与机器人交互验收](../architecture/best-practice-scenarios-detail.md#personal-jarvis-固定验收案例)。
 
 ## 本轮离线验证（2026-09-17）
 
@@ -88,7 +88,7 @@ DWS 个人通道的历史 `+chat-messages` 和实时 `+listen-im` 投影都读�
 - 原群回答是挂载时声明的 `reply_to_trigger` 授权，仅对有效 @ 和相同目标群生效；额外外部动作需要明确允许或进入所有者确认。执行、确认与交付绑定任务版本、配置版本和动作内容摘要。
 - 原始文字在 `message_revisions.body`，规范消息及可用性在 `messages`，证据通过 `source_id` 关联 Source/Fragment；`coverage_windows` 和水位表示真实历史覆盖。当前无水位的补漏从一小时窗口开始，30 天群活跃筛选不等于 30 天历史归档。独立历史导入使用固定窗口与持久分页断点；新导入消息写 `context_only=1`，编辑后仍不触发旧任务。消息、覆盖和导入游标在同一 SQLite 事务提交。
 
-当前 `runtime configure` 支持 `application_mode=group_mention`。该模式要求处理路由同时是应用机器人群路由，包含 `triggers:[mention]`、`send_policy=reply_to_trigger`；可选 `context_channel` 必须绑定同企业、同群、同工作区的 DWS 通道。普通群消息和机器人自己的消息只入库，不进入该消费者；有效 @ 在所有挂载群均单条触发，以 `mention:<本地消息 ID>` 建立独立任务，不调用 Haiku 判断是否为工作事项。问候、陈述和问题均交给执行 Agent 理解并回答；任务保留原文及证据引用，沿用批次修订、撤回和配置失效检查。任务标题截取原文前 12 个空白分词、最多 120 个字符；标题仅用于任务展示，群记忆默认由 Agent 按当前群共享策略按需查询，不按标题预装载。识别到 K8s、kubectl、Pod、namespace、TKE 或集群路由意图时，运行时只做一次受限的共享记忆召回；结果缺少 kubeconfig/context 路由证据时，再追加一次带环境路由词的精确召回，且不为普通群消息预装载记忆。路由日志模型为 `local-mention-routing`，不计模型调用用量。配置 DWS 背景时可使用最近 30 条可用同群消息；无 DWS 背景时使用应用会话证据和只对该群发布的记忆。默认能力只有群历史读取和记忆读取，不继承所有者文件或 Shell 能力。额外外部动作的详情与口令随回答投递到任务原群，不额外私聊。只有已核验所有者在任务原群发送完整口令才能确认，其他群、私聊和其他成员无效。
+当前 `runtime configure` 支持 `application_mode=group_mention`。该模式要求处理路由同时是应用机器人群路由，包含 `triggers:[mention]`、`send_policy=reply_to_trigger`；可选 `context_channel` 必须绑定同企业、同群、同工作区的 DWS 通道。普通群消息和机器人自己的消息只入库，不进入该消费者；有效 @ 在所有挂载群均单条触发，以 `mention:<本地消息 ID>` 建立独立任务，不调用 Haiku 判断是否为工作事项。问候、陈述和问题均交给执行 Agent 理解并回答；任务保留原文及证据引用，沿用批次修订、撤回和配置失效检查。任务标题只用于展示；所有群任务都刷新本群 Workspace 的受限索引，详细文件由 Agent 按需查询。Kubernetes 专项召回、发布卡片和共享记忆加载已移除。配置 DWS 背景时仍可使用获准的可用同群消息；无 DWS 背景时仅使用应用会话证据和本群 Workspace。Workspace 工具不授予所有者文件或 Shell 权限。额外外部动作的详情与口令随回答投递到任务原群，不额外私聊。只有已核验所有者在任务原群发送完整口令才能确认，其他群、私聊和其他成员无效。
 
 ## 双模式 YAML 声明与受限应用
 
@@ -109,8 +109,7 @@ data_sources:
 agents:
   group-helper:
     preset: claude-default
-    memory_scope: conversation_published
-    capabilities: [conversation_history_read, memory_read, artifact_create]
+    capabilities: [conversation_history_read, artifact_create]
     bash: false
     external_actions: owner_confirmation
 applications:
@@ -151,7 +150,7 @@ applications:
 
 ## 当前持久化与状态机
 
-Schema 10 保存不可变的 `applied_configs` 版本、规范化声明和受控对象摘要；Schema 11 保存独立 `data_sources`、运行实例到来源的绑定；Schema 12 保存 `history_imports` 固定窗口、游标、状态、覆盖计数及 `messages.context_only`；Schema 13 保存来源 `ignore_rules`、机器人 Code、历史导入开关/天数和来源启用状态；Schema 14 保存已核验的跨通道消息对应及一次领取；Schema 15 把已应用配置版本写入执行与外部动作尝试。SQLite 仍是唯一真相源，运行日志不参与恢复。
+Schema 10 保存不可变的 `applied_configs` 版本、规范化声明和受控对象摘要；Schema 11 保存独立 `data_sources`、运行实例到来源的绑定；Schema 12 保存 `history_imports` 固定窗口、游标、状态、覆盖计数及 `messages.context_only`；Schema 13 保存来源 `ignore_rules`、机器人 Code、历史导入开关/天数和来源启用状态；Schema 14 保存已核验的跨通道消息对应及一次领取；Schema 15 把已应用配置版本写入执行与外部动作尝试。SQLite remains authoritative for operational state and evidence; Workspace files are authoritative for knowledge. Runtime logs do not replace recovery records.
 
 `data-source start` 以前台方式运行，依靠原 `channel_leases` 保证一个 DWS 通道只有一个接收者。启动前使用选定的 DWS profile 和显式 `contact +me` 只读调用核对企业与所有者 userId，成功后在 SQLite 为这个精确的 `user_id` 标识写入 `authenticated_dws_profile` 核验依据；不推断 `staff_id`、`open_id` 或机器人 ID 等价。身份不符阻止启动；身份接口暂时不可用时允许独立采集继续运行，但群 Agent 配置仍被阻止，`data-source attest-owner` 可重试。source `pause` 释放接收租约，`resume` 重新发现符合近 30 天活跃的会话；仅配置 member_robot 时再筛选机器人所在群；群名或稳定 ID 命中 `ignore` 时建立/更新 `ignore` 路由，不读取其正文。群发现失败记录受限错误码并等待重试，不把旧群集当作最新已核验结果。来源启用状态为 false 时不能恢复接收。来源独立启动，不能由配置应用事务启动子进程。
 
@@ -243,23 +242,21 @@ max_items = 200
 
 `runtime_message_states` 按 runtime 和 message 唯一。初次看到且 `sent_at <= bootstrap_at` 的消息为 context；之后为 pending。每个 route 独立累计，达到条数或最早 `first_seen_at` 超过等待时间时领取最多 100 条。没有 pending 内容不创建 batch，也不调用模型。
 
-后台分析除事项外也识别可复用知识。具名系统的稳定能力、限制、接口规则、职责边界、决定、方法和已验证经验应进入 `memory` 决策；简短技术问答在回答明确且得到确认时即可作为证据，不要求对话里再次出现“记住”字样。猜测、凭据、闲聊、临时故障和普通进度仍只保留为上下文或来源。
+Background analysis classifies work items. Durable knowledge is maintained by the executing Agent through scoped Workspace tools; there is no separate `memory` extraction decision or review job. Notes retain dates and source references rather than copying whole conversations.
 
 ## 分析与任务状态
 
 分析批次保存输入 digest、消息 revision、模型、状态和结构化输出。失败时消息从 batched 回到 pending。决策只能引用当前 batch 的本地 message ID。
 
-`memory` 任务的执行 Agent 只做只读召回和候选内容生成，必须在结构化结果的 `candidate` 字段返回完整 `CandidateInput`，不能自行提交或应用候选。后台统一执行 Submit Candidate → 独立 Review → 按已接受 digest Apply，任一步失败都保留明确状态，不能把 Agent 自行提交的游离候选当作任务完成。
-
-去标识化的假模型测试覆盖 Source → Candidate → Review → Memory 的确定性状态链。可选 `MEMGOV_LIVE_MODEL_TEST=1` 仅在操作者自有的隔离环境中执行，真实聊天内容不得提交。
+Workspace writes use the active task/attempt and current content digest; stale tasks or scope changes cannot write. The old Candidate/Review/Apply chain is removed. Upgrade tests preserve operational task history and cancel unfinished old memory jobs.
 
 任务以 `(runtime_id, canonical_key)` 唯一。update 修改原任务并增加 version；cancel 增加 version 并取消。消息编辑会让引用旧 revision 的任务 stale，撤回会取消引用任意 revision 的任务。所有运行中的旧尝试同步变为 stale，完成操作用条件更新再次检查版本。
 
 旧版曾将 clarification 由机器人发给 Owner；本轮停用该主动通知。缺输入但值得调查的事项仍进入独立 Agent，实际无可行下一步则保存具体原因。后续实质补充用相同 canonical key 更新任务，不用无变化自动 retry 制造重复执行。
 
-## Claude Agent 和记忆
+## Claude Agent and Workspace knowledge
 
-后台 Haiku 评估与记忆复核保持空工具集合。执行使用独立 Owner Agent，复用完整执行能力和策略校验、保持独立 task/attempt；代码修改按工作目录策略验证，普通调查不要求制造 Git 提交。群 @ 则使用机器人/群 Agent 的能力与受众范围。memory 候选仍须独立 Review 再按 digest Apply。
+后台 Haiku 评估保持空工具集合。执行使用独立 Owner Agent，复用完整执行能力和策略校验、保持独立 task/attempt；代码修改按工作目录策略验证，普通调查不要求制造 Git 提交。群 @ 则使用机器人/群 Agent 的能力与受众范围。长期知识直接通过 Workspace 工具维护。
 
 所有者 direct 会话使用独立的原文传输入口，不进入上述分类、预召回、结构化任务输出或 worktree 提交检查。Agent 的自然语言回复作为交付正文；工具、身份、消息版本和对外动作的确认边界仍有效。具体会话与命令协议见下文“所有者即时私聊”。
 
@@ -284,7 +281,7 @@ confirmed action 使用单独 Claude 模式，加载任务上下文但只允许�
 
 ## 群回复与确认卡片
 
-2026-09-17 源码增量：普通群答复使用机器人 Markdown 消息，保留问题引用、回答和耗时栏，不创建 StandardCard；`@提问人` 放在正文末尾且只出现一次。真正的原生提醒使用触发回调自带的 `sessionWebhook` 和嵌套 `at.atUserIds`；主动群消息接口不支持 `@`，不能把返回成功误判为提醒生效。webhook 只在回调消息提交成功后进入有界进程内缓存，按 channel、conversation、provider message ID 和真实 user ID 精确匹配，不进入 SQLite、日志、模型或导出；服务重启、凭证过期或身份不匹配时，降级为正文显示昵称的一次普通 Markdown。待确认时才使用审批卡片，并增加经过同企业 DWS 认证的所有者；昵称仅作显示，不授权。群目标始终取 task 的精确触发 route，不发送跨群或私聊提醒。本文对应[主文档](dingtalk-integration-design.md)。
+2026-09-17 源码增量：普通群答复使用机器人 Markdown 消息，保留问题引用、回答和耗时栏，不创建 StandardCard；`@提问人` 放在正文末尾且只出现一次。真正的原生提醒使用触发回调自带的 `sessionWebhook` 和嵌套 `at.atUserIds`；主动群消息接口不支持 `@`，不能把返回成功误判为提醒生效。webhook 只在回调消息提交成功后进入有界进程内缓存，按 channel、conversation、provider message ID 和真实 user ID 精确匹配，不进入 SQLite、日志、模型或导出；服务重启、凭证过期或身份不匹配时，降级为正文显示昵称的一次普通 Markdown。Current confirmation uses a Markdown token addressed to the verified Owner; retained card behavior below is disabled；昵称仅作显示，不授权。群目标始终取 task 的精确触发 route，不发送跨群或私聊提醒。本文对应[主文档](dingtalk-integration-design.md)。
 
 应用通道可独立配置 `identity.confirmation_card_template: <应用关联模板ID>.schema`，通过现有配置预览、应用流程生效；不新增数据库 schema。卡片协议仍按 `format=confirmation_card`、`/v1.0/card/instances/createAndDeliver` 和 `callbackType=STREAM` 实现，但当前运行服务暂时强制使用模板未配置时的普通 Markdown 口令路径，以先恢复可用闭环；底层卡片校验和回调代码保留，后续可恢复。恢复卡片后，`userIdType=1`、原群 `openSpaceId`、`atUserIds`、冻结快照和审批回调校验规则不变。
 
@@ -330,7 +327,7 @@ ready → sending → accepted | failed | unknown
 
 投递失败不重新执行任务。已有同 digest Outbox 处于 accepted、failed 或 unknown 时，运行时不会创建或发送第二份。启动恢复把遗留 sending 和 delivery attempt 置为 unknown。
 
-显式受限 Owner 私聊的待确认正文包含任务结果、pending action 的类型、目标、完整 payload 和口令。群 @ 合入原群卡片回答，有模板时只允许 Owner 点击，无模板暂用同群口令；不创建额外私聊通知。交互确认动作完成后可以投递实际结果，后台始终仅记录。
+显式受限 Owner 私聊的待确认正文包含任务结果、pending action 的类型、目标、完整 payload 和口令。群 @ 合入原群 Markdown 回答，当前使用 Owner 同群口令；不创建额外私聊通知。交互确认动作完成后可以投递实际结果，后台始终仅记录。
 
 ## 独立日志
 
@@ -370,7 +367,7 @@ logger 不提供自由扩展字段。摘要最多 240 字，清除控制字符�
 
 自动测试覆盖核心状态机、并发领取、dws 故障、Stream ACK、模型参数、preset Git、worktree、日志轮转/过滤/follow/配额和凭据脱敏。真实钉钉验收需要目标企业授权，至少验证：本人承诺能由历史补回、目标群的数量/时间触发、owner bot 私聊、精确口令确认、真实查询或代码任务、本地 commit、投递受理及一次模拟断网恢复。
 
-以上是旧实现的验证范围；主动观察的新策略以[新验收矩阵](../architecture/best-practice-scenarios-detail.md#后台观察与机器人交互验收)为准，旧通知通过项不作为新方案验收。
+以上是旧实现的验证范围；主动观察的新策略以[新验收矩阵](../architecture/best-practice-scenarios-detail.md#personal-jarvis-固定验收案例)为准，旧通知通过项不作为新方案验收。
 
 ### 主动值守的跨通道确认入口（旧策略源码记录）
 
@@ -392,13 +389,13 @@ logger 不提供自由扩展字段。摘要最多 240 字，清除控制字符�
 
 Schema 18 的 `runtime_direct_sessions` 保存会话和关闭时间，`runtime_direct_turns` 将原消息任务绑定到会话，重复事件和 retry 不重复建立会话。完整且去除首尾空白后恰好为 `/clear` 或 `/status` 才是命令。其他 slash 文本、问候、追问、取消和补充原样发送给 Agent。现有有效确认口令仍由确认状态机处理。
 
-`/clear` 关闭原会话并新建会话，不清除正式记忆或审计记录。确认来源仍有效的后续 `/clear` 是提交和投递的屏障：即使旧 Agent 正在执行，其结果也不能完成或投递。其他发送者、其他路由和撤回的 clear 无效。`/status` 解析当前任务的实际 Agent 策略和 Claude 技能发现结果，直接回复 Agent、preset、模型、技能、能力、Bash、外部操作、记忆范围和热词写入权限；两类命令均不启动模型，也不写入会话恢复文本。
+`/clear` 关闭原会话并新建会话，不清除 Workspace 文件或审计记录。确认来源仍有效的后续 `/clear` 是提交和投递的屏障：即使旧 Agent 正在执行，其结果也不能完成或投递。其他发送者、其他路由和撤回的 clear 无效。`/status` 解析当前任务的实际 Agent 策略和 Claude 技能发现结果，直接回复 Agent、preset、模型、技能、能力、Bash、外部操作和当前 Workspace 身份；两类命令均不启动模型，也不写入会话恢复文本。
 
 每个会话在 `<MEMGOV_HOME>/runtime/sessions/<session-id>` 工作，使用持续的 Claude `stream-json` 进程。stdin 的 user content 为当前消息正文，Agent 自行决定使用工具和 skill，不接收业务任务 JSON Schema。支持任务继续的新调用会按原生会话 ID 保存可恢复执行上下文；未提供原生会话 ID 的兼容路径仍禁用本地会话持久化。SQLite 保存恢复关系与任务版本，原生文件只保存临时执行上下文，见[任务继续详细稿](task-continuation-detail.md)。DingTalk Owner 私聊的逻辑会话还持久化原生会话 ID、策略摘要和已接受历史摘要；服务重启后摘要一致时使用 `--resume`，不一致时用已接受轮次回放并创建新原生会话。重启后只从 SQLite 恢复同一会话中已交付、原消息版本仍有效、发送者身份仍核验的本人/机器人轮次；当前进程的历史摘要不匹配时重建，以剔除撤回或未交付上下文。
 
-记忆 skill 随程序内置并安装到会话的 `.claude/skills`。运行时不替 Agent 选择查询词，也不自动将普通聊天写成记忆。本人私聊未配置独立 Agent 时默认完整 Bash 与 `owner_request`，使用真实 memgov CLI；本人明确请求的外部操作直接执行，不索要额外确认口令。此模式使用运行账户权限，不能用文件工具或记忆包装器宣称完整隔离。
+`memgov-workspace` 随程序内置。每轮提供最新的受限索引，详细文件由 Agent 按需查询；普通聊天不自动复制为知识文件。本人私聊未配置独立 Agent 时默认完整 Bash 与 `owner_request`，使用真实 memgov CLI；本人明确请求的外部操作直接执行，不索要额外确认口令。此模式使用运行账户权限，不能用文件工具或Workspace 包装器宣称完整隔离。
 
-显式关闭 Bash 时，命令包装器绑定当前 home/workspace，按能力开放查询及 Source/Candidate/Review/Apply 流程，不允许跨作用域覆盖、清除或恢复数据库；对外操作通过受控 `memgov-action` 调用 `runtime task propose-action <task-id>`，记录当前 attempt 的具体 kind/target/payload，随后按 `owner_confirmation` 等待本人确认。工具不解释回复语义、不执行外部写入。
+显式关闭 Bash 时，命令包装器绑定当前 task/attempt/受众，提供该 Workspace 的 list/read/search/write/history；每次核验当前任务与路由，不开放任意主机路径或跨工作区选择；对外操作通过受控 `memgov-action` 调用 `runtime task propose-action <task-id>`，记录当前 attempt 的具体 kind/target/payload，随后按 `owner_confirmation` 等待本人确认。工具不解释回复语义、不执行外部写入。
 
 `applications.owner_private` 只引用并接管现有核验过的 direct 实例，私聊 Agent 与 proactive 独立解析。指定 Agent 的 `bash` 省略为 false，省略私聊 Agent 则使用内置本人默认值。群默认 false，单群启用须独立 Agent 绑定；`owner_request` 不允许用于群或 proactive。Schema 19、状态输出、能力映射及进程切换规则见[运行时详细稿](agent-runtime-design-detail.md#会话-bash-与能力映射)。
 

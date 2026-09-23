@@ -1,5 +1,7 @@
 # 记忆列表、统计、时间排序与命令简写：实现细节草案
 
+> **Superseded historical design (2026-09-23).** The database memory pipeline, publication model, hotword ingestion and old AgentHome knowledge loading described here are removed by the [Agent Workspace design](agent-workspace-design.md). Use the [current runtime guide](../guides/runtime-user-guide.md) and [workspace details](agent-workspace-design-detail.md) for current behavior. The remainder records the previous design and its original validation; its commands and delivery claims do not apply to the new version.
+
 范围以[简明设计](memory-list-design.md)为准。`memory → m` 别名已实现；准确计数、时间字段、可选排序和表格展示仍为待实施方案。[本人私聊需求](owner-private-chat-requirements.md)要求在已授权范围内回答总数和最近一条。
 
 ## 当前实现依据

@@ -51,7 +51,6 @@ export function Settings({
               ["Preset", a.preset],
               ["执行模型", a.model],
               ["Claude 配置", a.profile],
-              ["记忆范围", a.memory_scope],
               ["Bash", a.bash ? "开启" : "关闭"],
               ["外部动作", a.external_actions],
               ["技能继承", a.inherit || "none"],

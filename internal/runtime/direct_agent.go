@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,9 +21,6 @@ import (
 	"github.com/zhoushoujianwork/memgov/internal/processtree"
 	"github.com/zhoushoujianwork/memgov/internal/sysprompt"
 )
-
-//go:embed memory_skill/SKILL.md memory_skill/references/cli-workflows.md
-var directMemorySkill embed.FS
 
 // A direct Claude process owns its conversational context. SQLite retains only
 // the accepted-turn recovery snapshot supplied when a process first starts.
@@ -110,11 +106,6 @@ func (s *directSession) close() {
 }
 
 func (c *Claude) executeDirectAgent(ctx context.Context, in ExecutionInput) (core.RuntimeAttemptResult, error) {
-	if in.AgentHome != "" {
-		if err := prepareAgentHome(in.AgentHome); err != nil {
-			return core.RuntimeAttemptResult{}, core.Fail("invalid_input", "%s", err)
-		}
-	}
 	var out core.RuntimeAttemptResult
 	if _, err := uuid.Parse(in.SessionID); err != nil || !filepath.IsAbs(in.WorkDir) || !filepath.IsAbs(in.Home) || len(in.Task.Messages) == 0 {
 		return out, core.Fail("invalid_input", "direct session, home, work directory and current message are required")
@@ -139,13 +130,6 @@ func (c *Claude) executeDirectAgent(ctx context.Context, in ExecutionInput) (cor
 	policy, err := loadPresetPolicy(in.Preset)
 	if err != nil {
 		return out, err
-	}
-	if hasAgentCapability(in.Capabilities, "memory_read") && hasAgentCapability(in.Capabilities, "local_write") {
-		if err = installDirectHotwordTool(in, memgovBinary); err != nil {
-			return out, err
-		}
-	} else {
-		_ = os.Remove(filepath.Join(in.WorkDir, ".claude", "tools", "memgov-hotword"))
 	}
 	if !in.BashEnabled {
 		if err = installDirectActionTool(in, memgovBinary); err != nil {
@@ -345,10 +329,10 @@ func directPolicyDigest(in ExecutionInput, profile, model string) string {
 	capabilities := append([]string(nil), in.Capabilities...)
 	sort.Strings(capabilities)
 	return core.Digest(map[string]any{"preset_commit": in.Preset.Commit, "preset_path": in.Preset.Path,
-		"capabilities": capabilities, "workspace": in.WorkspaceID, "workspace_path": in.WorkspacePath, "home": in.Home, "agent_home": in.AgentHome,
+		"capabilities": capabilities, "workspace": in.WorkspaceID, "workspace_path": in.WorkspacePath, "home": in.Home, "agent_workspace": in.AgentWorkspaceID, "workspace_bootstrap": in.WorkspaceBootstrap.Digest,
 		"workdir": in.WorkDir, "profile": profile, "model": model,
 		"bash": in.BashEnabled, "external_actions": in.ExternalActions,
-		"skills": in.Skills, "hotwords": core.Digest(in.HotwordContext),
+		"skills":                in.Skills,
 		"sysprompt":             sysprompt.Digest(),
 		"channel_system_prompt": core.Digest(in.ChannelSystemPrompt)})
 }
@@ -372,7 +356,7 @@ func directHistoryDigest(turns []core.RuntimeMessage) string {
 
 func directClaudeArgs(in ExecutionInput, policy, model, memgovBinary string) []string {
 	allowed := []string{}
-	memoryTool := filepath.Join(in.WorkDir, ".claude", "tools", "memgov")
+	workspaceTool := filepath.Join(in.WorkDir, ".claude", "tools", "memgov-workspace")
 	tools := []string{"Skill"}
 	if hasAgentCapability(in.Capabilities, "local_read") {
 		tools = append(tools, "Read", "Glob", "Grep")
@@ -383,27 +367,17 @@ func directClaudeArgs(in ExecutionInput, policy, model, memgovBinary string) []s
 		allowed = append(allowed, "Edit", "Write")
 	}
 	tools = append(tools, "Bash")
-	if hasAgentCapability(in.Capabilities, "memory_read") && memgovBinary != "" {
-		allowed = append(allowed, "Skill(memgov-memory)")
-		if !in.BashEnabled {
-			allowed = append(allowed, "Bash("+memoryTool+" *)")
-		}
+	if in.AgentWorkspaceID != "" {
+		allowed = append(allowed, "Skill(memgov-workspace)", "Bash("+workspaceTool+" *)")
 	}
 	allowed = append(allowed, skillAllowlist(in.Skills)...)
-	if hasAgentCapability(in.Capabilities, "local_write") && in.AgentHome != "" {
-		allowed = append(allowed, "Edit("+filepath.Join(in.AgentHome, "CLAUDE.md")+")", "Write("+filepath.Join(in.AgentHome, "CLAUDE.md")+")")
-	}
 	actionTool := filepath.Join(in.WorkDir, ".claude", "tools", "memgov-action")
-	hotwordTool := filepath.Join(in.WorkDir, ".claude", "tools", "memgov-hotword")
 	if in.BashEnabled {
 		allowed = append(allowed, "Bash")
 	} else {
 		allowed = append(allowed, "Bash("+actionTool+" *)")
-		if hasAgentCapability(in.Capabilities, "memory_read") && hasAgentCapability(in.Capabilities, "local_write") {
-			allowed = append(allowed, "Bash("+hotwordTool+" *)")
-		}
 	}
-	prompt := sysprompt.Text("direct") + agentHomePrompt(in) + workspacePrompt(in)
+	prompt := sysprompt.Text("direct") + agentWorkspacePrompt(in, workspaceTool) + workspacePrompt(in)
 	if in.ChannelSystemPrompt != "" {
 		prompt += "\n\nChannel-specific operating context:\n" + in.ChannelSystemPrompt
 	}
@@ -415,14 +389,8 @@ func directClaudeArgs(in ExecutionInput, policy, model, memgovBinary string) []s
 			prompt += "\n" + `External writes, sends, pushes and deployment still require a separately recorded owner-confirmed action. Do not execute them directly.`
 		}
 	} else {
-		prompt += "\n" + `Bash is limited to the absolute controlled wrapper paths below. For memory commands, call the controlled wrapper, never a different binary or a shell chain. Home, workspace and actor are fixed by that wrapper; omit --home, --workspace, --actor, doctor and config commands from generic skill examples. Do not send to others, alter an external business system, push, merge, publish or deploy directly.`
-		if hasAgentCapability(in.Capabilities, "memory_read") {
-			prompt += "\nControlled memory command: " + memoryTool
-		}
+		prompt += "\n" + `Bash is limited to the absolute controlled wrapper paths below. Task, attempt and knowledge scope are fixed by the workspace wrapper; never use a different binary or shell chains. Do not send to others, alter an external business system, push, merge, publish or deploy directly.`
 		prompt += "\nFor a separate external operation explicitly requested by the owner, prepare a JSON file with kind, target and payload inside this session directory and call " + actionTool + " with that file. This records only a pending operation for owner confirmation; it never performs the external write. Do not use this tool for the ordinary bot reply."
-	}
-	if hasAgentCapability(in.Capabilities, "memory_read") && hasAgentCapability(in.Capabilities, "local_write") {
-		prompt += "\nWhen the owner explicitly states that a transcription or alias means a canonical name, and the current message contains both forms, write a JSON file with canonical, aliases, and meaning in this session directory and call " + hotwordTool + ". Use it only for explicit corrections; never persist your own guess."
 	}
 	args := []string{"--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--session-id", in.SessionID,
 		"--setting-sources", directSettingSources(in.Skills), "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--disable-slash-commands", "--no-chrome", "--permission-mode", "dontAsk",
@@ -436,9 +404,6 @@ func directClaudeArgs(in ExecutionInput, policy, model, memgovBinary string) []s
 			"Write(" + filepath.Join(in.WorkDir, ".claude", "**") + ")",
 		}, ","),
 		"--append-system-prompt", sysprompt.Compose(policy, prompt)}
-	if in.AgentHome != "" {
-		args = append(args, "--add-dir", in.AgentHome)
-	}
 	if model != "" {
 		args = append(args, "--model", model)
 	}
@@ -597,33 +562,7 @@ func directMemgovBinary(home string) (string, error) {
 			return candidate, nil
 		}
 	}
-	return "", core.Fail("unavailable", "controlled memgov binary is unavailable for the memory skill")
-}
-
-func installDirectMemorySkill(workdir, home string) error {
-	_ = home // skill bytes are bundled into the installed runtime binary
-	dest := filepath.Join(workdir, ".claude", "skills", "memgov-memory")
-	for _, dir := range []string{filepath.Join(workdir, ".claude"), filepath.Join(workdir, ".claude", "skills"), dest, filepath.Join(dest, "references")} {
-		if err := os.MkdirAll(dir, 0700); err != nil {
-			return core.Fail("unavailable", "direct skill directory could not be created")
-		}
-		if info, err := os.Lstat(dir); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return core.Fail("denied", "direct skill directory is not a regular directory")
-		}
-	}
-	for _, rel := range []string{"SKILL.md", filepath.Join("references", "cli-workflows.md")} {
-		b, err := directMemorySkill.ReadFile(filepath.ToSlash(filepath.Join("memory_skill", rel)))
-		if err != nil || !utf8.Valid(b) {
-			return core.Fail("unavailable", "controlled memory skill file could not be read")
-		}
-		if len(b) > 128*1024 {
-			return core.Fail("denied", "controlled memory skill file exceeds its limit")
-		}
-		if err := os.WriteFile(filepath.Join(dest, rel), b, 0600); err != nil {
-			return core.Fail("unavailable", "direct memory skill could not be installed")
-		}
-	}
-	return nil
+	return "", core.Fail("unavailable", "controlled memgov binary is unavailable for workspace tools")
 }
 
 const directActionPython = `#!/usr/bin/env python3
@@ -662,122 +601,6 @@ finally:
     os.unlink(path)
 `
 
-const directHotwordPython = `#!/usr/bin/env python3
-import json, os, pathlib, subprocess, sys, tempfile
-CONFIG = %s
-workdir = pathlib.Path(CONFIG["workdir"]).resolve()
-control = workdir / ".memgov-turn.json"
-if len(sys.argv) != 2:
-    print('{"ok":false,"error":{"code":"invalid_input","message":"hotword tool expects one JSON file"}}')
-    sys.exit(2)
-candidate = pathlib.Path(sys.argv[1])
-if not candidate.is_absolute(): candidate = workdir / candidate
-candidate = candidate.resolve()
-if os.path.commonpath([str(workdir), str(candidate)]) != str(workdir) or not candidate.is_file() or candidate.stat().st_size > 65536:
-    print('{"ok":false,"error":{"code":"denied","message":"hotword JSON must be a session file"}}')
-    sys.exit(2)
-try:
-    with control.open("r", encoding="utf-8") as source: turn = json.load(source)
-    with candidate.open("r", encoding="utf-8") as source: hotword = json.load(source)
-except Exception:
-    print('{"ok":false,"error":{"code":"invalid_input","message":"hotword JSON could not be read"}}')
-    sys.exit(2)
-if set(hotword) != {"canonical", "aliases", "meaning"} or not isinstance(hotword["canonical"], str) or not isinstance(hotword["meaning"], str) or not isinstance(hotword["aliases"], list) or not all(isinstance(v, str) for v in hotword["aliases"]):
-    print('{"ok":false,"error":{"code":"invalid_input","message":"hotword requires canonical, aliases, and meaning"}}')
-    sys.exit(2)
-hotword["attempt_id"] = turn.get("attempt_id", "")
-fd, path = tempfile.mkstemp(prefix=".memgov-hotword-", suffix=".json", dir=str(workdir))
-try:
-    os.fchmod(fd, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as output: json.dump(hotword, output, ensure_ascii=False)
-    completed = subprocess.run([CONFIG["binary"], "--home", CONFIG["home"], "--workspace", CONFIG["workspace"], "--actor", "direct-agent",
-        "runtime", "task", "capture-hotword", turn.get("task_id", ""), "--input", path], cwd=str(workdir), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, check=False)
-    sys.stdout.buffer.write((completed.stdout or completed.stderr)[:131072])
-    sys.exit(completed.returncode)
-finally:
-    os.unlink(path)
-`
-
-// The direct memory entry point is deliberately narrower than the CLI. The
-// profile's home/workspace cannot be replaced by prompt text or Bash flags.
-// Local writes follow Source -> Candidate -> Review -> Apply, but governance,
-// configuration, backups and cross-workspace operations are not exposed.
-const directMemoryPython = `#!/usr/bin/env python3
-import os, pathlib, subprocess, sys
-CONFIG = %s
-workdir = pathlib.Path(CONFIG["workdir"]).resolve()
-argv = sys.argv[1:]
-if not argv or len(argv) > 24 or sum(len(arg) for arg in argv) > 32768:
-    sys.exit(2)
-blocked = {"--home", "--workspace", "--actor", "--all-workspaces", "--config", "--format", "--request-id", "--input-format", "--output-format"}
-if any(arg in blocked or any(arg.startswith(flag + "=") for flag in blocked) for arg in argv):
-    sys.exit(2)
-if argv[0] == "version" and len(argv) == 1:
-    pass
-elif argv[0] in ("recall", "search") and len(argv) >= 2 and not argv[1].startswith("-"):
-    if any(flag in argv for flag in ("--all-workspaces", "--kind", "--include-sensitive")) and argv[0] == "recall":
-        sys.exit(2)
-elif argv[0] in ("memory", "source") and len(argv) == 3 and argv[1] == "show" and not argv[2].startswith("-"):
-    pass
-elif CONFIG["write"] == "yes" and argv[0] == "source" and len(argv) >= 4 and argv[1] == "ingest":
-    pass
-elif CONFIG["write"] == "yes" and argv[0] == "candidate" and len(argv) >= 4 and argv[1] == "submit":
-    pass
-elif CONFIG["write"] == "yes" and argv[0] == "candidate" and len(argv) >= 3 and argv[1] in ("validate", "show", "diff", "apply") and not argv[2].startswith("-"):
-    pass
-else:
-    sys.exit(2)
-if argv[0] in ("source", "candidate") and (argv[0] == "source" and argv[1] == "ingest" or argv[0] == "candidate" and argv[1] == "submit"):
-    if argv.count("--input") != 1 or argv.index("--input") + 1 >= len(argv) or argv.count("--idempotency-key") != 1 or argv.index("--idempotency-key") + 1 >= len(argv):
-        sys.exit(2)
-    candidate = pathlib.Path(argv[argv.index("--input") + 1])
-    if not candidate.is_absolute():
-        candidate = workdir / candidate
-    candidate = candidate.resolve()
-    if os.path.commonpath([str(workdir), str(candidate)]) != str(workdir) or not candidate.is_file() or candidate.stat().st_size > 131072:
-        sys.exit(2)
-    argv[argv.index("--input") + 1] = str(candidate)
-if argv[0] in ("recall", "search"):
-    allowed = {"--limit", "--budget-chars", "--explain", "--kind", "--include-global"}
-elif argv[0] == "candidate" and argv[1] == "apply":
-    allowed = {"--expected-digest"}
-elif argv[0] in ("source", "candidate") and argv[1] in ("ingest", "submit"):
-    allowed = {"--input", "--idempotency-key"}
-else:
-    allowed = set()
-for index, arg in enumerate(argv):
-    if arg.startswith("-") and arg not in allowed:
-        sys.exit(2)
-    if arg in ("--limit", "--budget-chars", "--kind", "--expected-digest", "--input", "--idempotency-key") and index + 1 >= len(argv):
-        sys.exit(2)
-completed = subprocess.run([CONFIG["binary"], "--home", CONFIG["home"], "--workspace", CONFIG["workspace"], "--actor", "direct-agent"] + argv,
-    cwd=str(workdir), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30, check=False)
-sys.stdout.buffer.write(completed.stdout[:131072])
-sys.exit(completed.returncode)
-`
-
-func installDirectMemoryTool(in ExecutionInput, binary string) error {
-	tools := filepath.Join(in.WorkDir, ".claude", "tools")
-	if err := os.MkdirAll(tools, 0700); err != nil {
-		return core.Fail("unavailable", "direct memory tool directory could not be created")
-	}
-	for _, dir := range []string{filepath.Join(in.WorkDir, ".claude"), tools} {
-		info, err := os.Lstat(dir)
-		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return core.Fail("denied", "direct memory tool directory is not a regular directory")
-		}
-	}
-	write := "no"
-	if hasAgentCapability(in.Capabilities, "local_write") && in.Task.Kind != "memory" {
-		write = "yes"
-	}
-	config, _ := json.Marshal(map[string]string{"binary": binary, "home": in.Home, "agent_home": in.AgentHome, "workspace": in.WorkspaceID, "workdir": in.WorkDir, "write": write})
-	if err := writeDirectTool(tools, "memgov", []byte(fmt.Sprintf(directMemoryPython, config))); err != nil {
-		return core.Fail("unavailable", "direct memory tool could not be installed")
-	}
-	return nil
-}
-
 func installDirectActionTool(in ExecutionInput, binary string) error {
 	tools := filepath.Join(in.WorkDir, ".claude", "tools")
 	if err := os.MkdirAll(tools, 0700); err != nil {
@@ -789,27 +612,9 @@ func installDirectActionTool(in ExecutionInput, binary string) error {
 			return core.Fail("denied", "direct action tool directory is not a regular directory")
 		}
 	}
-	config, _ := json.Marshal(map[string]string{"binary": binary, "home": in.Home, "agent_home": in.AgentHome, "workspace": in.WorkspaceID, "workdir": in.WorkDir})
+	config, _ := json.Marshal(map[string]string{"binary": binary, "home": in.Home, "workspace": in.WorkspaceID, "workdir": in.WorkDir})
 	if err := writeDirectTool(tools, "memgov-action", []byte(fmt.Sprintf(directActionPython, config))); err != nil {
 		return core.Fail("unavailable", "direct action tool could not be installed")
-	}
-	return nil
-}
-
-func installDirectHotwordTool(in ExecutionInput, binary string) error {
-	tools := filepath.Join(in.WorkDir, ".claude", "tools")
-	if err := os.MkdirAll(tools, 0700); err != nil {
-		return core.Fail("unavailable", "direct hotword tool directory could not be created")
-	}
-	for _, dir := range []string{filepath.Join(in.WorkDir, ".claude"), tools} {
-		info, err := os.Lstat(dir)
-		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return core.Fail("denied", "direct hotword tool directory is not a regular directory")
-		}
-	}
-	config, _ := json.Marshal(map[string]string{"binary": binary, "home": in.Home, "agent_home": in.AgentHome, "workspace": in.WorkspaceID, "workdir": in.WorkDir})
-	if err := writeDirectTool(tools, "memgov-hotword", []byte(fmt.Sprintf(directHotwordPython, config))); err != nil {
-		return core.Fail("unavailable", "direct hotword tool could not be installed")
 	}
 	return nil
 }

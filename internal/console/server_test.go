@@ -506,7 +506,7 @@ func TestOpenNeverInitializesOrMigrates(t *testing.T) {
 
 func TestConsolePagePaths(t *testing.T) {
 	s, _, _ := fixture(t, time.Now())
-	for _, path := range []string{"/", "/tasks", "/memories", "/running", "/settings", "/tasks/", "/memories/", "/running/", "/settings/", "/memories?q=中文"} {
+	for _, path := range []string{"/", "/tasks", "/workspaces", "/running", "/settings", "/tasks/", "/workspaces/", "/running/", "/settings/", "/workspaces?q=中文"} {
 		for _, method := range []string{"GET", "HEAD"} {
 			w := request(t, s, method, path, "", nil)
 			if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") || w.Header().Get("Cache-Control") != "no-store" {
@@ -530,12 +530,12 @@ func TestConsolePagePaths(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/unknown", "/memories/private", "/missing.js", "/assets/", "/src/main.tsx", "/assets/../index.html", "/assets/missing.js"} {
+	for _, path := range []string{"/unknown", "/workspaces/private", "/missing.js", "/assets/", "/src/main.tsx", "/assets/../index.html", "/assets/missing.js"} {
 		if w := request(t, s, "GET", path, "", nil); w.Code != 404 {
 			t.Fatalf("unknown path %s: %d", path, w.Code)
 		}
 	}
-	if w := request(t, s, "POST", "/memories", "{}", nil); w.Code != 405 {
+	if w := request(t, s, "POST", "/workspaces", "{}", nil); w.Code != 405 {
 		t.Fatal("page route accepted a write")
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/zhoushoujianwork/memgov/internal/core"
+	"gopkg.in/yaml.v3"
 )
 
 func runtimeSkillDigest(path string) (string, error) {
@@ -58,6 +59,34 @@ func runtimeSkillSummary(body []byte) string {
 	return ""
 }
 
+// Check stable skill identities even when a directory or symlink is renamed.
+func managedKnowledgeSkill(name, path string, body []byte) bool {
+	managed := func(value string) bool { return value == "memgov-memory" || value == "memgov-workspace" }
+	if managed(name) || managed(filepath.Base(filepath.Clean(path))) {
+		return true
+	}
+	if canonical, err := filepath.EvalSymlinks(path); err == nil && managed(filepath.Base(canonical)) {
+		return true
+	}
+	lines := strings.Split(strings.TrimPrefix(string(body), "\ufeff"), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return false
+	}
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) != "---" {
+			continue
+		}
+		var metadata struct {
+			Name string `yaml:"name"`
+		}
+		if yaml.Unmarshal([]byte(strings.Join(lines[1:i], "\n")), &metadata) == nil {
+			return managed(strings.TrimSpace(metadata.Name))
+		}
+		return false
+	}
+	return false
+}
+
 func discoverClaudeUserSkills() ([]core.RuntimeSkill, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -73,7 +102,7 @@ func discoverClaudeUserSkills() ([]core.RuntimeSkill, error) {
 	}
 	out := []core.RuntimeSkill{}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".") || entry.Name() == "memgov-memory" {
+		if strings.HasPrefix(entry.Name(), ".") || entry.Name() == "memgov-memory" || entry.Name() == "memgov-workspace" {
 			continue
 		}
 		path, err := filepath.EvalSymlinks(filepath.Join(root, entry.Name()))
@@ -88,7 +117,7 @@ func discoverClaudeUserSkills() ([]core.RuntimeSkill, error) {
 			continue
 		}
 		body, err := os.ReadFile(skillFile)
-		if err != nil {
+		if err != nil || managedKnowledgeSkill(entry.Name(), path, body) {
 			continue
 		}
 		digest, err := runtimeSkillDigest(path)
@@ -107,7 +136,7 @@ func prepareClaudeSkills(in *ExecutionInput) error {
 		return err
 	}
 	in.Skills = resolved
-	return stageExplicitSkills(*in)
+	return stageResolvedSkills(*in)
 }
 
 func resolveClaudeSkillPolicy(policy core.RuntimeSkillPolicy) (core.RuntimeSkillPolicy, error) {
@@ -117,6 +146,20 @@ func resolveClaudeSkillPolicy(policy core.RuntimeSkillPolicy) (core.RuntimeSkill
 	explicitNames := map[string]bool{}
 	for _, path := range policy.Paths {
 		explicitNames[filepath.Base(filepath.Clean(path))] = true
+	}
+	for _, skill := range policy.Resolved {
+		// Executor inheritance is rediscovered below and may disappear between
+		// turns. Explicit policy entries must remain available and unchanged.
+		if policy.Inherit == "executor" && !explicitNames[skill.Name] {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(skill.Path, "SKILL.md"))
+		if err != nil {
+			return policy, core.Fail("conflict", "configured Agent skill is unavailable: %s", skill.Name)
+		}
+		if managedKnowledgeSkill(skill.Name, skill.Path, body) {
+			return policy, core.Fail("conflict", "workspace knowledge skill is runtime-managed; retired memory skill aliases are disabled")
+		}
 	}
 	explicit := map[string]core.RuntimeSkill{}
 	for _, skill := range policy.Resolved {
@@ -166,7 +209,7 @@ func resolveClaudeSkillPolicy(policy core.RuntimeSkillPolicy) (core.RuntimeSkill
 	return policy, nil
 }
 
-func stageExplicitSkills(in ExecutionInput) error {
+func stageResolvedSkills(in ExecutionInput) error {
 	root := filepath.Join(in.WorkDir, ".claude", "skills")
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return err
@@ -188,21 +231,19 @@ func stageExplicitSkills(in ExecutionInput) error {
 		}
 	}
 	for _, name := range previous {
-		if name != "memgov-memory" && name != "." && name != ".." && filepath.Base(name) == name && !strings.ContainsAny(name, "/\\\r\n\x00") {
+		if name != "memgov-workspace" && name != "." && name != ".." && filepath.Base(name) == name && !strings.ContainsAny(name, "/\\\r\n\x00") {
 			_ = os.RemoveAll(filepath.Join(root, name))
 		}
 	}
-	explicit := map[string]bool{}
-	for _, path := range in.Skills.Paths {
-		explicit[filepath.Base(filepath.Clean(path))] = true
+	// Stage only the resolved policy. Provider user settings stay disabled, so
+	// inherited skill discovery cannot autoload the retired memory skill.
+	if err := os.RemoveAll(filepath.Join(root, "memgov-memory")); err != nil {
+		return err
 	}
 	staged := []string{}
 	for _, skill := range in.Skills.Resolved {
-		if !explicit[skill.Name] {
-			continue
-		}
-		if skill.Name == "memgov-memory" {
-			return core.Fail("conflict", "memgov-memory is managed by the runtime")
+		if skill.Name == "memgov-memory" || skill.Name == "memgov-workspace" {
+			return core.Fail("conflict", "workspace knowledge skill is managed by the runtime; legacy memory skills are disabled")
 		}
 		target := filepath.Join(root, skill.Name)
 		if err := os.RemoveAll(target); err != nil {
@@ -244,9 +285,6 @@ func skillAllowlist(policy core.RuntimeSkillPolicy) []string {
 	return out
 }
 
-func directSettingSources(policy core.RuntimeSkillPolicy) string {
-	if policy.Inherit == "executor" {
-		return "user,project"
-	}
+func directSettingSources(_ core.RuntimeSkillPolicy) string {
 	return "project"
 }

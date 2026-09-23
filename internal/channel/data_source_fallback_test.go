@@ -49,6 +49,9 @@ func TestSourceRestartUsesOnlyPriorPositiveScopeDuringTransientDiscoveryFailure(
 		t.Fatal(err)
 	}
 	var imports atomic.Int32
+	// This test exercises startup discovery, not periodic rediscovery. Freeze
+	// the maintenance clock so slow race-instrumented runs cannot add a cycle.
+	now := time.Now()
 	for run := 0; run < 2; run++ {
 		store, e := core.Open(ctx, path, false)
 		if e != nil {
@@ -58,7 +61,7 @@ func TestSourceRestartUsesOnlyPriorPositiveScopeDuringTransientDiscoveryFailure(
 		if e != nil {
 			t.Fatal(e)
 		}
-		service := DataSourceService{Store: store, Adapter: adapter, Logger: logger, Tick: time.Millisecond, HistoryStep: func(context.Context, string) (bool, error) { imports.Add(1); return true, nil }}
+		service := DataSourceService{Store: store, Adapter: adapter, Logger: logger, Tick: time.Millisecond, Now: func() time.Time { return now }, HistoryStep: func(context.Context, string) (bool, error) { imports.Add(1); return true, nil }}
 		runCtx, cancel := context.WithCancel(ctx)
 		done := make(chan error, 1)
 		go func() { done <- service.Run(runCtx, d.ID) }()
@@ -79,11 +82,28 @@ func TestSourceRestartUsesOnlyPriorPositiveScopeDuringTransientDiscoveryFailure(
 					t.Error("source failed to stop")
 				}
 			}()
-			sourceEventually(t, func() bool {
-				_, reads, starts, _ := adapter.counts()
-				state, e := core.ReadDataSource(ctx, store.DB, d.ID)
-				return e == nil && reads >= run+1 && starts == run+1 && state.LastErrorCode == "discovery_unavailable"
-			})
+			// The persisted error and prior read count can already satisfy the
+			// second restart. Await this restart's completed degraded-discovery
+			// event before cancellation, rather than interrupting startup midway.
+			deadline := time.Now().Add(15 * time.Second)
+			for {
+				discoveries, reads, starts, _ := adapter.counts()
+				state, stateErr := core.ReadDataSource(ctx, store.DB, d.ID)
+				events, logErr := runlog.Show(filepath.Dir(path), d.ID, runlog.Filter{})
+				degraded := 0
+				for _, event := range events {
+					if event.Event == "discovery_degraded" {
+						degraded++
+					}
+				}
+				if stateErr == nil && logErr == nil && discoveries >= run+1 && reads >= run+1 && starts == run+1 && degraded == run+1 && state.LastErrorCode == "discovery_unavailable" {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("restart %d did not finish degraded discovery: discoveries=%d reads=%d starts=%d events=%d state_error=%v log_error=%v", run+1, discoveries, reads, starts, degraded, stateErr, logErr)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
 			proof, e := core.ReadSourceGroupDiscovery(ctx, store.DB, d.ID)
 			if e != nil || proof.Valid || proof.ObservedAt != original.ObservedAt || len(proof.Groups) != 1 {
 				t.Fatalf("fallback minted new proof: %+v %v", proof, e)

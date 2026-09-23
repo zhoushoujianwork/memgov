@@ -3,10 +3,8 @@ package runtime
 import (
 	"context"
 	"io"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -18,6 +16,9 @@ import (
 )
 
 type fakeAdapter struct {
+	// Runtime delivery workers may share one adapter across services. Test
+	// assertions inspect state after the synchronous tick or worker join.
+	mu        sync.Mutex
 	sends     int
 	receipts  int
 	requests  []channel.SendRequest
@@ -38,17 +39,23 @@ func (*fakeAdapter) RunReceiver(ctx context.Context, _ channel.Config, _ channel
 	return nil
 }
 func (a *fakeAdapter) Send(_ context.Context, _ channel.Config, req channel.SendRequest) (channel.SendResult, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.requests = append(a.requests, req)
 	a.sends++
 	return channel.SendResult{State: "accepted", Receipt: "local-receipt"}, nil
 }
 
 func (a *fakeAdapter) AddReaction(_ context.Context, _ channel.Config, req channel.ReactionRequest) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.receipts++
 	a.reactions = append(a.reactions, req)
 	return nil
 }
 func (a *fakeAdapter) RemoveReaction(_ context.Context, _ channel.Config, req channel.ReactionRequest) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.removed = append(a.removed, req)
 	return a.removeErr
 }
@@ -70,12 +77,6 @@ type fakeModels struct {
 	executes int
 }
 
-type fakeMemoryModels struct {
-	analyses int
-	executes int
-	reviews  int
-}
-
 func (m *fakeModels) Analyze(_ context.Context, b core.RuntimeBatch) (core.RuntimeAnalysis, ModelUsage, error) {
 	m.analyses++
 	return core.RuntimeAnalysis{Decisions: []core.RuntimeDecision{{Kind: "task", CanonicalKey: "one", Title: "answer", Instructions: "answer and verify", MessageIDs: []string{b.Messages[0].ID}}}}, ModelUsage{InputTokens: 2, OutputTokens: 1}, nil
@@ -87,52 +88,6 @@ func (m *fakeModels) Execute(context.Context, ExecutionInput) (core.RuntimeAttem
 func (*fakeModels) ExecuteConfirmedAction(context.Context, ActionExecutionInput) (core.RuntimeAttemptResult, error) {
 	return core.RuntimeAttemptResult{Result: "executed"}, nil
 }
-func (*fakeModels) Review(context.Context, core.RuntimeTask, core.CandidateInput) (ReviewResult, error) {
-	return ReviewResult{Decision: "accept", Issues: []string{}}, nil
-}
-
-func (m *fakeMemoryModels) Analyze(_ context.Context, b core.RuntimeBatch) (core.RuntimeAnalysis, ModelUsage, error) {
-	m.analyses++
-	return core.RuntimeAnalysis{Decisions: []core.RuntimeDecision{{
-		Kind:         "memory",
-		CanonicalKey: "memory:s3-proxy-signed-url-limit",
-		Title:        "S3 proxy 签名链接限制",
-		Instructions: "提炼已确认的 S3 proxy 能力边界，并保留原消息证据。",
-		MessageIDs:   []string{b.Messages[0].ID},
-	}}}, ModelUsage{InputTokens: 3, OutputTokens: 2}, nil
-}
-
-func (m *fakeMemoryModels) Execute(_ context.Context, in ExecutionInput) (core.RuntimeAttemptResult, error) {
-	m.executes++
-	message := in.Task.Messages[0]
-	return core.RuntimeAttemptResult{
-		Result:    "已生成受治理的记忆候选。",
-		Summary:   "S3 proxy 仅支持普通文件操作，不能生成可供外部使用的签名链接。",
-		ToolKinds: []string{"memory.propose"},
-		Usage:     map[string]any{"input_tokens": 4, "output_tokens": 3},
-		Candidate: &core.CandidateInput{
-			Action: "create",
-			Reason: "保留对后续接口选型有影响的稳定能力边界。",
-			Memory: core.Memory{
-				Category: "fact",
-				Title:    "S3 proxy 签名链接限制",
-				Summary:  "S3 proxy 不能为 COS 文件生成可供外部使用的签名链接。",
-				Content:  "S3 proxy 只支持普通文件操作，不支持为 COS 文件生成可供外部使用的签名链接；即使产生签名结果，域名仍是 S3 proxy 域名，不能用于外部访问。",
-				Evidence: []core.Evidence{{SourceID: message.SourceID, FragmentID: message.FragmentID, SHA256: message.SHA256}},
-			},
-		},
-	}, nil
-}
-
-func (*fakeMemoryModels) ExecuteConfirmedAction(context.Context, ActionExecutionInput) (core.RuntimeAttemptResult, error) {
-	return core.RuntimeAttemptResult{Result: "executed"}, nil
-}
-
-func (m *fakeMemoryModels) Review(context.Context, core.RuntimeTask, core.CandidateInput) (ReviewResult, error) {
-	m.reviews++
-	return ReviewResult{Decision: "accept", Issues: []string{}}, nil
-}
-
 func setupService(t *testing.T) (*Service, core.RuntimeConfig, agent.Preset, *fakeModels, *fakeAdapter) {
 	t.Helper()
 	ctx := context.Background()
@@ -207,7 +162,7 @@ func setupService(t *testing.T) (*Service, core.RuntimeConfig, agent.Preset, *fa
 	}
 	t.Cleanup(func() { logger.Close() })
 	models, adapter := &fakeModels{}, &fakeAdapter{}
-	service := &Service{Home: home, Store: s, Adapter: adapter, Analyzer: models, Executor: models, Actioner: models, Reviewer: models, Logger: logger}
+	service := &Service{Home: home, Store: s, Adapter: adapter, Analyzer: models, Executor: models, Actioner: models, Logger: logger}
 	return service, cfg, preset, models, adapter
 }
 
@@ -241,137 +196,6 @@ func TestTickDoesNotCallModelsWhenIdleAndRecordsCompletedWork(t *testing.T) {
 	if err = service.Store.DB.QueryRowContext(ctx, "SELECT count(*) FROM outbox WHERE job_id=?", tasks[0].ID).Scan(&notifications); err != nil || notifications != 0 {
 		t.Fatalf("record-only task generated %d notifications: %v", notifications, err)
 	}
-}
-
-func TestMemoryObservationClosesSourceCandidateReviewMemoryLoop(t *testing.T) {
-	service, cfg, preset, _, _ := setupService(t)
-	models := &fakeMemoryModels{}
-	service.Analyzer, service.Executor, service.Actioner, service.Reviewer = models, models, models, models
-	ctx := context.Background()
-
-	_, err := service.Store.Mutate(ctx, core.Request{Scope: "global", Command: "message.intake.memory"}, func(tx *core.Tx) (any, error) {
-		return tx.Intake(ctx, cfg.ChannelID, core.NormalizedEvent{
-			Kind:              core.EventMessage,
-			Adapter:           "fake",
-			ParseVersion:      "1",
-			Origin:            "stream",
-			ProviderEventID:   "event-memory-1",
-			ProviderMessageID: "message-memory-1",
-			ConversationID:    "watch",
-			Tenant:            "corp",
-			Sender:            core.Sender{IDType: "user_id", IDValue: "cai-yuzhou"},
-			Body:              "不可以，S3 proxy 只支持普通文件操作，签名后的也是 S3 proxy 域名，不能外部使用。",
-			SentAt:            time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano),
-		})
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	service.tick(ctx, cfg, preset)
-	if models.analyses != 1 || models.executes != 1 || models.reviews != 1 {
-		t.Fatalf("memory pipeline calls analysis=%d execution=%d review=%d", models.analyses, models.executes, models.reviews)
-	}
-	tasks, err := core.RuntimeTaskList(ctx, service.Store.DB, cfg.ID, "completed", 10)
-	if err != nil || len(tasks) != 1 || tasks[0].Kind != "memory" || tasks[0].CandidateID == "" {
-		t.Fatalf("completed memory tasks=%+v err=%v", tasks, err)
-	}
-	candidate, err := core.ReadCandidate(ctx, service.Store.DB, tasks[0].CandidateID, "global")
-	if err != nil || candidate.Status != "applied" || candidate.AppliedMemoryID == "" || candidate.Generator != "runtime-executor" {
-		t.Fatalf("governed candidate=%+v err=%v", candidate, err)
-	}
-	var acceptedReviews int
-	if err = service.Store.DB.QueryRowContext(ctx, "SELECT count(*) FROM reviews WHERE candidate_id=? AND candidate_digest=? AND decision='accept'", candidate.ID, candidate.Digest).Scan(&acceptedReviews); err != nil || acceptedReviews != 1 {
-		t.Fatalf("accepted review count=%d err=%v", acceptedReviews, err)
-	}
-	memory, err := core.ReadMemory(ctx, service.Store.DB, candidate.AppliedMemoryID, "global", 0)
-	if err != nil || memory.Status != "active" || memory.Title != "S3 proxy 签名链接限制" || len(memory.Evidence) != 1 {
-		t.Fatalf("applied memory=%+v err=%v", memory, err)
-	}
-}
-
-func TestLiveMemoryObservationClosesFullLoop(t *testing.T) {
-	if os.Getenv("MEMGOV_LIVE_MODEL_TEST") != "1" {
-		t.Skip("set MEMGOV_LIVE_MODEL_TEST=1 to run the Claude-backed acceptance test")
-	}
-	service, cfg, preset, _, _ := setupService(t)
-	// Match the installed service's authenticated Claude profile instead of the
-	// developer shell's default OAuth session.
-	cfg.ClaudeProfile, cfg.ExecutionModel = "cc", "profile"
-	installedBinary, err := exec.LookPath("memgov")
-	if err != nil {
-		t.Fatalf("live acceptance test needs an installed memgov binary: %v", err)
-	}
-	if err = os.MkdirAll(filepath.Join(service.Home, "bin"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err = os.Symlink(installedBinary, filepath.Join(service.Home, "bin", "memgov")); err != nil {
-		t.Fatal(err)
-	}
-	claude := NewClaude(cfg.AnalysisModel, cfg.ExecutionModel)
-	claude.Profile = cfg.ClaudeProfile
-	service.Analyzer, service.Executor, service.Actioner, service.Reviewer = claude, claude, claude, claude
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
-	messages := []struct {
-		id     string
-		sender string
-		body   string
-	}{
-		{id: "live-memory-question", sender: "owner", body: "守键 我们s3 proxy 的key可以给cos上的文件签名吗"},
-		{id: "live-memory-answer", sender: "cai-yuzhou", body: "不可以 s3-proxy 不支持签名，只支持普通的文件操作，而且签名后的也是s3proxy的域名，也不能外部使用"},
-		{id: "live-memory-ack", sender: "owner", body: "好的"},
-	}
-	for i, message := range messages {
-		_, err := service.Store.Mutate(ctx, core.Request{Scope: "global", Command: "message.intake.live-memory"}, func(tx *core.Tx) (any, error) {
-			return tx.Intake(ctx, cfg.ChannelID, core.NormalizedEvent{
-				Kind:              core.EventMessage,
-				Adapter:           "fake",
-				ParseVersion:      "1",
-				Origin:            "stream",
-				ProviderEventID:   "event-" + message.id,
-				ProviderMessageID: message.id,
-				ConversationID:    "watch",
-				Tenant:            "corp",
-				Sender:            core.Sender{IDType: "user_id", IDValue: message.sender},
-				Body:              message.body,
-				SentAt:            time.Now().Add(time.Hour + time.Duration(i)*time.Second).UTC().Format(time.RFC3339Nano),
-			})
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	for i := 0; i < 5; i++ {
-		service.tick(ctx, cfg, preset)
-		if ctx.Err() != nil {
-			t.Fatal(ctx.Err())
-		}
-		candidates, err := core.CandidateList(ctx, service.Store.DB, "global", "applied")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(candidates) > 0 {
-			memory, err := core.ReadMemory(ctx, service.Store.DB, candidates[0].AppliedMemoryID, "global", 0)
-			if err != nil || memory.Status != "active" || len(memory.Evidence) == 0 {
-				t.Fatalf("live applied memory=%+v err=%v", memory, err)
-			}
-			if !strings.Contains(strings.ToLower(memory.Content+" "+memory.Summary), "proxy") {
-				t.Fatalf("live memory lost the named system: %+v", memory)
-			}
-			return
-		}
-	}
-
-	tasks, err := core.RuntimeTaskList(ctx, service.Store.DB, cfg.ID, "", 20)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var batchStatus, batchOutput, batchError string
-	_ = service.Store.DB.QueryRowContext(ctx, "SELECT status,output,error_code FROM runtime_batches WHERE runtime_id=? ORDER BY created_at DESC LIMIT 1", cfg.ID).Scan(&batchStatus, &batchOutput, &batchError)
-	t.Fatalf("live model did not produce and apply a memory candidate; tasks=%+v batch_status=%s batch_error=%s batch_output=%s", tasks, batchStatus, batchError, batchOutput)
 }
 
 func TestRuntimeCapabilitiesAllowStreamOnlyApplicationBot(t *testing.T) {
@@ -684,39 +508,5 @@ func TestGroupMentionRuntimeSharesOneReceiverAcrossTwoGroups(t *testing.T) {
 	}
 	if atomic.LoadInt32(&receiver.starts) != 1 {
 		t.Fatalf("expected exactly one receiver for a two-group runtime, got %d", receiver.starts)
-	}
-}
-
-func TestPrivateAndGroupTurnsDoNotPreloadMemgovMemory(t *testing.T) {
-	service := &Service{}
-	ctx := context.Background()
-	for _, mode := range []string{"direct", "group_mention"} {
-		cfg := core.RuntimeConfig{ApplicationMode: mode, AgentCapabilities: []string{"memory_read"}, MemoryScope: "conversation_published"}
-		memory, err := service.runtimeMemoryContext(ctx, cfg, core.RuntimeTask{Title: "should not query"}, core.Workspace{ID: "missing-workspace"})
-		if err != nil || memory != "" {
-			t.Fatalf("mode=%s memory context = %q, err=%v", mode, memory, err)
-		}
-		hotword, err := service.runtimeHotwordContext(ctx, cfg, core.RuntimeTask{}, core.Workspace{ID: "missing-workspace"})
-		if err != nil || hotword != "" {
-			t.Fatalf("mode=%s hotword context = %q, err=%v", mode, hotword, err)
-		}
-	}
-}
-
-func TestKubernetesRoutingIntentAddsFocusedClusterTerms(t *testing.T) {
-	if !kubernetesRoutingIntent("帮忙看一下 data-prod 的 pod 为什么没起来") {
-		t.Fatal("Kubernetes incident was not recognized")
-	}
-	if kubernetesRoutingIntent("今天辛苦了") {
-		t.Fatal("ordinary group message triggered Kubernetes recall")
-	}
-	query := kubernetesRoutingQuery("data-prod pod restart")
-	for _, term := range []string{"北京生产", "data-prod", "changebjprod", "kubeconfig", "context"} {
-		if !strings.Contains(query, term) {
-			t.Fatalf("focused query missing %q: %s", term, query)
-		}
-	}
-	if !hasKubernetesRouteEvidence("kubeconfig /tmp/prod.conf, context cls-94le9mxr") {
-		t.Fatal("explicit cluster route evidence was not recognized")
 	}
 }

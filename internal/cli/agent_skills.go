@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/zhoushoujianwork/memgov/internal/core"
+	"gopkg.in/yaml.v3"
 )
 
 func skillSummary(body []byte) string {
@@ -78,6 +79,20 @@ func inspectSkill(path string) (core.RuntimeSkill, error) {
 		return core.RuntimeSkill{}, err
 	}
 	name := filepath.Base(filepath.Clean(path))
+	canonicalName := filepath.Base(resolved)
+	var header struct {
+		Name string `yaml:"name"`
+	}
+	if strings.HasPrefix(string(body), "---\n") {
+		if end := strings.Index(string(body[4:]), "\n---"); end >= 0 {
+			_ = yaml.Unmarshal(body[4:4+end], &header)
+		}
+	}
+	for _, candidate := range []string{name, canonicalName, header.Name} {
+		if candidate == "memgov-memory" || candidate == "memgov-workspace" {
+			return core.RuntimeSkill{Name: candidate, Path: resolved}, nil
+		}
+	}
 	if name == "." || name == string(filepath.Separator) || strings.ContainsAny(name, "\r\n\x00/") {
 		return core.RuntimeSkill{}, core.Fail("invalid_input", "Agent skill has an invalid directory name")
 	}
@@ -100,12 +115,15 @@ func resolveClaudeSkills(policy core.RuntimeSkillPolicy) ([]core.RuntimeSkill, e
 			return nil, err
 		}
 		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), ".") || entry.Name() == "memgov-memory" {
+			if strings.HasPrefix(entry.Name(), ".") || (entry.Name() == "memgov-memory" || entry.Name() == "memgov-workspace") {
 				continue
 			}
 			skill, inspectErr := inspectSkill(filepath.Join(home, ".claude", "skills", entry.Name()))
 			if inspectErr != nil {
 				return nil, inspectErr
+			}
+			if skill.Name == "memgov-memory" || skill.Name == "memgov-workspace" {
+				continue
 			}
 			byName[skill.Name] = skill
 		}
@@ -116,8 +134,8 @@ func resolveClaudeSkills(policy core.RuntimeSkillPolicy) ([]core.RuntimeSkill, e
 		if err != nil {
 			return nil, err
 		}
-		if skill.Name == "memgov-memory" {
-			return nil, core.Fail("conflict", "memgov-memory is managed by the runtime")
+		if skill.Name == "memgov-memory" || skill.Name == "memgov-workspace" {
+			return nil, core.Fail("conflict", "workspace knowledge skills are managed by the runtime; memgov-memory is retired")
 		}
 		if explicit[skill.Name] {
 			return nil, core.Fail("conflict", "duplicate explicit Agent skill name: %s", skill.Name)

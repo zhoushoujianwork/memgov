@@ -1,0 +1,6 @@
+interface:
+  display_name: "Agent Workspace"
+  short_description: "Find and maintain scoped file knowledge"
+  default_prompt: "Use $memgov-workspace to work with the current authorized Agent knowledge."
+policy:
+  allow_implicit_invocation: true

@@ -35,7 +35,7 @@ func TestRuntimeAgentResolvesExactGroupBindingAndLivePolicy(t *testing.T) {
 		cfg, e = tx.ConfigureRuntime(ctx, RuntimeConfigInput{Name: "group-policy", Channel: app.ID, RouteIDs: []string{one.ID, two.ID}, DeliveryRouteID: one.ID, Owner: f.owner, ApplicationMode: "group_mention", ContextChannel: f.channel.ID})
 		return cfg, e
 	})
-	policies := map[string]RuntimeAgentPolicy{"default": {Preset: "default-preset", MemoryScope: "conversation_published", ExternalActions: "owner_confirmation", Capabilities: []string{}}, "special": {Preset: "special-preset", ClaudeProfile: "cc", ExecutionModel: "profile", MemoryScope: "conversation_published", ExternalActions: "owner_confirmation", Capabilities: []string{"local_read"}, Directories: []string{"/explicit/group/docs"}}}
+	policies := map[string]RuntimeAgentPolicy{"default": {Preset: "default-preset", ExternalActions: "owner_confirmation", Capabilities: []string{}}, "special": {Preset: "special-preset", ClaudeProfile: "cc", ExecutionModel: "profile", ExternalActions: "owner_confirmation", Capabilities: []string{"local_read"}, Directories: []string{"/explicit/group/docs"}}}
 	apply := func(expected int) {
 		t.Helper()
 		body, _ := json.Marshal(map[string]any{"agents": policies, "applications": map[string]any{"group_mention": map[string]any{"enabled": true, "default_agent": "default", "bindings": []map[string]string{{"conversation_id": one.ConversationID, "agent": "special"}}}}})
@@ -69,7 +69,7 @@ func TestRuntimeAgentResolvesExactGroupBindingAndLivePolicy(t *testing.T) {
 	special.ExternalActions = "owner_confirmation"
 	policies["special"] = special
 	bad := policies["special"]
-	bad.MemoryScope = "owner_authorized"
+	bad.ExternalActions = "owner_request"
 	policies["special"] = bad
 	apply(3)
 	if _, err := ResolveRuntimeTaskAgent(ctx, f.s.DB, cfg, RuntimeTask{RuntimeID: cfg.ID, RouteID: one.ID}); ErrorCode(err) != "denied" {

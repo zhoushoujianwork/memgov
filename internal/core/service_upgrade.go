@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 )
 
 // PrepareServiceDatabase upgrades an existing database for an enrolled managed
@@ -39,13 +38,11 @@ func PrepareServiceDatabase(ctx context.Context, path string) (*BackupInfo, erro
 	if version == SchemaVersion {
 		return nil, nil
 	}
-	destination := filepath.Join(filepath.Dir(s.Path), "backups", "service-upgrades", fmt.Sprintf("v%d-to-v%d-%s.db", version, SchemaVersion, NewID()))
-	backup, err := s.createBackup(ctx, destination, true)
-	if err != nil {
-		return nil, fmt.Errorf("service database upgrade: backup failed; schema unchanged: %w", err)
-	}
 	if err = s.upgradeSchema(ctx, version, true, databaseMigrations); err != nil {
-		return &backup, fmt.Errorf("service database upgrade failed; backup at %s: %w", backup.Path, err)
+		if s.upgradeArchive != nil {
+			return s.upgradeArchive, fmt.Errorf("service database upgrade failed; archive at %s: %w", s.upgradeArchive.Path, err)
+		}
+		return nil, fmt.Errorf("service database upgrade failed: %w", err)
 	}
-	return &backup, nil
+	return s.upgradeArchive, nil
 }

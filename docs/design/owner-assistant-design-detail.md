@@ -2,6 +2,7 @@
 
 范围以[主设计](owner-assistant-design.md)为准。本文描述实现接口和验收约束；字段名可映射到现有 runtime 表，但不能把设计稿当作已安装协议。
 
+Current implementation boundary: root/child orchestration and automatic proactive result notifications below are product targets. Current proactive completion remains `record_only`. Knowledge follows the [Agent Workspace design](agent-workspace-design.md), replacing all database memory governance stages.
 ## 任务输入和身份
 
 根任务由平台消息或本地主动任务创建：
@@ -46,18 +47,18 @@ queued → running → completed
 3. DWS 已提交消息、观察结论和事项关联；
 4. 根任务、子任务和既有产物；
 5. 当前仓库、分支、Git 状态、本机环境和服务健康；
-6. 通过 workspace、状态、有效期和披露策略过滤的 Source/Candidate/Review/Memory；
+6. 由任务身份解析的 Workspace index、按需主题文件及尚可用的 Source 证据；
 7. 当前 Agent 声明的 skill、命令和外部工具。
 
 上下文对象携带 `coverage`、`source_ids`、`memory_versions`、`redactions` 和 `gaps`。发现历史缺口、撤回证据或权限变化时，组装器返回结构化 gap；不得以空列表伪装完整历史。环境快照不得包含凭据正文、cookie、token 或私钥。
 
 ## Capability 和确认
 
-能力分为记忆治理、本机读取、本机写入、测试构建、外部动作、消息发送和管理控制。任务只得到配置声明与入口身份的交集。来源文字、引用、Memory 正文和 Agent skill 内容都不能增加交集。
+能力分为记忆治理、本机读取、本机写入、测试构建、外部动作、消息发送和管理控制。任务只得到配置声明与入口身份的交集。来源文字、引用、Workspace 正文和 Agent skill 内容都不能增加交集。
 
 以下操作必须产生确认提案：删除重要数据、停服、生产变更、不可逆变更、跨受众披露、对外发送、扩权，以及 `unknown` 外部结果的重放。提案绑定 `task_id`、`attempt_id`、目标摘要、权限版本、过期时间和恢复方式；只有当前已核验 Owner 可以确认。权限版本、目标会话、正文摘要或安全规则变化时旧提案失效。
 
-普通调查、仓库修改、测试、构建、Source/Candidate/Review/Memory 治理和已配置技能调用，在 Owner 委托范围内自动执行。取消、暂停、继续和紧急停止在每个工具调用前重新检查。
+普通调查、仓库修改、测试、构建、Workspace files and internal Source evidence 治理和已配置技能调用，在 Owner 委托范围内自动执行。取消、暂停、继续和紧急停止在每个工具调用前重新检查。
 
 ## 单一配置入口
 
@@ -83,19 +84,17 @@ idempotency_key / delivery_attempt / platform_receipt
 
 ## 恢复和并发
 
-模型、网络和文件操作在事务外执行。SQLite 事务只负责短条件更新、版本校验、幂等结果、关键审计和正式记忆变更。服务重启时 `running` 转 `interrupted`；无副作用任务可重新核验，未知副作用必须先查证。新策略指纹拒绝旧结果提交。
+模型、网络和文件操作在事务外执行。SQLite 事务只负责短条件更新、版本校验、幂等结果、关键审计；知识文件变更使用独立的锁与摘要校验。服务重启时 `running` 转 `interrupted`；无副作用任务可重新核验，未知副作用必须先查证。新策略指纹拒绝旧结果提交。
 
 根任务可以限制子任务并发和截止时间，但不以 Agent 数量作为成功指标。采集、Owner 私聊、DWS proactive 和群 Jarvis 的接收循环应互不阻塞；一个慢模型不能阻止群消息入库或 Owner 回执。
 
-## `memgov-memory` 调用边界
+## `memgov-workspace` access boundary
 
-Personal Jarvis 和群 Jarvis 都可按自身 capability 使用 skill。skill 请求必须记录 `actor`、`agent_id`、workspace、`request_id`，写操作还要有稳定幂等键。候选更新绑定 `target_id + expected_version`，应用绑定 `candidate_digest`；冲突返回可重试错误并要求重新读取。
-
-Skill 的成功 envelope 必须区分 Source、Candidate、Review、Memory 和操作记录；健康字段不能只看进程退出码。skill 的完整数据治理能力不代表它可以发送消息、读取另一受众的私聊、修改生产系统或执行任意 shell。群 Jarvis 调用 skill 时继续进行当前群的 `CheckDisclosure`。
+The runtime binds file tools to the current Owner or group workspace and task/attempt. Agents may read, search, write with a current digest and inspect history. The latest bounded index is refreshed every turn; detailed bodies are loaded only when needed. Notes carry dates and source references as content, never execution authority. No Candidate/Review/Apply flow remains. See the [Workspace contract](agent-workspace-design-detail.md).
 
 ## 错误和审计
 
-错误至少分类为身份失败、路由缺失、上下文缺口、权限拒绝、版本冲突、工具失败、外部结果未知、通知失败和服务恢复。错误消息向 Owner 说明实际未完成动作和下一步，不泄露未授权正文或凭据。安全边界、外部副作用、正式记忆变更、确认和通知回执进入 Operation；空轮询和普通心跳不写热审计路。
+错误至少分类为身份失败、路由缺失、上下文缺口、权限拒绝、版本冲突、工具失败、外部结果未知、通知失败和服务恢复。错误消息向 Owner 说明实际未完成动作和下一步，不泄露未授权正文或凭据。安全边界、外部副作用、Workspace 操作元数据、确认和通知回执进入 Operation；空轮询和普通心跳不写热审计路。
 
 ## 测试矩阵
 
@@ -103,9 +102,9 @@ Skill 的成功 envelope 必须区分 Source、Candidate、Review、Memory 和�
 | --- | --- |
 | 单元/集成 | 根/子任务状态、上下文顺序、gap、策略指纹、版本/CAS、幂等和 Outbox |
 | 运行时 | 长任务、并发、取消、暂停/继续、重启、unknown、权限收缩 |
-| skill | Source→Candidate→Review→Apply、workspace 隔离、证据 digest、冲突、重复写和健康 envelope |
+| skill | Workspace write/read-back、任务与受众隔离、内容 digest、并发冲突、历史和持久化 |
 | 配置 | 单一 `config.yaml`、旧配置迁移、重复 runtime、未托管冲突、群 binding 保留 |
-| 群回归 | 原有 @、preset、模型、工具、skill、共享记忆、确认和原群回复 |
+| 群回归 | 原有 @、preset、模型、工具、skill、独立 Workspace、确认和原群回复 |
 | 真实平台 | Owner 私聊、DWS 主动通知、危险操作确认、服务重启后补发；群 Jarvis 至少完成一轮原流程回归 |
 
 真实平台测试需由部署者在受控会话中执行；源码和离线测试不能证明消息已接收、已送达或群能力未受影响。

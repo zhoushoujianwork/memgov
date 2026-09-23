@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MemoryCollectibleCard } from "../src/components/MemoryCollectibleCard";
 import { Time } from "../src/components/common";
 import { Tasks } from "../src/pages/Tasks";
 import { Running } from "../src/pages/Running";
-import { memoryParams, memoryPath } from "../src/pages/Memories";
+import { Workspaces, workspacePath } from "../src/pages/Workspaces";
 import { pageFromPath, expiryTimes, noticeForTask } from "../src/App";
-import type { TaskDetail, MemoryCard, Meta, Runtime } from "../src/types";
+import type { TaskDetail, Meta, Runtime } from "../src/types";
 
 test("late continuation notifications belong to the original task", () => {
   const receipt = { id: "task-a", text: "已提交继续请求" };
@@ -16,46 +15,54 @@ test("late continuation notifications belong to the original task", () => {
   assert.equal(noticeForTask(undefined, "task-a"), "");
 });
 
-test("cards preserve Unicode, escape content, and omit unrelated game systems", () => {
-  const card: MemoryCard = {
-    id: "m1",
-    category: "fact",
-    title: "<script>标题</script>",
-    summary: "中".repeat(120),
-    status: "active",
-    workspace_id: "global",
-    updated_at: "2026-09-16T10:00:00Z",
-    version: 2,
-  };
+test("workspace browser preserves file boundaries and escapes paths and snippets", () => {
+  assert.equal(
+    workspacePath("group-a", "file", "notes/中文.md"),
+    "agent-workspaces/group-a/file?path=notes%2F%E4%B8%AD%E6%96%87.md",
+  );
+  assert.equal(
+    workspacePath("owner/a", "history", "MEMORY.md"),
+    "agent-workspaces/owner%2Fa/history?path=MEMORY.md",
+  );
+  assert.equal(
+    workspacePath("group-a", "files", "a&b"),
+    "agent-workspaces/group-a/files?query=a%26b",
+  );
+  assert.equal(pageFromPath("/workspaces/"), "workspaces");
+  assert.equal(pageFromPath("/memories"), "tasks");
   const html = renderToStaticMarkup(
-    <MemoryCollectibleCard card={card} workspace="全局" onSelect={() => {}} />,
+    <Workspaces
+      filters={{ workspace: "owner-a", query: "<script>" }}
+      workspaces={[
+        {
+          id: "owner-a",
+          kind: "owner",
+          owner_principal_id: "owner",
+          created_at: "2026-09-23T10:00:00Z",
+        },
+      ]}
+      files={[
+        {
+          path: "notes/<script>.md",
+          digest: "abc",
+          bytes: 30,
+          updated_at: "2026-09-23T10:00:00Z",
+          snippet: "<script>alert(1)</script>",
+        },
+      ]}
+      selected=""
+      showHistory={false}
+      onFilter={() => {}}
+      onSelect={() => {}}
+      onHistory={() => {}}
+      onRefresh={() => {}}
+    />,
   );
-  assert.ok(html.includes("&lt;script&gt;标题&lt;/script&gt;"));
-  assert.ok(html.includes("中".repeat(100) + "…"));
-  assert.ok(!html.includes("中".repeat(101)));
-  assert.ok(!/data-rarity|collectible-cost|heat|费用|升级/.test(html));
-  assert.equal(card.summary.length, 120);
-});
-test("scope and page URLs retain explicit workspace boundaries", () => {
-  const filters = {
-    q: "中文正文",
-    workspace: "w1",
-    category: "lesson",
-    status: "active",
-    page: 2,
-  };
-  assert.equal(memoryParams(filters).get("workspace"), "w1");
-  assert.equal(memoryParams(filters).get("all_workspaces"), "false");
-  assert.equal(
-    memoryParams({ ...filters, workspace: "*" }).get("all_workspaces"),
-    "true",
-  );
-  assert.equal(
-    memoryPath({ id: "m/a", workspace_id: "w1" } as MemoryCard, "/history"),
-    "memories/m%2Fa/history?workspace=w1",
-  );
-  assert.equal(pageFromPath("/memories/"), "memories");
-  assert.equal(pageFromPath("/settings"), "settings");
+  assert.ok(html.includes("notes/&lt;script&gt;.md"));
+  assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
+  assert.ok(html.includes("只读浏览"));
+  assert.ok(html.includes('aria-label="搜索当前工作区"'));
+  assert.ok(!html.includes("全局"));
 });
 test("runtime UI separates shared channels from permission-scoped agents", () => {
   const runtimes = [
@@ -284,9 +291,7 @@ test("exact dates and all source deadlines remain available after migration", ()
   assert.ok(html.includes("aria-label="));
   const dates = expiryTimes({
     tasks: { tasks: [{ expires_at: "2026-09-16T10:01:00Z" }] },
-    memory: { expires_at: "2026-09-16T10:02:00Z" },
-    memorySources: { expires_at: "2026-09-16T10:03:00Z" },
-    memoryHistory: { expires_at: "2026-09-16T10:04:00Z" },
+    detail: { task: { expires_at: "2026-09-16T10:02:00Z" } },
   } as Parameters<typeof expiryTimes>[0]);
-  assert.equal(dates.length, 4);
+  assert.equal(dates.length, 2);
 });

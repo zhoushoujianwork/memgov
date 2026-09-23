@@ -177,7 +177,7 @@ func TestDualChannelsActiveConsumerNeedsFreshProbe(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "home")
 	invoke(t, home, "", "init")
 	raw := dualChannelsYAML + `agents:
-  owner: {preset: missing, memory_scope: owner_authorized}
+  owner: {preset: missing}
 applications:
   proactive:
     enabled: true

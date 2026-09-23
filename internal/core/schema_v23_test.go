@@ -5,6 +5,7 @@ import "testing"
 // Only for reconstruction of released schemas in migration tests.
 func dropSchema23(t *testing.T, s *Store) {
 	t.Helper()
+	dropSchema27(t, s)
 	for _, statement := range []string{
 		"ALTER TABLE runtime_direct_sessions DROP COLUMN native_context_digest",
 		"ALTER TABLE runtime_direct_sessions DROP COLUMN native_policy_digest",

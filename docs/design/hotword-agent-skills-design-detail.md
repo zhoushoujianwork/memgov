@@ -1,5 +1,7 @@
 # 语音热词与 Agent 技能配置：实现详细稿
 
+> **Superseded historical design (2026-09-23).** The database memory pipeline, publication model, hotword ingestion and old AgentHome knowledge loading described here are removed by the [Agent Workspace design](agent-workspace-design.md). Use the [current runtime guide](../guides/runtime-user-guide.md) and [workspace details](agent-workspace-design-detail.md) for current behavior. The remainder records the previous design and its original validation; its commands and delivery claims do not apply to the new version.
+
 范围和用户体验以[主文档](hotword-agent-skills-design.md)为准。
 
 ## 热词数据与写入

@@ -313,7 +313,7 @@ func RuntimeTaskReady(ctx context.Context, q Queryer, value string) (bool, error
 	var found int
 	err = q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM runtime_tasks WHERE runtime_id=? AND status='pending'
 AND NOT EXISTS(SELECT 1 FROM runtime_work_leases l WHERE l.task_id=runtime_tasks.id AND l.released=0)
-AND (kind<>'memory' OR (SELECT count(*) FROM runtime_work_leases l JOIN runtime_tasks mt ON mt.id=l.task_id WHERE l.released=0 AND mt.kind='memory')<2)
+AND kind<>'memory'
 AND route_id IN (SELECT value FROM json_each(?))
 AND EXISTS (SELECT 1 FROM channel_routes r WHERE r.id=runtime_tasks.route_id AND r.channel_id=? AND r.status='active' AND r.mode<>'ignore'))`, c.ID, JSON(c.RouteIDs), c.ChannelID).Scan(&found)
 	return found != 0, err

@@ -1,6 +1,6 @@
 # Agent preset 与平台、harness 无关的 AI 运行时
 
-状态：运行时源码已完成 MVP SQLite 热写简化并通过离线检查；部署后的真实业务验收仍待完成。见[MVP 核心取舍](../architecture/best-practice-scenarios.md#mvp-核心取舍业务先顺畅运行)。实现协议与兼容规则见[详细稿](agent-runtime-design-detail.md)，接入方式见[钉钉主设计](dingtalk-integration-design.md)。
+状态：运行时源码已完成 MVP SQLite 热写简化并通过离线检查；部署后的真实业务验收仍待完成。Knowledge now follows the [Agent Workspace design](agent-workspace-design.md).实现协议与兼容规则见[详细稿](agent-runtime-design-detail.md)，接入方式见[钉钉主设计](dingtalk-integration-design.md)。
 
 ## 目标与使用方式
 
@@ -26,16 +26,16 @@ Agent 规则、会话、任务和日志分开保存：
 
 ```text
 <MEMGOV_HOME>/agents/<preset>/     已提交的 Agent 规则
-<MEMGOV_HOME>/agent-homes/<agent>/ 持久 Agent 工作上下文（CLAUDE.md）
+<MEMGOV_HOME>/agent-workspaces/    持久 Owner / 群知识文件
 <MEMGOV_HOME>/runtime/sessions/    私聊 Agent 会话目录
 <MEMGOV_HOME>/runtime/tasks/       独立任务目录
 <MEMGOV_HOME>/runtime/worktrees/   代码任务 Git worktree
 <MEMGOV_HOME>/runtime/logs/        脱敏运行日志
 ```
 
-普通 `memgov init` 不创建 preset；显式执行 `memgov agent preset enable <harness> --name <name>` 后才建立规则目录和初始提交。每次执行前检查 preset 启用、Git 工作树干净，并记录实际 commit。每个 Agent 可配置独立 home；当前 Claude harness 通过 `--add-dir` 自动加载其中的 `CLAUDE.md`，其他 harness 使用自己的规则入口。持久化规则不能借此扩大工具或消息权限。memgov 长期记忆保持按需查询，不在每轮自动预取。harness 的认证、模型和会话参数由各自适配器管理，不进入任务或记忆真相源。
+普通 `memgov init` 不创建 preset；显式执行 `memgov agent preset enable <harness> --name <name>` 后才建立规则目录和初始提交。每次执行前检查 preset 启用、Git 工作树干净，并记录实际 commit。Persistent knowledge is independent of preset and session directories. The runtime derives the verified Owner or group workspace and supplies the latest bounded index every turn; detailed files use scoped read/search/write/history tools. Legacy `agents.home` notes are archived and no longer loaded. Harness authentication, model and transient session files remain separate from knowledge authority. Allowed executor skills are staged into the isolated runtime directory. Native automatic memory and ambient `CLAUDE.md` loading are disabled; committed preset rules are still loaded explicitly.
 
-群 Agent 默认关闭 Bash，只提供已授权的同群上下文、共享记忆和产物目录。独立群 Agent 可以显式开启 Bash，但不能同时声明受控目录快照。Owner 声明目录时采用只读输入与独立副本，代码副本保留 Git 历史；受控目录模式不运行任意 Shell。权限和目录细节见[能力映射](agent-runtime-design-detail.md#会话-bash-与能力映射)。
+群 Agent 默认关闭 Bash，只提供已授权的同群上下文、本群 Workspace 工具和产物目录。独立群 Agent 可以显式开启 Bash，但不能同时声明受控目录快照。Owner 声明目录时采用只读输入与独立副本，代码副本保留 Git 历史；受控目录模式不运行任意 Shell。权限和目录细节见[能力映射](agent-runtime-design-detail.md#会话-bash-与能力映射)。
 
 ## 统一系统提示与安全规则
 
@@ -49,20 +49,20 @@ Agent 规则、会话、任务和日志分开保存：
 
 ## Cyber 并发与可靠性（2026-09-18）
 
-目标是采集不停、不同会话并发分析、独立任务并行处理；一个慢请求不能拖住全部后台工作。采用服务内共享的分析 8 / 执行 4 配置，消息首条等待最多 30 秒或达到 20 条即就绪；分析、任务、记忆审查分别限时 120 / 900 / 120 秒。旧执行并发保持原值，Cyber 通过配置显式启用 8 / 4。
+目标是采集不停、不同会话并发分析、独立任务并行处理；一个慢请求不能拖住全部后台工作。采用服务内共享的分析 8 / 执行 4 配置，消息首条等待最多 30 秒或达到 20 条即就绪；分析和任务分别限时 120 / 900 秒。旧执行并发保持原值，Cyber 通过配置显式启用 8 / 4。
 
-MVP 后续实现以业务吞吐优先：保留 8 / 4 有界工作池和任务版本条件提交，但不再要求普通 worker 续租、阶段、活动时间和每次内部调用都写入 SQLite。调度活动留在内存，诊断进入有界日志；数据库只保存消息、任务当前状态与结果、关键确认/未知外部动作和正式记忆。重启后的运行中任务允许转为 interrupted，再按副作用状态核验或继续。该决定取代“通过增加更多 SQLite 租约、围栏和审计来解决拥堵”的方向，详细边界以[最佳落地场景详细稿](../architecture/best-practice-scenarios-detail.md#mvp-sqlite-与审计简化边界)为准。
+MVP 后续实现以业务吞吐优先：保留 8 / 4 有界工作池和任务版本条件提交，但不再要求普通 worker 续租、阶段、活动时间和每次内部调用都写入 SQLite。调度活动留在内存，诊断进入有界日志；数据库只保存消息、任务当前状态与结果、关键确认/未知外部动作，知识正文保存在 Workspace 文件。重启后的运行中任务允许转为 interrupted，再按副作用状态核验或继续。该决定取代“通过增加更多 SQLite 租约、围栏和审计来解决拥堵”的方向，详细边界以[最佳落地场景详细稿](../architecture/architecture-detail.md#transactions-migration-and-recovery)为准。
 
-三期源码已实现：双池、原子领取、同会话顺序、版本与租约校验、退避和超时回收；采集有界并发、短事务和来源时间核验；具体破坏性操作确认与独立记忆审查。Owner 私聊与群 @ 保持独立通道。管理台分别展示槽位、排队、分析缺口、任务阶段、模型输出活动和记忆结果，心跳不代表有进展。协议、测试及验收边界见[详细稿](agent-runtime-design-detail.md#cyber-并发与可靠性2026-09-18)。
+三期源码已实现：双池、原子领取、同会话顺序、版本与租约校验、退避和超时回收；采集有界并发、短事务和来源时间核验；具体破坏性操作确认；旧独立记忆审查已由 Workspace 写入替代。Owner 私聊与群 @ 保持独立通道。管理台分别展示槽位、排队、分析缺口、任务阶段与模型输出活动，心跳不代表有进展。协议、测试及验收边界见[详细稿](agent-runtime-design-detail.md#cyber-并发与可靠性2026-09-18)。
 
 Owner 私聊任务在执行期间绑定持久化任务状态。取消或版本失效会停止当前 Agent 调用及其子进程；已经完成或进入待确认的任务仍会继续交付结果和状态回执。取消后的迟到结果不会覆盖 SQLite 中的当前状态。
 
-删除重要数据、停服、不可逆变更、扩权或关闭安全控制，必须先给出具体目标、影响与恢复方式，经已核验 Owner 对当前提案确认再继续；等待期间释放执行位，不自动群发通知。普通调查和委托内操作自主进行。业务完成与记忆沉淀分别保存，审查失败不抹掉业务成果，也不自动重放历史失败任务。
+删除重要数据、停服、不可逆变更、扩权或关闭安全控制，必须先给出具体目标、影响与恢复方式，经已核验 Owner 对当前提案确认再继续；等待期间释放执行位，不自动群发通知。普通调查和委托内操作自主进行。Workspace 写入失败与业务结果分别报告，不通过失败重放已执行的外部动作。
 
 安装必须使用一致性数据库备份和明确构建版本；Schema 升级后不能让旧二进制继续读写。代码验证、安装状态与至少 24 小时真实业务观察分别记录，不能用离线测试代替业务验收。
 
 ## 记录与验收
 
-SQLite 是任务恢复、执行审计和记忆的唯一真相源。观察证据、临时进度和长期记忆分开；可复用结论仍须经过 Source → Candidate → Review → Apply。preset 仓库不保存聊天、凭据、数据库或产物。
+SQLite 是任务恢复、执行审计和内部 Source 证据的真相源；Workspace 文件是知识的真相源。观察证据、临时进度和长期知识分别维护。preset 仓库不保存聊天、凭据、数据库或产物。
 
-本轮关注后台自主处理且完成静默、机器人 Owner 身份验证、多机器人/群人设与权限隔离、旧待发通知失效。源码与离线结果不代表已安装或真实平台已验收；后续按[验收矩阵](../architecture/best-practice-scenarios-detail.md#后台观察与机器人交互验收)记录实际业务证据。
+本轮关注后台自主处理且完成静默、机器人 Owner 身份验证、多机器人/群人设与权限隔离、旧待发通知失效。源码与离线结果不代表已安装或真实平台已验收；后续按[验收矩阵](../architecture/best-practice-scenarios-detail.md#personal-jarvis-固定验收案例)记录实际业务证据。

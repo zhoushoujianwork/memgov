@@ -1,6 +1,6 @@
 # 文档导航与维护标准
 
-先看[产品定位](architecture/positioning.md)与[最佳落地场景](architecture/best-practice-scenarios.md)，了解 Personal Jarvis、平台适配器、记忆底座和群挂载 Jarvis 的边界；再看[实现状态](implementation-status.md)与[实施路线](roadmap.md)，区分已有能力、待办和验收缺口。上手使用见[项目 README](../README.md)。仓库内构建、测试和脚本示例默认从仓库根目录执行。
+先看[产品定位](architecture/positioning.md)与[最佳落地场景](architecture/best-practice-scenarios.md)，了解 Personal Jarvis、平台适配器、Workspace 知识与证据和群挂载 Jarvis 的边界；再看[实现状态](implementation-status.md)与[实施路线](roadmap.md)，区分已有能力、待办和验收缺口。上手使用见[项目 README](../README.md)。仓库内构建、测试和脚本示例默认从仓库根目录执行。
 
 ## 分类导航
 
@@ -18,16 +18,16 @@
 | 主题 | 主文档 | 详细稿 |
 | --- | --- | --- |
 | Personal Jarvis 托管服务 | [主设计](design/owner-assistant-design.md) | [任务、权限与通知](design/owner-assistant-design-detail.md) |
-| `memgov-memory` 跨 Agent 接入 | [主设计](design/memgov-memory-skill-design.md) | [协议、错误与验收](design/memgov-memory-skill-design-detail.md) |
+| Agent Workspace knowledge | [Main design](design/agent-workspace-design.md) | [Storage, migration and tools](design/agent-workspace-design-detail.md) |
 | DWS 后台观察、Owner 私聊与群机器人 | [接入设计](design/dingtalk-integration-design.md) | [协议与迁移](design/dingtalk-integration-design-detail.md) |
 | Agent preset、执行、权限与统一 sysprompt | [运行时设计](design/agent-runtime-design.md) | [执行约束](design/agent-runtime-design-detail.md) · [安全规则维护](design/agent-runtime-design-detail.md#统一系统提示与安全验证) |
 | 私聊采集与七天原文保留 | [保留设计](design/direct-message-retention-design.md) | [数据与清理](design/direct-message-retention-design-detail.md) |
-| 本人私聊记忆盘点与工具诊断 | [需求](design/owner-private-chat-requirements.md) | [需求依据](design/owner-private-chat-requirements-detail.md) |
-| 记忆列表、计数与排序 | [列表设计](design/memory-list-design.md) | [接口草案](design/memory-list-design-detail.md) |
-| 语音热词与 Agent 技能 | [配置设计](design/hotword-agent-skills-design.md) | [实现与验证](design/hotword-agent-skills-design-detail.md) |
-| 群共享记忆 | [共享范围](design/group-memory-sharing.md) | [受众与查询](design/group-memory-sharing-detail.md) |
+| Historical / superseded: 本人私聊记忆盘点与工具诊断 | [需求](design/owner-private-chat-requirements.md) | [需求依据](design/owner-private-chat-requirements-detail.md) |
+| Historical / superseded: 记忆列表、计数与排序 | [列表设计](design/memory-list-design.md) | [接口草案](design/memory-list-design-detail.md) |
+| Historical / superseded: 语音热词与 Agent 技能 | [配置设计](design/hotword-agent-skills-design.md) | [实现与验证](design/hotword-agent-skills-design-detail.md) |
+| Historical / superseded: 群共享记忆 | [共享范围](design/group-memory-sharing.md) | [受众与查询](design/group-memory-sharing-detail.md) |
 | 统一本地服务 | [服务使用与边界](design/unified-service-design.md) | [监督、重启与系统托管](design/unified-service-design-detail.md) |
-| 本地管理台、记忆浏览与 Desktop 演进 | [管理台设计](design/local-console-design.md) | [接口与验证](design/local-console-design-detail.md) |
+| 本地管理台、Workspace 浏览与 Desktop 演进 | [管理台设计](design/local-console-design.md) | [接口与验证](design/local-console-design-detail.md) |
 | 中断任务继续 | [继续任务](design/task-continuation.md) | [恢复与验证](design/task-continuation-detail.md) |
 | 实时执行过程 | [任务终端](design/task-terminal.md) | [输出与验证](design/task-terminal-detail.md) |
 
@@ -37,7 +37,7 @@
 
 **主文档便于决策。** 用简短文字说明目标、用户怎么用、核心方案、本期范围和实施顺序。字段、接口、状态机、代码组织、异常与测试矩阵放同目录同名 `-detail.md`，双方互链。范围以主文档为准，设计阶段只确定体验、范围和重要取舍；实现细节按开发需要补充。
 
-**保持架构方向。** 设计和验收对齐最佳落地场景；SQLite `state.db` 是唯一真相源，Source、Candidate、Review、Memory 是现行模型。来源证据、临时任务和长期记忆分别治理；明确所有者与群 Agent 的身份、上下文、执行及披露范围。资料正文不能授权操作。新增组件说明职责及必要性，不以工具或 Agent 数量作为效果指标。
+**保持架构方向。** 设计和验收对齐最佳落地场景；Agent Workspace files are authoritative for knowledge; SQLite `state.db` is authoritative for operational state and internal Source evidence. Candidate/Review/Memory and the old card/publishing model are historical. 来源证据、临时任务和长期记忆分别治理；明确所有者与群 Agent 的身份、上下文、执行及披露范围。资料正文不能授权操作。新增组件说明职责及必要性，不以工具或 Agent 数量作为效果指标。
 
 **现状、计划和证据分开。** 文档开头标明性质与核对日期或来源。专项主设计决定目标范围；源码与契约说明现行行为；有版本和环境的验收记录证明验证结果。发生冲突时修正文档或记录未解决差异，不将设计当作源码、源码当作安装、安装当作运行。
 

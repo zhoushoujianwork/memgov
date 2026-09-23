@@ -42,7 +42,6 @@ type RouteInput struct {
 	Mode             string   `json:"mode,omitempty" yaml:"mode,omitempty"`
 	Triggers         []string `json:"triggers,omitempty" yaml:"triggers,omitempty"`
 	AudiencePolicy   string   `json:"audience_policy,omitempty" yaml:"audience_policy,omitempty"`
-	MemoryPolicy     string   `json:"memory_policy,omitempty" yaml:"memory_policy,omitempty"`
 	SendPolicy       string   `json:"send_policy,omitempty" yaml:"send_policy,omitempty"`
 	Retention        string   `json:"retention,omitempty" yaml:"retention,omitempty"`
 }
@@ -86,7 +85,7 @@ type Route struct {
 	Triggers         []string `json:"triggers"`
 	AudiencePolicy   string   `json:"audience_policy"`
 	AudienceKey      string   `json:"audience_key"`
-	MemoryPolicy     string   `json:"memory_policy"`
+	MemoryPolicy     string   `json:"-" yaml:"-"`
 	SendPolicy       string   `json:"send_policy"`
 	ApprovalDisplay  string   `json:"approval_display"`
 	Retention        string   `json:"retention,omitempty"`
@@ -316,7 +315,7 @@ func (tx *Tx) AddRoute(ctx context.Context, channelID string, in RouteInput) (Ro
 		return Route{}, Fail("invalid_input", "route conversation_id is required and must be a stable platform ID")
 	}
 	r := Route{ID: NewID(), ChannelID: c.ID, ConversationID: in.ConversationID, ConversationType: in.ConversationType,
-		Mode: in.Mode, Triggers: in.Triggers, AudiencePolicy: in.AudiencePolicy, MemoryPolicy: in.MemoryPolicy,
+		Mode: in.Mode, Triggers: in.Triggers, AudiencePolicy: in.AudiencePolicy,
 		SendPolicy: in.SendPolicy, ApprovalDisplay: "display_only", Retention: in.Retention, Version: 1,
 		Status: "active", CreatedAt: Now(), UpdatedAt: Now()}
 	if r.ConversationType == "" {
@@ -350,12 +349,6 @@ func (tx *Tx) AddRoute(ctx context.Context, channelID string, in RouteInput) (Ro
 		return r, Fail("invalid_input", "audience_policy must be local_private or conversation")
 	}
 	r.AudienceKey = audienceKey(r.AudiencePolicy, c.ID, r.ConversationID)
-	if r.MemoryPolicy == "" {
-		r.MemoryPolicy = "explicit_only"
-	}
-	if !contains([]string{"explicit_only", "curated"}, r.MemoryPolicy) {
-		return r, Fail("invalid_input", "memory_policy must be explicit_only or curated")
-	}
 	// A new route never sends. Enabling delivery is a separate explicit change.
 	if r.SendPolicy == "" {
 		r.SendPolicy = "draft_only"
@@ -415,9 +408,6 @@ func (tx *Tx) UpdateRoute(ctx context.Context, id string, expected int, in Route
 	if in.AudiencePolicy != "" {
 		next.AudiencePolicy = in.AudiencePolicy
 	}
-	if in.MemoryPolicy != "" {
-		next.MemoryPolicy = in.MemoryPolicy
-	}
 	if in.SendPolicy != "" {
 		next.SendPolicy = in.SendPolicy
 	}
@@ -431,7 +421,7 @@ func (tx *Tx) UpdateRoute(ctx context.Context, id string, expected int, in Route
 		return nil, Fail("invalid_input", "a route cannot be repointed to another conversation; add a new route")
 	}
 	for _, check := range [][2]string{{next.Mode, "collect assistant notify ignore"}, {next.AudiencePolicy, "local_private conversation"},
-		{next.MemoryPolicy, "explicit_only curated"}, {next.SendPolicy, "draft_only dispatch_only reply_to_trigger"}} {
+		{next.SendPolicy, "draft_only dispatch_only reply_to_trigger"}} {
 		if !contains(strings.Fields(check[1]), check[0]) {
 			return nil, Fail("invalid_input", "invalid route value %q", check[0])
 		}
@@ -603,7 +593,7 @@ func ChannelPlan(ctx context.Context, q Queryer, value string) (any, error) {
 	for _, r := range c.Routes {
 		items = append(items, map[string]any{"conversation_id": r.ConversationID, "conversation_type": r.ConversationType,
 			"workspace_id": r.WorkspaceID, "mode": r.Mode, "triggers": r.Triggers, "audience_policy": r.AudiencePolicy,
-			"audience_key": r.AudienceKey, "memory_policy": r.MemoryPolicy, "send_policy": r.SendPolicy,
+			"audience_key": r.AudienceKey, "send_policy": r.SendPolicy,
 			"approval_display": r.ApprovalDisplay, "route_version": r.Version})
 	}
 	plan["would_subscribe"] = items

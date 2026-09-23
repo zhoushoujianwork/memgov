@@ -172,7 +172,7 @@ func TestSchemaUpgradeIsVersionedAndAtomic(t *testing.T) {
 func TestDoctorFindsFTSDriftAndRebuildRepairsIt(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
-	createMemory(t, s, fixtureMemory(t, s, "global"))
+	fixtureSource(t, s)
 	s.DB.Exec("DELETE FROM search_fts")
 	report, err := s.Doctor(ctx)
 	if err != nil || report["healthy"] != false {
@@ -187,24 +187,22 @@ func TestDoctorFindsFTSDriftAndRebuildRepairsIt(t *testing.T) {
 		t.Fatal(report, err)
 	}
 }
-func TestAuditFailureRollsBackMemoryAndIndex(t *testing.T) {
+func TestAuditFailureRollsBackSourceAndIndex(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
-	m := fixtureMemory(t, s, "global")
 	_, err := s.DB.Exec("CREATE TRIGGER reject_audit BEFORE INSERT ON operations BEGIN SELECT RAISE(ABORT,'injected audit failure'); END;")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = s.Mutate(ctx, Request{Scope: "global"}, func(tx *Tx) (any, error) {
-		saved, op, e := tx.SaveMemories(ctx, "test", "injected failure", []Memory{m}, nil)
-		return map[string]any{"saved": saved, "op": op}, e
+		return tx.Ingest(ctx, SourceInput{URI: "test://audit", Content: "must roll back"})
 	})
 	if err == nil {
 		t.Fatal("audit failure swallowed")
 	}
 	var n int
-	s.DB.QueryRow("SELECT count(*) FROM memories").Scan(&n)
+	s.DB.QueryRow("SELECT count(*) FROM sources").Scan(&n)
 	if n != 0 {
-		t.Fatal("memory committed without audit")
+		t.Fatal("source committed without audit")
 	}
 }

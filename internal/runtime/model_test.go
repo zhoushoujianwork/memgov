@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/zhoushoujianwork/memgov/internal/agent"
+	"github.com/zhoushoujianwork/memgov/internal/agentworkspace"
 	"github.com/zhoushoujianwork/memgov/internal/core"
 )
 
@@ -119,33 +120,6 @@ func TestProfileModelUsesAliasDefaultWithoutModelArgument(t *testing.T) {
 	}
 }
 
-func TestGroupAgentLoadsOnlyItsPersistentClaudeHome(t *testing.T) {
-	home := t.TempDir()
-	preset, err := agent.Enable(context.Background(), home, "claude", "claude-default")
-	if err != nil {
-		t.Fatal(err)
-	}
-	agentHome := filepath.Join(t.TempDir(), "group-agent")
-	otherHome := filepath.Join(t.TempDir(), "private-agent")
-	var args []string
-	c := &Claude{Run: func(_ context.Context, _ string, _ []byte, argv ...string) ([]byte, error) {
-		args = append([]string{}, argv...)
-		return claudeResult(t, map[string]any{"result": "ok", "summary": "", "artifacts": []string{}, "tool_kinds": []string{}, "pending_actions": []any{}}), nil
-	}}
-	_, err = c.Execute(context.Background(), ExecutionInput{WorkDir: t.TempDir(), AgentHome: agentHome, Preset: preset,
-		ApplicationMode: "group_mention", Capabilities: []string{"local_write"}, PolicyResolved: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	joined := strings.Join(args, " ")
-	if !strings.Contains(joined, "--add-dir "+agentHome) {
-		t.Fatalf("group Agent did not load its home: %q", joined)
-	}
-	if strings.Contains(joined, otherHome) || !strings.Contains(joined, "Edit("+filepath.Join(agentHome, "CLAUDE.md")+")") {
-		t.Fatalf("group Agent home boundary was not preserved: %q", joined)
-	}
-}
-
 func TestGroupAgentExecutionDoesNotInheritOwnerTools(t *testing.T) {
 	home := t.TempDir()
 	preset, err := agent.Enable(context.Background(), home, "claude", "claude-default")
@@ -160,7 +134,7 @@ func TestGroupAgentExecutionDoesNotInheritOwnerTools(t *testing.T) {
 	}}
 	channelPrompt := "The same-group conversation is primary; private chats are outside this route."
 	_, err = c.Execute(context.Background(), ExecutionInput{Task: core.RuntimeTask{ID: "task"}, WorkDir: t.TempDir(), Preset: preset,
-		ApplicationMode: "group_mention", Capabilities: []string{"conversation_history_read", "memory_read"}, ChannelSystemPrompt: channelPrompt})
+		ApplicationMode: "group_mention", Capabilities: []string{"conversation_history_read"}, ChannelSystemPrompt: channelPrompt})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +143,7 @@ func TestGroupAgentExecutionDoesNotInheritOwnerTools(t *testing.T) {
 			t.Fatalf("group Agent inherited tools: %q", args)
 		}
 	}
-	if !strings.Contains(input, `"capabilities":["conversation_history_read","memory_read"]`) {
+	if !strings.Contains(input, `"capabilities":["conversation_history_read"]`) {
 		t.Fatalf("fixed capabilities were not supplied: %s", input)
 	}
 	values := map[string]string{}
@@ -254,17 +228,17 @@ func TestConfirmedActionHasSeparateOneActionPrompt(t *testing.T) {
 		input, args = string(raw), append([]string{}, argv...)
 		return claudeResult(t, map[string]any{"result": "done", "summary": "sent", "artifacts": []string{}, "tool_kinds": []string{"dws"}}), nil
 	}}
-	result, err := c.ExecuteConfirmedAction(context.Background(), ActionExecutionInput{Task: core.RuntimeTask{ID: "task", Version: 2}, Action: core.RuntimePendingAction{ID: "action", TaskVersion: 2, Kind: "send_message", Target: "user", Payload: "hello"}, MemoryContext: "kubeconfig /Users/mikas/.kube/tencent-bj-prod.conf; context cls-94le9mxr-100019171796-context-default", WorkDir: p.Path, Preset: p})
+	result, err := c.ExecuteConfirmedAction(context.Background(), ActionExecutionInput{Task: core.RuntimeTask{ID: "task", Version: 2}, Action: core.RuntimePendingAction{ID: "action", TaskVersion: 2, Kind: "send_message", Target: "user", Payload: "hello"}, WorkspaceBootstrap: agentworkspace.Document{Content: "deployment reference"}, WorkDir: p.Path, Preset: p})
 	if err != nil || result.Result != "done" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	if !strings.Contains(input, `"confirmed_action"`) || !strings.Contains(input, "tencent-bj-prod.conf") || !strings.Contains(strings.Join(args, " "), "--allowedTools Read,Glob,Grep,Bash") || !strings.Contains(strings.Join(args, " "), "explicit kubeconfig") || !strings.Contains(strings.Join(args, " "), "bounded task workspace inputs") {
+	if !strings.Contains(input, `"confirmed_action"`) || !strings.Contains(input, "deployment reference") || !strings.Contains(strings.Join(args, " "), "--allowedTools Read,Glob,Grep,Bash") {
 		t.Fatalf("confirmed action contract missing: input=%s args=%q", input, args)
 	}
 }
 
 func TestExecutionSchemasAllowOmittedEmptyCollections(t *testing.T) {
-	for name, schema := range map[string]string{"execution": executionSchema, "memory": memoryExecutionSchema, "action": actionExecutionSchema} {
+	for name, schema := range map[string]string{"execution": executionSchema, "action": actionExecutionSchema} {
 		var value struct {
 			Required []string `json:"required"`
 		}

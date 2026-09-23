@@ -104,7 +104,7 @@ func planDualChannels(ctx context.Context, p *DualConfigPlan, s dualPlanState, o
 							if route.WorkspaceID != r.WorkspaceID || route.ConversationType != r.ConversationType {
 								issue(true, "channel_route_identity", "channel", in.Name, "Existing route workspace and conversation type cannot change.")
 							}
-							if route.AudiencePolicy != r.AudiencePolicy || route.SendPolicy != r.SendPolicy || route.MemoryPolicy != r.MemoryPolicy || route.Mode != r.Mode || core.Digest(route.Triggers) != core.Digest(r.Triggers) {
+							if route.AudiencePolicy != r.AudiencePolicy || route.SendPolicy != r.SendPolicy || route.Mode != r.Mode || core.Digest(route.Triggers) != core.Digest(r.Triggers) {
 								change.BoundaryChange = true
 							}
 							projected.Routes[i] = route
@@ -157,9 +157,6 @@ func previewChannelRoute(in core.RouteInput, c core.Channel, s dualPlanState, wo
 	if in.AudiencePolicy == "" {
 		in.AudiencePolicy = "local_private"
 	}
-	if in.MemoryPolicy == "" {
-		in.MemoryPolicy = "explicit_only"
-	}
 	if in.SendPolicy == "" {
 		in.SendPolicy = "draft_only"
 	}
@@ -171,7 +168,7 @@ func previewChannelRoute(in core.RouteInput, c core.Channel, s dualPlanState, wo
 		}
 		return false
 	}
-	if !allowed(in.ConversationType, "group", "direct") || !allowed(in.Mode, "collect", "assistant", "notify", "ignore") || !allowed(in.AudiencePolicy, "local_private", "conversation") || !allowed(in.MemoryPolicy, "explicit_only", "curated") || !allowed(in.SendPolicy, "draft_only", "dispatch_only", "reply_to_trigger") {
+	if !allowed(in.ConversationType, "group", "direct") || !allowed(in.Mode, "collect", "assistant", "notify", "ignore") || !allowed(in.AudiencePolicy, "local_private", "conversation") || !allowed(in.SendPolicy, "draft_only", "dispatch_only", "reply_to_trigger") {
 		return core.Route{}, false
 	}
 	for _, trigger := range in.Triggers {
@@ -198,7 +195,7 @@ func previewChannelRoute(in core.RouteInput, c core.Channel, s dualPlanState, wo
 	}
 	triggers := append([]string{}, in.Triggers...)
 	sort.Strings(triggers)
-	return core.Route{ID: "planned-route:" + c.Name, ChannelID: c.ID, ConversationID: in.ConversationID, ConversationType: in.ConversationType, WorkspaceID: w.ID, Mode: in.Mode, Triggers: triggers, AudiencePolicy: in.AudiencePolicy, MemoryPolicy: in.MemoryPolicy, SendPolicy: in.SendPolicy, Status: "active"}, true
+	return core.Route{ID: "planned-route:" + c.Name, ChannelID: c.ID, ConversationID: in.ConversationID, ConversationType: in.ConversationType, WorkspaceID: w.ID, Mode: in.Mode, Triggers: triggers, AudiencePolicy: in.AudiencePolicy, SendPolicy: in.SendPolicy, Status: "active"}, true
 }
 
 func applyDualChannels(ctx context.Context, tx *core.Tx, plan DualConfigPlan) error {
@@ -265,14 +262,5 @@ func applyDualChannels(ctx context.Context, tx *core.Tx, plan DualConfigPlan) er
 // Capability probes change verification status, not the user's applied channel
 // policy. Keep them in plan preconditions but outside managed-policy drift.
 func dualChannelManagedSnapshot(c core.Channel, in core.ChannelInput) string {
-	var ownedRoute any
-	if in.Route != nil {
-		for _, r := range c.Routes {
-			if r.ConversationID == in.Route.ConversationID {
-				ownedRoute = map[string]any{"id": r.ID, "version": r.Version, "workspace": r.WorkspaceID, "mode": r.Mode, "triggers": r.Triggers, "audience": r.AudiencePolicy, "memory": r.MemoryPolicy, "send": r.SendPolicy, "status": r.Status}
-				break
-			}
-		}
-	}
-	return core.Digest(map[string]any{"identity": c.Identity, "kind": c.Kind, "tenant": c.Tenant, "credential_ref_digest": core.Digest(c.CredentialRef), "declared_route": ownedRoute})
+	return core.ChannelManagedSnapshot(c, in)
 }

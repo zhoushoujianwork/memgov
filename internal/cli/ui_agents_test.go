@@ -18,11 +18,9 @@ logging:
   retention: 720h
 agents:
   helper:
-    memory_scope: owner_authorized
     skills:
       inherit: none
   free:
-    memory_scope: owner_authorized
     skills:
       inherit: none
 applications:
@@ -33,8 +31,8 @@ applications:
 `
 
 func TestUIAgentPendingComparisonIgnoresSetOrder(t *testing.T) {
-	a := AgentDeclaration{Capabilities: []string{"memory_read", "local_read"}, Directories: []string{"/b", "/a"}, Skills: core.RuntimeSkillPolicy{Paths: []string{"/skill-b", "/skill-a"}}}
-	b := AgentDeclaration{Capabilities: []string{"local_read", "memory_read"}, Directories: []string{"/a", "/b"}, Skills: core.RuntimeSkillPolicy{Paths: []string{"/skill-a", "/skill-b"}, Resolved: []core.RuntimeSkill{{Name: "ignored-disk-digest"}}}}
+	a := AgentDeclaration{Capabilities: []string{"local_read"}, Directories: []string{"/b", "/a"}, Skills: core.RuntimeSkillPolicy{Paths: []string{"/skill-b", "/skill-a"}}}
+	b := AgentDeclaration{Capabilities: []string{"local_read"}, Directories: []string{"/a", "/b"}, Skills: core.RuntimeSkillPolicy{Paths: []string{"/skill-a", "/skill-b"}, Resolved: []core.RuntimeSkill{{Name: "ignored-disk-digest"}}}}
 	if agentDigest(a) != agentDigest(b) {
 		t.Fatal("equivalent Agent declarations marked pending")
 	}

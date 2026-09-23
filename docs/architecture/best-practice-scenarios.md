@@ -4,7 +4,7 @@
 
 ## 核心目标
 
-让用户可以把日常工作交给一个持续在线、运行在自己环境中的个人 Jarvis：消息从任意已接入平台进入后，它能找到背景、判断是否需要拆分 Agent、在委托范围内执行和验证，并把结果、阻塞或需要确认的事项交回原入口。经过复核的经验沉淀为 memgov Memory，供下一次工作和其他获准 Agent 使用。
+让用户可以把日常工作交给一个持续在线、运行在自己环境中的个人 Jarvis：消息从任意已接入平台进入后，它能找到背景、判断是否需要拆分 Agent、在委托范围内执行和验证，并把结果、阻塞或需要确认的事项交回原入口。Validated reusable experience is maintained in scoped Agent Workspace files with dates and source references.
 
 ```text
 任意平台消息 / 本地主动发现
@@ -12,7 +12,7 @@
     → Personal Jarvis 直接处理或派发 Agent
     → 工具执行与验证
     → Owner 结果/阻塞/确认
-    → Source → Candidate → Review → Memory
+    → Workspace note → read-back verification → later reuse
 ```
 
 价值以减少遗漏、重复补背景和重复处理衡量，不以接入工具或启动 Agent 数量衡量。
@@ -30,7 +30,7 @@
 ## 六项统一标准
 
 1. **事项连续。** 能解释请求、补充、决定、执行和结果的关系；无法确认时保留待核实原因，不凭文字相似强行合并。
-2. **记忆可信。** 原始消息用于回查，临时进展留在任务；可复用结论经过 Source → Candidate → Review → Apply，保留版本、证据和适用条件。
+2. **记忆可信。** 原始消息用于回查，临时进展留在任务；可复用结论直接维护到 Workspace 文件，保留观察日期、来源、适用条件和修改历史。
 3. **权限随入口。** Personal Jarvis、主动值守和群 Jarvis 各自保存身份、上下文、受众和发送策略。读取资料不等于可以转述或执行；提问、引用和来源正文不能扩大权限。
 4. **主动但有边界。** Owner 委托范围内可自动调查、执行和派发；删除、停服、生产变更、跨受众披露、对外发送、扩权和未知结果重放需要 Owner 确认。结果、阻塞和确认主动通知，无变化保持安静。
 5. **交付可核对。** 区分方案生成、实际执行、外部发送和 Owner 验收；每一步说明证据、验证状态和未完成事项。
@@ -38,12 +38,14 @@
 
 ## Skill 接入标准
 
-其他 Agent 可通过 `memgov-memory` skill 查询和治理同一套 Source、Candidate、Review、Memory。Skill 记录 Agent、workspace、请求、证据、版本和幂等结果，不能直接改 SQLite，也不自动授予 shell、消息、云 API 或生产权限。群 Jarvis 可按自身配置接入 skill，仍遵守当前群的披露规则。
+The runtime-managed `memgov-workspace` skill uses scoped file operations. Runtime tools derive workspace identity from a verified Owner or group route and recheck the task/attempt before access. Shared presets do not share knowledge. Shell, messaging and production authority remain separate. The old Source/Candidate/Review/Apply pipeline is superseded.
 
 ## 实施顺序
+
+Current implementation note: proactive completion is `record_only`; root/child task orchestration and automatic result notifications in the target scenarios are future work. The Workspace refactor implements knowledge persistence and isolation, not those product milestones.
 
 先稳定 Workspace 和平台适配器契约，建立 Personal Jarvis 根任务与子 Agent 关系，再接通统一上下文、环境快照、结果通知和 skill 契约。随后完善本地主动值守、任务恢复和管理台健康，最后以至少两个沟通平台、Agent 委派、记忆写入及群 Jarvis 回归完成验收。
 
 更多来源、跨群协作和新的外部连接器按实际需要另行设计。任何新能力都必须说明作用于哪个入口、增加什么权限、如何撤销以及如何证明群 Jarvis 的既有通道仍可用。
 
-参考： [产品定位](positioning.md) · [总体架构](architecture.md) · [Personal Jarvis 设计](../design/owner-assistant-design.md) · [memgov-memory skill 设计](../design/memgov-memory-skill-design.md)。
+参考： [产品定位](positioning.md) · [总体架构](architecture.md) · [Personal Jarvis 设计](../design/owner-assistant-design.md) · [Agent Workspace design](../design/agent-workspace-design.md)。

@@ -37,7 +37,6 @@ type Service struct {
 	Analyzer         Analyzer
 	Executor         Executor
 	Actioner         ActionExecutor
-	Reviewer         Reviewer
 	// HarnessName binds every selected task preset to the adapter instantiated
 	// at startup. Empty is reserved for hosts injecting their own components.
 	HarnessName string
@@ -110,7 +109,7 @@ func (s *Service) now() time.Time {
 	return time.Now()
 }
 func (s *Service) mutate(ctx context.Context, scope, command string, fn func(*core.Tx) (any, error)) error {
-	if command == "runtime.task.complete" || command == "runtime.batch.complete" || command == "runtime.action.complete" || command == "runtime.memory.review" {
+	if command == "runtime.task.complete" || command == "runtime.batch.complete" || command == "runtime.action.complete" {
 		if err := processtree.CheckQuiescence(ctx); err != nil {
 			return core.Fail("process_cleanup_failed", "%s", err)
 		}
@@ -169,8 +168,8 @@ func (s *Service) Run(ctx context.Context, value string) error {
 	if !runtimeCapabilitiesReady(channelValue, config) {
 		return core.Fail("unavailable", "runtime channel requires verified receive and history for observation, or receive and send for bot interaction")
 	}
-	if s.Analyzer == nil || s.Executor == nil || s.Reviewer == nil || s.Adapter == nil {
-		return core.Fail("unavailable", "runtime analyzer, executor, reviewer and channel adapter are required")
+	if s.Analyzer == nil || s.Executor == nil || s.Adapter == nil {
+		return core.Fail("unavailable", "runtime analyzer, executor and channel adapter are required")
 	}
 	if s.Actioner == nil {
 		if actioner, ok := s.Executor.(ActionExecutor); ok {
@@ -817,11 +816,6 @@ func (s *Service) tick(ctx context.Context, cfg core.RuntimeConfig, preset agent
 			break
 		}
 	}
-	if cfg.ApplicationMode == "proactive" {
-		for n := 0; n < 2; n++ {
-			s.executeReview(ctx, cfg)
-		}
-	}
 }
 
 func (s *Service) executeOneConfirmedAction(ctx context.Context, cfg core.RuntimeConfig, preset agent.Preset) bool {
@@ -913,19 +907,12 @@ func (s *Service) executeClaimedAction(ctx context.Context, cfg core.RuntimeConf
 		s.failAction(ctx, cfg, action, attempt, err, false)
 		return true
 	}
-	taskConfig := cfg
-	taskConfig.AgentCapabilities, taskConfig.MemoryScope = policy.Capabilities, policy.MemoryScope
-	workspace, workspaceErr := core.RuntimeTaskWorkspace(ctx, s.Store.DB, task)
-	if workspaceErr != nil && core.ErrorCode(workspaceErr) != "not_found" {
-		s.failAction(ctx, cfg, action, attempt, workspaceErr, false)
+	_, bootstrap, knowledgeErr := s.agentWorkspace(ctx, cfg, task)
+	if knowledgeErr != nil {
+		s.failAction(ctx, cfg, action, attempt, knowledgeErr, false)
 		return true
 	}
-	memoryContext, memoryErr := s.runtimeMemoryContext(ctx, taskConfig, task, workspace)
-	if memoryErr != nil && core.ErrorCode(memoryErr) != "not_found" {
-		s.failAction(ctx, cfg, action, attempt, memoryErr, false)
-		return true
-	}
-	result, executeErr := s.Actioner.ExecuteConfirmedAction(ctx, ActionExecutionInput{Task: task, Action: action, MemoryContext: memoryContext, WorkDir: workdir, Preset: preset, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile})
+	result, executeErr := s.Actioner.ExecuteConfirmedAction(ctx, ActionExecutionInput{Task: task, Action: action, WorkspaceBootstrap: bootstrap, WorkDir: workdir, Preset: preset, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile})
 	if ctx.Err() != nil {
 		executeErr = workError(ctx, "execution")
 	}
@@ -1015,7 +1002,7 @@ func (s *Service) analyze(ctx context.Context, cfg core.RuntimeConfig, batch cor
 			analysis.Decisions = append(analysis.Decisions, core.RuntimeDecision{
 				Kind: "task", CanonicalKey: "mention:" + message.ID,
 				Title: string(title), MessageIDs: []string{message.ID},
-				Instructions: "Answer the requester's original message using authorized same-group context and on-demand memory queries under the current group sharing policy.",
+				Instructions: "Answer the requester's original message using authorized same-group context and on-demand knowledge queries within this group workspace.",
 			})
 		}
 		usage.Model = "local-mention-routing"
@@ -1207,18 +1194,6 @@ func (s *Service) executeClaimed(ctx context.Context, cfg core.RuntimeConfig, pr
 	// disclose the original project path to those processes: it is not mounted
 	// in their work directory and could become an accidental host path oracle.
 	executionWorkspacePath := workspacePathForExecution(cfg.ApplicationMode, workspace, declaredWorkspace)
-	taskConfig := cfg
-	taskConfig.AgentCapabilities, taskConfig.MemoryScope = policy.Capabilities, policy.MemoryScope
-	memoryContext, err := s.runtimeMemoryContext(ctx, taskConfig, task, workspace)
-	if err != nil && core.ErrorCode(err) != "not_found" {
-		s.failTask(ctx, cfg, task, attempt, err)
-		return
-	}
-	hotwordContext, err := s.runtimeHotwordContext(ctx, taskConfig, task, workspace)
-	if err != nil {
-		s.failTask(ctx, cfg, task, attempt, err)
-		return
-	}
 	var conversationContext []core.RuntimeMessage
 	if hasAgentCapability(policy.Capabilities, "conversation_history_read") {
 		conversationContext, err = core.RuntimeTaskConversationContext(ctx, s.Store.DB, cfg, task, 30)
@@ -1242,7 +1217,7 @@ func (s *Service) executeClaimed(ctx context.Context, cfg core.RuntimeConfig, pr
 		workspaceState, _ = json.Marshal(declaredWorkspace)
 	}
 	var conversationID string
-	if cfg.ApplicationMode == "group_mention" || policy.MemoryScope == "conversation_published" {
+	if cfg.ApplicationMode == "group_mention" {
 		route, routeErr := core.ReadRoute(ctx, s.Store.DB, task.RouteID)
 		if routeErr != nil {
 			s.failTask(ctx, cfg, task, attempt, routeErr)
@@ -1250,10 +1225,14 @@ func (s *Service) executeClaimed(ctx context.Context, cfg core.RuntimeConfig, pr
 		}
 		conversationID = route.ConversationID
 	}
-	execInput := ExecutionInput{Task: task, MemoryContext: memoryContext, MemoryScope: policy.MemoryScope, HotwordContext: hotwordContext, ConversationContext: conversationContext,
+	execInput := ExecutionInput{Task: task, ConversationContext: conversationContext,
 		AttemptID: attempt.ID, NativeSessionID: attempt.ID, RecordSession: s.sessionRecorder(task, attempt), WorkspaceBranch: branch, WorkspaceBase: base, WorkspaceState: workspaceState, DirectoryPolicy: policy.Directories, AgentPolicyDigest: core.Digest(policy),
-		Home: s.Home, AgentHome: effectiveAgentHome(s.Home, policy.Home, policy.Agent), WorkspaceID: workspace.ID, WorkspacePath: executionWorkspacePath, ChannelID: cfg.ChannelID, ConversationID: conversationID,
+		Home: s.Home, WorkspaceID: workspace.ID, WorkspacePath: executionWorkspacePath, ChannelID: cfg.ChannelID, ConversationID: conversationID,
 		WorkDir: workdir, Preset: preset, ApplicationMode: cfg.ApplicationMode, Capabilities: policy.Capabilities, BashEnabled: policy.BashEnabled, ExternalActions: policy.ExternalActions, DirectorySnapshots: snapshots, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile, DirectoryBounded: declaredWorkspace != nil, DirectoryWriteRoots: directoryWriteRoots, ChannelSystemPrompt: channelPrompt, Skills: policy.Skills}
+	if err = s.bindAgentWorkspace(ctx, cfg, &execInput); err != nil {
+		s.failTask(ctx, cfg, task, attempt, err)
+		return
+	}
 	if cfg.ApplicationMode == "proactive" {
 		roots := directoryWriteRoots
 		if len(roots) == 0 && (policy.BashEnabled || hasAgentCapability(policy.Capabilities, "local_write")) {
@@ -1296,16 +1275,6 @@ func (s *Service) executeClaimed(ctx context.Context, cfg core.RuntimeConfig, pr
 			result.Artifacts = append(result.Artifacts, "git:"+commit)
 		}
 	}
-	candidateID := ""
-	if err == nil && task.Kind == "memory" && cfg.ApplicationMode != "proactive" {
-		s.phase(ctx, attempt.ID, "review")
-		reviewCtx, cancel := context.WithTimeout(ctx, time.Duration(cfg.ReviewTimeoutSeconds)*time.Second)
-		candidateID, err = s.processMemory(reviewCtx, task, result)
-		if reviewCtx.Err() != nil {
-			err = workError(reviewCtx, "review")
-		}
-		cancel()
-	}
 	if err != nil {
 		s.failTask(ctx, cfg, task, attempt, err)
 		return
@@ -1313,10 +1282,7 @@ func (s *Service) executeClaimed(ctx context.Context, cfg core.RuntimeConfig, pr
 	var completed core.RuntimeTask
 	err = s.mutate(ctx, "global", "runtime.task.complete", func(tx *core.Tx) (any, error) {
 		var e error
-		completed, e = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, result, candidateID)
-		if e == nil && cfg.ApplicationMode == "proactive" && (task.Kind == "memory" || result.Candidate != nil) {
-			e = tx.QueueRuntimeReview(ctx, completed, attempt.ID, result.Candidate)
-		}
+		completed, e = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, result)
 		return completed, e
 	})
 	if err != nil {
@@ -1343,139 +1309,6 @@ func workspacePathForExecution(applicationMode string, workspace core.Workspace,
 		return ""
 	}
 	return workspace.Path
-}
-
-func (s *Service) runtimeMemoryContext(ctx context.Context, cfg core.RuntimeConfig, task core.RuntimeTask, workspace core.Workspace) (string, error) {
-	// Agents choose when to query memory. Private and group turns must not
-	// preload memgov memory on every message; the explicit memory skill remains
-	// available when the Agent decides it is relevant. Observations are evidence
-	// for a separate task, never a request to preload the owner's private history.
-	if cfg.ApplicationMode == "direct" || cfg.ApplicationMode == "proactive" {
-		return "", nil
-	}
-	if !hasAgentCapability(cfg.AgentCapabilities, "memory_read") {
-		return "", nil
-	}
-	if cfg.ApplicationMode == "group_mention" {
-		query := task.Title
-		if !kubernetesRoutingIntent(query) {
-			return "", nil
-		}
-		contextValue, err := s.audienceMemoryContext(ctx, cfg, task, query)
-		if err != nil {
-			return "", err
-		}
-		if !hasKubernetesRouteEvidence(contextValue) {
-			contextValue, err = s.audienceMemoryContext(ctx, cfg, task, kubernetesRoutingQuery(query))
-			if err != nil {
-				return "", err
-			}
-		}
-		return contextValue, nil
-	}
-	if cfg.MemoryScope != "conversation_published" {
-		query := task.QueryText()
-		recall, err := core.Recall(ctx, s.Store.DB, query, core.SearchOptions{Scope: workspace.ID, Limit: 10}, 12000, false)
-		return recall.Context, err
-	}
-	return s.audienceMemoryContext(ctx, cfg, task, task.QueryText())
-}
-
-func (s *Service) audienceMemoryContext(ctx context.Context, cfg core.RuntimeConfig, task core.RuntimeTask, query string) (string, error) {
-	route, err := core.ReadRoute(ctx, s.Store.DB, task.RouteID)
-	if err != nil {
-		return "", err
-	}
-	audience, err := core.AudienceFor(ctx, s.Store.DB, cfg.ChannelID, route.ConversationID)
-	if err != nil {
-		return "", err
-	}
-	value, err := core.AudienceRecall(ctx, s.Store.DB, audience, query, 12000, false)
-	if err != nil {
-		return "", err
-	}
-	result, ok := value.(map[string]any)
-	if !ok {
-		return "", core.Fail("internal", "audience recall returned an invalid result")
-	}
-	contextValue, _ := result["context"].(string)
-	return contextValue, nil
-}
-
-func kubernetesRoutingIntent(query string) bool {
-	query = strings.ToLower(query)
-	for _, term := range []string{"k8s", "kubernetes", "kubectl", "kubeconfig", "tke", "pod", "namespace", "命名空间", "集群", "cluster", "data-prod"} {
-		if strings.Contains(query, term) {
-			return true
-		}
-	}
-	return false
-}
-
-func kubernetesRoutingQuery(query string) string {
-	return strings.TrimSpace(query + " 北京生产 data-prod changebjprod kubeconfig context")
-}
-
-func hasKubernetesRouteEvidence(contextValue string) bool {
-	value := strings.ToLower(contextValue)
-	return strings.Contains(value, "kubeconfig") && strings.Contains(value, "context")
-}
-
-func (s *Service) runtimeHotwordContext(ctx context.Context, cfg core.RuntimeConfig, task core.RuntimeTask, workspace core.Workspace) (string, error) {
-	// Hotwords are also memgov memory. Do not perform an implicit lookup for
-	// private or group conversations; an Agent may use the explicit memory tool.
-	if cfg.ApplicationMode == "direct" || cfg.ApplicationMode == "group_mention" {
-		return "", nil
-	}
-	if !hasAgentCapability(cfg.AgentCapabilities, "memory_read") {
-		return "", nil
-	}
-	if cfg.MemoryScope != "conversation_published" {
-		return core.HotwordContext(ctx, s.Store.DB, workspace.ID, nil, 4000)
-	}
-	route, err := core.ReadRoute(ctx, s.Store.DB, task.RouteID)
-	if err != nil {
-		return "", err
-	}
-	audience, err := core.AudienceFor(ctx, s.Store.DB, cfg.ChannelID, route.ConversationID)
-	if err != nil {
-		return "", err
-	}
-	return core.HotwordContext(ctx, s.Store.DB, workspace.ID, &audience, 4000)
-}
-
-func (s *Service) processMemory(ctx context.Context, task core.RuntimeTask, result core.RuntimeAttemptResult) (string, error) {
-	if result.Candidate == nil {
-		return "", core.Fail("invalid_input", "memory task did not return a candidate")
-	}
-	var candidate core.Candidate
-	route, err := core.ReadRoute(ctx, s.Store.DB, task.RouteID)
-	if err != nil {
-		return "", err
-	}
-	err = s.mutate(ctx, route.WorkspaceID, "runtime.memory.candidate", func(tx *core.Tx) (any, error) {
-		var e error
-		candidate, e = tx.SubmitCandidate(ctx, *result.Candidate, "", "runtime-executor")
-		return candidate, e
-	})
-	if err != nil {
-		return "", err
-	}
-	review, err := s.Reviewer.Review(ctx, task, *result.Candidate)
-	if err != nil {
-		return candidate.ID, err
-	}
-	err = s.mutate(ctx, route.WorkspaceID, "runtime.memory.review", func(tx *core.Tx) (any, error) {
-		c, e := tx.SubmitCandidateReview(ctx, candidate.ID, "runtime-reviewer:"+task.ID, review.Decision, review.Issues)
-		if e != nil {
-			return c, e
-		}
-		if review.Decision == "accept" {
-			return tx.ApplyCandidate(ctx, candidate.ID, c.Digest)
-		}
-		return c, nil
-	})
-	return candidate.ID, err
 }
 
 func (s *Service) failTask(ctx context.Context, cfg core.RuntimeConfig, task core.RuntimeTask, attempt core.RuntimeAttempt, err error) {

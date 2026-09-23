@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-const source = await readFile(new URL('../web/src/shared/memory-markdown.js', import.meta.url));
+const source = await readFile(new URL('../web/src/shared/markdown.js', import.meta.url));
 const { markdown, safeLink } = await import(`data:text/javascript;base64,${source.toString('base64')}`);
 
 // A minimal DOM sink makes accidental HTML assignment fail immediately. Actual

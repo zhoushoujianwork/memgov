@@ -124,45 +124,12 @@ func data(t *testing.T, value map[string]any) map[string]any {
 	return out
 }
 
-// formalMemory creates an active memory through the normal candidate path, so a
-// disclosure test runs against a real record rather than a hand-written row.
-func formalMemory(t *testing.T, home string) string {
-	t.Helper()
-	source := `{"uri":"note://backup","content":"明确记录：上线前必须先备份数据库。"}`
-	code, ingested := invoke(t, home, source, "source", "ingest", "--input", "-")
-	if code != 0 {
-		t.Fatalf("source ingest: %+v", ingested)
-	}
-	sourceID := data(t, ingested)["id"].(string)
-	code, shown := invoke(t, home, "", "source", "show", sourceID)
-	if code != 0 {
-		t.Fatalf("source show: %+v", shown)
-	}
-	fragment := data(t, shown)["fragments"].([]any)[0].(map[string]any)
-	candidate := core.JSON(map[string]any{"reason": "explicit source", "memory": map[string]any{
-		"category": "fact", "title": "部署前先备份", "summary": "上线前必须先备份数据库。",
-		"content":  "明确记录：上线前必须先备份数据库。",
-		"evidence": []any{map[string]any{"source_id": sourceID, "fragment_id": fragment["id"], "sha256": fragment["sha256"]}}}})
-	code, submitted := invoke(t, home, candidate, "candidate", "submit", "--input", "-")
-	if code != 0 {
-		t.Fatalf("candidate submit: %+v", submitted)
-	}
-	cand := data(t, submitted)
-	code, applied := invoke(t, home, "", "candidate", "apply", cand["id"].(string), "--expected-digest", cand["digest"].(string))
-	if code != 0 {
-		t.Fatalf("candidate apply: %+v", applied)
-	}
-	return data(t, applied)["memory"].(map[string]any)["id"].(string)
-}
-
 func stubEvent(id, body string) core.NormalizedEvent {
 	return core.NormalizedEvent{Kind: core.EventMessage, Adapter: "stub", ParseVersion: "stub/1", Origin: "history",
 		ProviderMessageID: id, ConversationID: "cid:group1", Sender: core.Sender{IDType: "union_id", IDValue: "alice", DisplayName: "Alice"},
 		Body: body, SentAt: "2026-09-14T08:10:00Z", EventAt: "2026-09-14T08:10:00Z"}
 }
 
-// The registration path is offline: adding a channel and a route contacts
-// nothing, and plan/doctor say so explicitly.
 func TestChannelRegistrationStaysOfflineAndDefaultsToDraft(t *testing.T) {
 	home := t.TempDir()
 	invoke(t, home, "", "init")
@@ -318,9 +285,8 @@ func TestChannelRunCommitsBeforeCountingAndReleasesTheLease(t *testing.T) {
 	}
 }
 
-// Offline import works with no adapter reachable, and disclosure stays refused
-// until it is published for that exact audience.
-func TestIngestAndAudienceGateThroughTheCLI(t *testing.T) {
+// Offline import keeps valid evidence and reports malformed events.
+func TestIngestEvidenceThroughTheCLI(t *testing.T) {
 	home := t.TempDir()
 	invoke(t, home, "", "init")
 	add := `{"name":"dws-main","kind":"dws_personal","identity":{"profile":"corp1:user1","expected_corp_id":"corp1","expected_user_id":"user1"},` +
@@ -344,36 +310,11 @@ func TestIngestAndAudienceGateThroughTheCLI(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("inbox: %+v", value)
 	}
-	// The audience gate refuses an unpublished memory and explains why.
-	id := formalMemory(t, home)
-	code, value = invoke(t, home, "", "audience", "check", "dws-main", id, "--conversation", "cid:group1")
-	if code != 0 {
-		t.Fatalf("check: %+v", value)
+	code, messages := invoke(t, home, "", "message", "list", "dws-main", "--conversation", "cid:group1")
+	if code != 0 || len(messages["data"].([]any)) != 1 {
+		t.Fatal(messages)
 	}
-	decision := data(t, value)
-	if decision["allowed"] != false {
-		t.Fatalf("an unpublished memory was disclosable: %+v", decision)
-	}
-	if !strings.Contains(core.JSON(decision["reasons"]), "publish it explicitly") {
-		t.Fatalf("the refusal did not explain itself: %+v", decision["reasons"])
-	}
-	code, value = invoke(t, home, "", "audience", "publish", "dws-main", id, "--conversation", "cid:group1", "--reason", "群内已讨论过该流程")
-	if code != 0 {
-		t.Fatalf("publish: %+v", value)
-	}
-	if published := data(t, value); published["sent"] != false {
-		t.Fatalf("publishing claimed a send: %+v", published)
-	}
-	code, value = invoke(t, home, "", "audience", "check", "dws-main", id, "--conversation", "cid:group1")
-	if code != 0 || data(t, value)["allowed"] != true {
-		t.Fatalf("publication did not permit disclosure: %+v", value)
-	}
-	// Revoking the publication closes the gate again.
-	invoke(t, home, "", "audience", "unpublish", "dws-main", id, "--conversation", "cid:group1", "--reason", "范围收回")
-	code, value = invoke(t, home, "", "audience", "check", "dws-main", id, "--conversation", "cid:group1")
-	if code != 0 || data(t, value)["allowed"] != false {
-		t.Fatalf("disclosure survived unpublish: %+v", value)
-	}
+
 }
 
 // A route policy change needs the exact expected version and a reason, so a

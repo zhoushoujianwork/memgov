@@ -1,5 +1,7 @@
 # 群共享记忆
 
+> **Superseded historical design (2026-09-23).** The database memory pipeline, publication model, hotword ingestion and old AgentHome knowledge loading described here are removed by the [Agent Workspace design](agent-workspace-design.md). Use the [current runtime guide](../guides/runtime-user-guide.md) and [workspace details](agent-workspace-design-detail.md) for current behavior. The remainder records the previous design and its original validation; its commands and delivery claims do not apply to the new version.
+
 状态：实现已完成；本机安装与实测状态以交付说明为准。对应[最佳落地场景](../architecture/best-practice-scenarios.md)中的“群内 @：团队复用专用 Agent”。实现细节见[详细稿](group-memory-sharing-detail.md)。
 
 群 Agent 可以按需查询共享记忆，回答“最新的记忆是什么”、搜索相关经验、读取记忆正文。私聊和群聊使用同一个记忆库，读取范围由配置决定。

@@ -63,7 +63,7 @@ func (s *Service) executeDirectTurn(ctx context.Context, cfg core.RuntimeConfig,
 			if closer, ok := s.Executor.(interface{ CloseDirectSessions() }); ok {
 				closer.CloseDirectSessions()
 			}
-			result.Result = "已开启新会话。接下来的消息不再携带上一段对话；长期记忆保持原有状态，由 Agent 按需使用。"
+			result.Result = "已开启新会话。接下来的消息不再携带上一段对话；工作区知识保持原有状态，由 Agent 按需使用。"
 		case "status":
 			result.Result, err = s.directAgentStatus(ctx, cfg, task)
 			if err != nil {
@@ -124,9 +124,6 @@ func (s *Service) executeDirectTurn(ctx context.Context, cfg core.RuntimeConfig,
 			fail(e)
 			return
 		}
-		// Private turns do not implicitly query memgov memory. The explicit
-		// memory skill remains available to the Agent when it is relevant.
-		hotwords := ""
 		channelPrompt, e := s.runtimeChannelSystemPrompt(ctx, cfg, task)
 		if e != nil {
 			fail(e)
@@ -143,7 +140,11 @@ func (s *Service) executeDirectTurn(ctx context.Context, cfg core.RuntimeConfig,
 			fail(e)
 			return
 		}
-		execInput := ExecutionInput{Task: task, AttemptID: attempt.ID, SessionID: session.ID, NativeSessionID: attempt.ID, RecordSession: s.sessionRecorder(task, attempt), DirectoryPolicy: policy.Directories, AgentPolicyDigest: core.Digest(policy), Home: s.Home, AgentHome: effectiveAgentHome(s.Home, policy.Home, policy.Agent), WorkspaceID: workspace.ID, WorkspacePath: workspace.Path, WorkDir: workdir, Preset: preset, ApplicationMode: "direct", Capabilities: policy.Capabilities, BashEnabled: policy.BashEnabled, ExternalActions: policy.ExternalActions, ConversationContext: history, HotwordContext: hotwords, ChannelSystemPrompt: channelPrompt, Skills: policy.Skills, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile}
+		execInput := ExecutionInput{Task: task, AttemptID: attempt.ID, SessionID: session.ID, NativeSessionID: attempt.ID, RecordSession: s.sessionRecorder(task, attempt), DirectoryPolicy: policy.Directories, AgentPolicyDigest: core.Digest(policy), Home: s.Home, WorkspaceID: workspace.ID, WorkspacePath: workspace.Path, WorkDir: workdir, Preset: preset, ApplicationMode: "direct", Capabilities: policy.Capabilities, BashEnabled: policy.BashEnabled, ExternalActions: policy.ExternalActions, ConversationContext: history, ChannelSystemPrompt: channelPrompt, Skills: policy.Skills, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile}
+		if err = s.bindAgentWorkspace(ctx, cfg, &execInput); err != nil {
+			fail(err)
+			return
+		}
 		// A direct session has a stable logical ID and a separately persisted
 		// native Claude ID. Resume only when the policy and accepted history are
 		// exactly the context used to create the native session; otherwise start
@@ -167,7 +168,7 @@ func (s *Service) executeDirectTurn(ctx context.Context, cfg core.RuntimeConfig,
 	var completed core.RuntimeTask
 	err = s.mutate(ctx, "global", "runtime.direct.complete", func(tx *core.Tx) (any, error) {
 		var e error
-		completed, e = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, result, "")
+		completed, e = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, result)
 		return completed, e
 	})
 	if err != nil {
@@ -215,9 +216,7 @@ func (s *Service) directAgentStatus(ctx context.Context, cfg core.RuntimeConfig,
 	capabilities := append([]string{}, policy.Capabilities...)
 	sort.Strings(capabilities)
 	skills := make([]string, 0, len(policy.Skills.Resolved)+1)
-	if hasAgentCapability(policy.Capabilities, "memory_read") {
-		skills = append(skills, "memgov-memory（运行时管理）")
-	}
+	skills = append(skills, "memgov-workspace（运行时管理）")
 	for _, skill := range policy.Skills.Resolved {
 		skills = append(skills, skill.Name)
 	}
@@ -234,7 +233,7 @@ func (s *Service) directAgentStatus(ctx context.Context, cfg core.RuntimeConfig,
 	if inherit == "" {
 		inherit = "none"
 	}
-	hotwordWrite := hasAgentCapability(policy.Capabilities, "memory_read") && hasAgentCapability(policy.Capabilities, "local_write")
+
 	collection := "私聊增量采集：未关联"
 	if source, bound, sourceErr := core.RuntimeContextDataSource(ctx, s.Store.DB, cfg); sourceErr == nil && bound {
 		collection = s.directCollectionStatus(ctx, source)
@@ -243,7 +242,7 @@ func (s *Service) directAgentStatus(ctx context.Context, cfg core.RuntimeConfig,
 			collection = s.directCollectionStatus(ctx, source)
 		}
 	}
-	return fmt.Sprintf("Agent 状态\n运行：%s\nAgent：%s\nPreset：%s@%s\n执行模型：%s（Claude 配置：%s）\n技能继承：%s\n技能（%d）：%s\n能力：%s\nBash：%t\n外部操作：%s\n记忆范围：%s\n热词纠正写入：%t\n声明目录：%d\n%s\n会话：已就绪\n说明：普通私聊不会自动召回全部记忆；Agent 会按需调用 memgov-memory。", current.Status, agentName, preset.Name, commit, policy.ExecutionModel, policy.ClaudeProfile, inherit, skillCount, skillText, strings.Join(capabilities, "、"), policy.BashEnabled, policy.ExternalActions, policy.MemoryScope, hotwordWrite, len(policy.Directories), collection), nil
+	return fmt.Sprintf("Agent 状态\n运行：%s\nAgent：%s\nPreset：%s@%s\n执行模型：%s（Claude 配置：%s）\n技能继承：%s\n技能（%d）：%s\n能力：%s\nBash：%t\n外部操作：%s\n知识范围：%s\n工作区写入：%t\n声明目录：%d\n%s\n会话：已就绪\n说明：启动只加载简短知识索引，Agent 按需读取与维护自己的工作区。", current.Status, agentName, preset.Name, commit, policy.ExecutionModel, policy.ClaudeProfile, inherit, skillCount, skillText, strings.Join(capabilities, "、"), policy.BashEnabled, policy.ExternalActions, "owner_workspace", true, len(policy.Directories), collection), nil
 }
 
 func formatDirectCollectionStatus(source core.DataSource) string {

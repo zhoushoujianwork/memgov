@@ -319,7 +319,7 @@ func (tx *Tx) SyncDataSourceGroupDetails(ctx context.Context, value string, conv
 			if ignored[cid] || ignored[group.Name] {
 				mode = "ignore"
 			}
-			r, e = tx.AddRoute(ctx, d.ChannelID, RouteInput{ConversationID: cid, ConversationType: "group", Workspace: d.WorkspaceID, Mode: mode, MemoryPolicy: "explicit_only", SendPolicy: "draft_only"})
+			r, e = tx.AddRoute(ctx, d.ChannelID, RouteInput{ConversationID: cid, ConversationType: "group", Workspace: d.WorkspaceID, Mode: mode, SendPolicy: "draft_only"})
 		} else if (ignored[cid] || ignored[group.Name]) && r.Mode != "ignore" {
 			_, e = tx.UpdateRoute(ctx, r.ID, r.Version, RouteInput{Mode: "ignore"}, "source ignore rule")
 			if e == nil {

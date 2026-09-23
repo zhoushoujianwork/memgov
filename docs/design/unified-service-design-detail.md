@@ -28,6 +28,9 @@ CLI 为启用的数据源、已管理应用及机器人通道生成模块。数�
 
 模块日志沿用现有受管理 JSONL；启动及标准输出位于 `<home>/runtime/service/launchd.log`，该启动日志目前不自动轮转。SQLite 统一写入口在排队、取得写事务或事务执行任一阶段达到 250ms 时向该标准日志记录 `command`、`queue_ms`、`begin_ms`、`transaction_ms`、结果和错误码；不记录路径、消息正文或输入载荷。该指标先用于识别具体慢业务，再决定是否将历史导入、保留清理或派生状态更新进一步分批，不能据此延迟平台消息的持久化 ACK。来源绑定 Runtime 每轮仍在 SQLite 只读快照中核验来源、发现凭证和处理范围；范围未变化时不再取得写锁，发生变化时才在写事务内重新核验并更新，避免高频空写阻塞回执和租约续期。状态命令额外返回 manager 的 installed、loaded、label、path 与 log_path。macOS 用户会话托管不提供睡眠唤醒、注销后值守、Linux systemd 或进程无响应的健康探测。
 
+
+Schema 27 Workspace upgrade: stop the old service and run `memgov --config /path/to/config.yaml config migrate-workspaces` first. The service and explicit `init` path both verify a full old database/knowledge archive before destructive migration. Old AgentHome notes are archived and new workspaces start empty; configuration conversion does not apply runtime state. See [Workspace migration](agent-workspace-design-detail.md#destructive-migration).
+
 ### Web 重启
 
 统一服务向管理台注入重启回调；独立 `ui` 不注入。`POST /api/v1/service/restart` 沿用本机访问、同源 JSON 与 `X-Memgov-Console` 校验，先检查安装路径仍可执行，并拒绝重复请求。响应发出后取消监督器，等待模块、数据库连接、监听端口及进程锁释放，再以 `exec` 在原前台进程加载安装路径的程序。沿用启动参数并固定实际端口（包括首次 `--port 0` 选出的端口），不新建后台进程。

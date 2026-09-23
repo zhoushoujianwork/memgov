@@ -22,12 +22,14 @@ import (
 var schema string
 
 type Store struct {
-	DB        *sql.DB
-	Path      string
-	lock      *os.File
-	exclusive bool
-	writeGate *storeWriteGate
-	gateOnce  sync.Once
+	newDatabase    bool
+	upgradeArchive *BackupInfo
+	DB             *sql.DB
+	Path           string
+	lock           *os.File
+	exclusive      bool
+	writeGate      *storeWriteGate
+	gateOnce       sync.Once
 	// writeObserver is an offline-test seam. Production slow-write diagnostics
 	// are emitted through slog without storing message content or database paths.
 	writeObserver func(writeObservation)
@@ -137,6 +139,9 @@ func openStore(ctx context.Context, path string, create, exclusive, allowOlder b
 			return nil, err
 		}
 	}
+	if create && statErr == nil {
+		exclusive = true
+	}
 	lock, err := lockFile(ctx, path, exclusive)
 	if err != nil {
 		return nil, err
@@ -224,6 +229,7 @@ func (s *Store) initialize(ctx context.Context, create, allowOlder bool) error {
 			return err
 		}
 		if n == 0 {
+			s.newDatabase = true
 			if _, err = conn.ExecContext(ctx, schema); err != nil {
 				return fmt.Errorf("initialize schema: %w", err)
 			}
@@ -255,6 +261,7 @@ func (s *Store) initialize(ctx context.Context, create, allowOlder bool) error {
 			return err
 		}
 	}
+	s.newDatabase = false
 	var mode string
 	if err = s.DB.QueryRowContext(ctx, "PRAGMA journal_mode=WAL").Scan(&mode); err != nil {
 		return err
@@ -449,7 +456,7 @@ func (s *Store) Doctor(ctx context.Context) (map[string]any, error) {
 	defer rows.Close()
 	fkOK := !rows.Next()
 	counts := map[string]int{}
-	for _, table := range []string{"workspaces", "sources", "fragments", "memories", "revisions", "candidates", "jobs", "operations", "tombstones"} {
+	for _, table := range []string{"workspaces", "sources", "fragments", "operations", "tombstones"} {
 		var n int
 		if err = s.DB.QueryRowContext(ctx, "SELECT count(*) FROM "+table).Scan(&n); err != nil {
 			return nil, err

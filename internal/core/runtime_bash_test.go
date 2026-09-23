@@ -58,8 +58,8 @@ func TestOwnerPrivatePolicyIndependentFromProactiveAndRejectsWrongIdentity(t *te
 		})
 	}
 	agents := map[string]RuntimeAgentPolicy{
-		"owner":     {Preset: "owner-preset", BashEnabled: true, ExternalActions: "owner_request", MemoryScope: "owner_authorized"},
-		"proactive": {Preset: "proactive-preset", ExternalActions: "owner_confirmation", MemoryScope: "owner_authorized"},
+		"owner":     {Preset: "owner-preset", BashEnabled: true, ExternalActions: "owner_request"},
+		"proactive": {Preset: "proactive-preset", ExternalActions: "owner_confirmation"},
 	}
 	apply(0, "owner", agents)
 	p, err = ResolveRuntimeTaskAgent(ctx, f.s.DB, cfg, task)

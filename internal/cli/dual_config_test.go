@@ -20,14 +20,12 @@ agents:
   owner-assistant:
     preset: owner-preset
     claude_profile: cc
-    memory_scope: owner_authorized
-    capabilities: [memory_read, local_read, local_write, local_test]
+    capabilities: [local_read, local_write, local_test]
     directories: [/does-not-have-to-exist]
   group-helper:
     preset: group-preset
     claude_profile: cc
-    memory_scope: conversation_published
-    capabilities: [conversation_history_read, memory_read, artifact_create]
+    capabilities: [conversation_history_read, artifact_create]
 applications:
   proactive:
     enabled: true
@@ -44,36 +42,17 @@ applications:
         agent: group-helper
 `
 
-func TestGroupSharingConfigAndPermissionChanges(t *testing.T) {
-	for _, tt := range []struct {
-		shared, excluded string
-		valid            bool
-	}{
-		{"[global]", "[preference]", true}, {"[]", "[]", true},
-		{"[private-workspace]", "[preference]", false}, {"[global, global]", "[]", false},
-		{"[global]", "[fact]", false}, {"[]", "[preference, preference]", false},
+func TestLegacyMemoryConfigurationRejected(t *testing.T) {
+	for _, body := range []string{
+		strings.Replace(dualConfigYAML, "preset: owner-preset", "preset: owner-preset\n    memory_scope: owner_authorized", 1),
+		strings.Replace(dualConfigYAML, "preset: owner-preset", "preset: owner-preset\n    home: /tmp/old-home", 1),
+		strings.Replace(dualConfigYAML, "    channel: app-main", "    shared_memory_workspaces: [global]\n    channel: app-main", 1),
+		strings.Replace(dualConfigYAML, "    channel: app-main", "    excluded_memory_categories: [preference]\n    channel: app-main", 1),
+		strings.Replace(dualConfigYAML, "local_read, local_write", "memory_read, local_write", 1),
 	} {
-		a := &app{}
-		body := strings.Replace(dualConfigYAML, "    channel: app-main", "    shared_memory_workspaces: "+tt.shared+"\n    excluded_memory_categories: "+tt.excluded+"\n    channel: app-main", 1)
-		err := a.loadConfig([]byte(body))
-		if err == nil {
-			_, err = NormalizeDualModeConfig(a.cfg)
+		if err := (&app{}).loadConfig([]byte(body)); core.ErrorCode(err) != "invalid_input" {
+			t.Fatalf("legacy configuration accepted: %v", err)
 		}
-		if (err == nil) != tt.valid {
-			t.Fatalf("shared=%s excluded=%s: %v", tt.shared, tt.excluded, err)
-		}
-	}
-	var change PlanChange
-	before := &GroupMentionApplication{}
-	after := &GroupMentionApplication{SharedMemoryWorkspaces: []string{"global"}, ExcludedMemoryCategories: []string{"preference"}}
-	classifyPermissionChange(&change, before, after)
-	if !change.PermissionExpansion || !change.PermissionReduction || !change.BoundaryChange {
-		t.Fatalf("sharing change not classified: %+v", change)
-	}
-	change = PlanChange{}
-	classifyPermissionChange(&change, after, &GroupMentionApplication{SharedMemoryWorkspaces: []string{"global"}})
-	if !change.PermissionExpansion || change.PermissionReduction || !change.BoundaryChange {
-		t.Fatalf("removing exclusion must require expansion authorization: %+v", change)
 	}
 }
 
@@ -160,7 +139,7 @@ applications:
 	if *v.Declaration.Applications.Proactive.Enabled || *v.Declaration.Applications.GroupMention.Enabled {
 		t.Fatal("application enabled implicitly")
 	}
-	if v.Declaration.Agents["none"].Capabilities == nil || len(v.Declaration.Agents["none"].Capabilities) != 0 || len(v.Declaration.Agents["defaults"].Capabilities) != 2 {
+	if v.Declaration.Agents["none"].Capabilities == nil || len(v.Declaration.Agents["none"].Capabilities) != 0 || len(v.Declaration.Agents["defaults"].Capabilities) != 1 {
 		t.Fatal("empty capabilities inherited defaults")
 	}
 	if a.cfg.Agents["defaults"].Capabilities != nil || a.cfg.Agents["none"].Capabilities == nil || a.cfg.Agents["defaults"].Directories != nil || a.cfg.Agents["none"].Directories == nil {
@@ -183,7 +162,6 @@ func TestDualConfigRejectsUnsafeAndInvalidDeclarations(t *testing.T) {
 		"relative directory":    strings.Replace(dualConfigYAML, "/does-not-have-to-exist", "DO_NOT_ECHO_SECRET", 1),
 		"invalid capability":    strings.Replace(dualConfigYAML, "local_test", "DO_NOT_ECHO_SECRET", 1),
 		"duplicate capability":  strings.Replace(dualConfigYAML, "local_test", "local_read", 1),
-		"group private memory":  strings.Replace(dualConfigYAML, "memory_scope: conversation_published", "memory_scope: owner_authorized", 1),
 		"invalid profile":       strings.Replace(dualConfigYAML, "claude_profile: cc", "claude_profile: 'DO_NOT_ECHO_SECRET; echo unsafe'", 1),
 		"profile without alias": "agents:\n  bad: {execution_model: profile}\n",
 		"invalid model":         "agents:\n  bad: {execution_model: 'DO_NOT_ECHO_SECRET; unsafe'}\n",
@@ -251,9 +229,9 @@ func TestDualConfigBashAndOwnerPrivatePolicies(t *testing.T) {
 		}
 	}
 	valid := `agents:
-  owner-chat: {memory_scope: owner_authorized, bash: true, external_actions: owner_request}
-  group-default: {memory_scope: conversation_published, bash: false}
-  group-special: {memory_scope: conversation_published, bash: true, capabilities: [local_test]}
+  owner-chat: {bash: true, external_actions: owner_request}
+  group-default: {bash: false}
+  group-special: {bash: true, capabilities: [local_test]}
 applications:
   owner_private: {enabled: true, runtime: owner-private, agent: owner-chat}
   group_mention: {enabled: false, default_agent: group-default, bindings: [{conversation_id: group1, agent: group-special}]}

@@ -11,8 +11,8 @@ import (
 // to its owner-private or group entry point.
 func fullOwnerAgent(external string, base AgentDeclaration) AgentDeclaration {
 	return AgentDeclaration{Preset: base.Preset, ClaudeProfile: base.ClaudeProfile, ExecutionModel: base.ExecutionModel,
-		MemoryScope: "owner_authorized", Capabilities: []string{"conversation_history_read", "memory_read", "artifact_create", "local_read", "local_write", "local_test"},
-		Bash: true, ExternalActions: external, Skills: core.RuntimeSkillPolicy{Inherit: "executor", Paths: []string{}}}
+		Capabilities: []string{"conversation_history_read", "artifact_create", "local_read", "local_write", "local_test"},
+		Bash:         true, ExternalActions: external, Skills: core.RuntimeSkillPolicy{Inherit: "executor", Paths: []string{}}}
 }
 
 func normalizeBotApplications(d *DualModeDeclaration, diagnostics *[]ConfigDiagnostic) error {
@@ -112,8 +112,8 @@ func validateBotApplications(d *DualModeDeclaration, ref func(string, string) er
 			}
 			if o.Agent != "" {
 				a := d.Agents[o.Agent]
-				if a.MemoryScope != "owner_authorized" || a.ExternalActions == "owner_delegated" {
-					return dualInvalid("applications.bots.owner_private.agent", "requires owner-authorized memory and owner-private action policy")
+				if a.ExternalActions == "owner_delegated" {
+					return dualInvalid("applications.bots.owner_private.agent", "requires owner-private action policy")
 				}
 			}
 		}
@@ -129,9 +129,6 @@ func validateBotApplications(d *DualModeDeclaration, ref func(string, string) er
 			}
 			if g.DefaultAgent != "" && d.Agents[g.DefaultAgent].ExternalActions != "owner_confirmation" {
 				return dualInvalid("applications.bots.group_mention.agent", "group agents require owner_confirmation")
-			}
-			if len(g.SharedMemoryWorkspaces) > 1 || len(g.SharedMemoryWorkspaces) == 1 && g.SharedMemoryWorkspaces[0] != "global" || len(g.ExcludedMemoryCategories) > 1 || len(g.ExcludedMemoryCategories) == 1 && g.ExcludedMemoryCategories[0] != "preference" {
-				return dualInvalid("applications.bots.group_mention", "invalid group sharing scope")
 			}
 			seen := map[string]bool{}
 			for _, binding := range g.Bindings {

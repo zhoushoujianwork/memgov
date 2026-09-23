@@ -37,6 +37,6 @@ func (a *app) agentCommands() {
 	sync.Flags().StringVar(&claudeSource, "from-claude-md", "", "Compatibility import for a Claude preset")
 	sync.MarkFlagsMutuallyExclusive("from-policy", "from-claude-md")
 	preset.AddCommand(sync)
-	root.AddCommand(preset)
+	root.AddCommand(preset, a.agentWorkspaceCommand())
 	a.root.AddCommand(root)
 }

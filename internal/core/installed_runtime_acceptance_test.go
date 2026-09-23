@@ -76,7 +76,7 @@ func TestInstalledRuntimeAcceptanceSchema6MigrationRehearsal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err = db.Exec("INSERT INTO settings(key,value) VALUES('acceptance_sentinel','preserve-on-upgrade')"); err != nil {
+	if _, err = db.Exec("INSERT INTO settings(key,value) VALUES('role','authoritative'),('acceptance_sentinel','preserve-on-upgrade')"); err != nil {
 		t.Fatal(err)
 	}
 	if err = db.Close(); err != nil {

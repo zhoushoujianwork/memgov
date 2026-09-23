@@ -14,11 +14,10 @@ import { dismissAgentEditor } from "./adapters/agent-editor.js";
 import { ClockProvider, Empty, Time } from "./components/common";
 import { Tasks, type TaskFilters } from "./pages/Tasks";
 import {
-  Memories,
-  memoryParams,
-  memoryPath,
-  type MemoryFilters,
-} from "./pages/Memories";
+  Workspaces,
+  workspacePath,
+  type WorkspaceFilters,
+} from "./pages/Workspaces";
 import { Running } from "./pages/Running";
 import { Settings } from "./pages/Settings";
 import { VersionStatus } from "./components/VersionStatus";
@@ -26,29 +25,27 @@ import type {
   AgentConfig,
   AgentView,
   LogEvent,
-  MemoryCard,
-  MemoryDetail,
-  MemoryHistory,
-  MemoryList,
-  MemorySources,
+  AgentWorkspace,
+  WorkspaceFile,
+  WorkspaceDocument,
+  WorkspaceRevision,
   Meta,
   Runtime,
   SourceView,
   Task,
   TaskDetail,
-  Workspace,
 } from "./types";
 
 export const pagePaths = {
   tasks: "/tasks",
-  memories: "/memories",
+  workspaces: "/workspaces",
   running: "/running",
   settings: "/settings",
 };
 type Page = keyof typeof pagePaths;
 const names = {
   tasks: "任务",
-  memories: "记忆",
+  workspaces: "工作区",
   running: "运行",
   settings: "设置",
 };
@@ -69,19 +66,15 @@ interface View {
   sources?: SourceView[];
   agents?: AgentView[];
   config?: AgentConfig;
-  memories?: MemoryList;
-  workspaces?: Workspace[];
-  memory?: MemoryDetail;
-  memorySources?: MemorySources;
-  memoryHistory?: MemoryHistory;
+  workspaces?: AgentWorkspace[];
+  workspaceFiles?: WorkspaceFile[];
+  workspaceDocument?: WorkspaceDocument;
+  workspaceHistory?: WorkspaceRevision[];
 }
 export function expiryTimes(view: View) {
   return [
     ...(view.tasks?.tasks || []).map((t) => t.expires_at),
     view.detail?.task.expires_at,
-    view.memory?.expires_at,
-    view.memorySources?.expires_at,
-    view.memoryHistory?.expires_at,
   ]
     .filter((v): v is string => !!v)
     .map(Date.parse)
@@ -101,18 +94,14 @@ export function App() {
     cursor: "",
     history: [],
   });
-  const [memoryFilters, setMemoryFilters] = useState<MemoryFilters>({
-    q: "",
-    workspace: "global",
-    category: "",
-    status: "active",
-    page: 1,
+  const [workspaceFilters, setWorkspaceFilters] = useState<WorkspaceFilters>({
+    workspace: "",
+    query: "",
   });
-  const [settledMemory, setSettledMemory] = useState(memoryFilters);
-  const [selected, setSelected] = useState(""),
-    [memorySelected, setMemorySelected] = useState<MemoryCard>();
+  const [settledWorkspace, setSettledWorkspace] = useState(workspaceFilters);
+  const [selected, setSelected] = useState("");
+  const [workspaceFile, setWorkspaceFile] = useState("");
   const [showLogs, setShowLogs] = useState(false),
-    [showSources, setShowSources] = useState(false),
     [showHistory, setShowHistory] = useState(false);
   const [data, setData] = useState<View>(),
     [error, setError] = useState(""),
@@ -134,15 +123,14 @@ export function App() {
     },
     [reload],
   );
-  const closeMemory = () => {
-    setMemorySelected(undefined);
-    setShowSources(false);
+  const closeWorkspaceFile = () => {
+    setWorkspaceFile("");
     setShowHistory(false);
   };
   useEffect(() => {
-    const timer = setTimeout(() => setSettledMemory(memoryFilters), 200);
+    const timer = setTimeout(() => setSettledWorkspace(workspaceFilters), 200);
     return () => clearTimeout(timer);
-  }, [memoryFilters]);
+  }, [workspaceFilters]);
   const navigate = useCallback(
     (next: Page, push = true) => {
       if (push && location.pathname !== pagePaths[next])
@@ -150,8 +138,7 @@ export function App() {
       clearTerminal();
       dismissAgentEditor();
       setData(undefined);
-      setMemorySelected(undefined);
-      setShowSources(false);
+      setWorkspaceFile("");
       setShowHistory(false);
       setShowLogs(false);
       setPage(next);
@@ -175,7 +162,7 @@ export function App() {
       flushSync(() => {
         setData(undefined);
         setConnected(false);
-        setMemorySelected(undefined);
+        setWorkspaceFile("");
       });
     };
     const visibility = () => {
@@ -211,8 +198,8 @@ export function App() {
     async function poll() {
       if (cancelled || busy || document.hidden || pause.current) return;
       if (
-        page === "memories" &&
-        JSON.stringify(memoryFilters) !== JSON.stringify(settledMemory)
+        page === "workspaces" &&
+        JSON.stringify(workspaceFilters) !== JSON.stringify(settledWorkspace)
       )
         return;
       busy = true;
@@ -244,27 +231,42 @@ export function App() {
           view.detail = detail?.data;
           view.logs = logs?.data.events.slice(-200);
           view.sampled = tasks.sampled_at;
-        } else if (page === "memories") {
-          const [list, workspaces, detail, sources, history] =
-            await Promise.all([
-              get<MemoryList>(`memories?${memoryParams(settledMemory)}`),
-              get<Workspace[]>("memory-workspaces"),
-              memorySelected
-                ? get<MemoryDetail>(memoryPath(memorySelected))
-                : undefined,
-              memorySelected && showSources
-                ? get<MemorySources>(memoryPath(memorySelected, "/sources"))
-                : undefined,
-              memorySelected && showHistory
-                ? get<MemoryHistory>(memoryPath(memorySelected, "/history"))
-                : undefined,
-            ]);
-          view.memories = list.data;
+        } else if (page === "workspaces") {
+          const [workspaces, files, detail, revisions] = await Promise.all([
+            get<AgentWorkspace[]>("agent-workspaces"),
+            settledWorkspace.workspace
+              ? get<WorkspaceFile[]>(
+                  workspacePath(
+                    settledWorkspace.workspace,
+                    "files",
+                    settledWorkspace.query,
+                  ),
+                )
+              : undefined,
+            settledWorkspace.workspace && workspaceFile
+              ? get<WorkspaceDocument>(
+                  workspacePath(
+                    settledWorkspace.workspace,
+                    "file",
+                    workspaceFile,
+                  ),
+                )
+              : undefined,
+            settledWorkspace.workspace && workspaceFile && showHistory
+              ? get<WorkspaceRevision[]>(
+                  workspacePath(
+                    settledWorkspace.workspace,
+                    "history",
+                    workspaceFile,
+                  ),
+                )
+              : undefined,
+          ]);
           view.workspaces = workspaces.data;
-          view.memory = detail?.data;
-          view.memorySources = sources?.data;
-          view.memoryHistory = history?.data;
-          view.sampled = list.sampled_at;
+          view.workspaceFiles = files?.data;
+          view.workspaceDocument = detail?.data;
+          view.workspaceHistory = revisions?.data;
+          view.sampled = workspaces.sampled_at;
         } else if (page === "running")
           view.sources = (await get<SourceView[]>("sources")).data;
         else {
@@ -355,12 +357,11 @@ export function App() {
   }, [
     page,
     filters,
-    memoryFilters,
-    settledMemory,
+    workspaceFilters,
+    settledWorkspace,
     selected,
-    memorySelected,
+    workspaceFile,
     showLogs,
-    showSources,
     showHistory,
     refresh,
   ]);
@@ -540,48 +541,43 @@ export function App() {
               onRefresh={reload}
             />
           )}
-          {page === "memories" && (
-            <Memories
-              filters={memoryFilters}
-              list={data?.memories}
+          {page === "workspaces" && (
+            <Workspaces
+              filters={workspaceFilters}
               workspaces={data?.workspaces || []}
-              selected={connected ? memorySelected : undefined}
-              detail={data?.memory}
-              sources={data?.memorySources}
-              history={data?.memoryHistory}
-              showSources={showSources}
+              files={data?.workspaceFiles || []}
+              selected={connected ? workspaceFile : ""}
+              detail={data?.workspaceDocument}
+              history={data?.workspaceHistory}
               showHistory={showHistory}
               onFilter={(value) => {
-                setMemoryFilters(value);
-                closeMemory();
+                setWorkspaceFilters(value);
+                closeWorkspaceFile();
                 setData((old) =>
                   old
                     ? {
                         ...old,
-                        memories: undefined,
-                        memory: undefined,
-                        memorySources: undefined,
-                        memoryHistory: undefined,
+                        workspaceFiles: undefined,
+                        workspaceDocument: undefined,
+                        workspaceHistory: undefined,
                       }
                     : undefined,
                 );
               }}
-              onSelect={(value) => {
-                setMemorySelected(value);
+              onSelect={(path) => {
+                setWorkspaceFile(path);
+                setShowHistory(false);
                 setData((old) =>
                   old
                     ? {
                         ...old,
-                        memory: undefined,
-                        memorySources: undefined,
-                        memoryHistory: undefined,
+                        workspaceDocument: undefined,
+                        workspaceHistory: undefined,
                       }
                     : undefined,
                 );
               }}
-              onClose={closeMemory}
-              onSources={setShowSources}
-              onHistory={setShowHistory}
+              onHistory={() => setShowHistory((value) => !value)}
               onRefresh={reload}
             />
           )}
@@ -604,7 +600,7 @@ export function App() {
           {!data && !error && <Empty>正在读取本地服务…</Empty>}
         </section>
         <footer>
-          memgov · SQLite 为唯一真相源
+          memgov · 知识存于工作区，运行记录存于 SQLite
           <span>关闭浏览器标签页不影响服务；service stop 停止全部模块</span>
         </footer>
       </main>

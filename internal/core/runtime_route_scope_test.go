@@ -73,7 +73,7 @@ func TestRuntimeTriggerWithdrawalBlocksOwnerDeliveryAndReadyOutbox(t *testing.T)
 		return claimed, err
 	})
 	runtimeMutate(t, f.s, "scope.task.complete", func(tx *Tx) (any, error) {
-		return tx.CompleteRuntimeTask(ctx, claimed.ID, claimed.Version, attempt.ID, RuntimeAttemptResult{Result: "Verified answer", Summary: "Done"}, "")
+		return tx.CompleteRuntimeTask(ctx, claimed.ID, claimed.Version, attempt.ID, RuntimeAttemptResult{Result: "Verified answer", Summary: "Done"})
 	})
 	var ready OutboxView
 	runtimeMutate(t, f.s, "scope.delivery.ready", func(tx *Tx) (any, error) {
@@ -133,7 +133,7 @@ func TestRuntimeTriggerWithdrawalBlocksConfirmedExternalAction(t *testing.T) {
 		return claimed, err
 	})
 	runtimeMutate(t, f.s, "scope.action.task.complete", func(tx *Tx) (any, error) {
-		return tx.CompleteRuntimeTask(ctx, claimed.ID, claimed.Version, attempt.ID, RuntimeAttemptResult{Result: "Commit prepared", Actions: []RuntimeAction{{Kind: "git_push", Target: "origin/main", Payload: "push reviewed commit"}}}, "")
+		return tx.CompleteRuntimeTask(ctx, claimed.ID, claimed.Version, attempt.ID, RuntimeAttemptResult{Result: "Commit prepared", Actions: []RuntimeAction{{Kind: "git_push", Target: "origin/main", Payload: "push reviewed commit"}}})
 	})
 	task, err := ReadRuntimeTask(ctx, f.s.DB, task.ID)
 	if err != nil || len(task.Actions) != 1 {

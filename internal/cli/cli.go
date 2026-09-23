@@ -38,21 +38,22 @@ type app struct {
 	// not silently load it: doing so would make two files possible sources of
 	// runtime authority.  The explicit migration command is the only path that
 	// copies it into the canonical location.
-	legacyConfigPath string
-	human            bool
-	timeout          time.Duration
-	expected         int
-	requestID        string
-	in               io.Reader
-	out, errOut      io.Writer
-	cfg              Config
-	root             *cobra.Command
-	prepared         any
-	payloadRead      bool
-	cachedPayload    json.RawMessage
-	resolved         string
-	streamMode       bool
-	streamRuntimeID  string
+	legacyConfigPath   string
+	workspaceMigration bool
+	human              bool
+	timeout            time.Duration
+	expected           int
+	requestID          string
+	in                 io.Reader
+	out, errOut        io.Writer
+	cfg                Config
+	root               *cobra.Command
+	prepared           any
+	payloadRead        bool
+	cachedPayload      json.RawMessage
+	resolved           string
+	streamMode         bool
+	streamRuntimeID    string
 	// Adapters are injectable so the command surface can be exercised offline
 	// against a fake platform instead of a real account.
 	dwsAdapter, appAdapter channel.Adapter
@@ -108,7 +109,7 @@ func exitCode(code string) int {
 	}
 }
 func (a *app) command() *cobra.Command {
-	root := &cobra.Command{Use: "memgov", Short: "本机记忆治理：SQLite + CLI + 外部 Agent", SilenceUsage: true, SilenceErrors: true}
+	root := &cobra.Command{Use: "memgov", Short: "Personal Jarvis: Agent workspaces and reliable task execution", SilenceUsage: true, SilenceErrors: true}
 	a.root = root
 	root.SetIn(a.in)
 	root.SetOut(a.out)
@@ -124,7 +125,10 @@ func (a *app) command() *cobra.Command {
 	f.StringVar(&a.configPath, "config", "", "配置文件路径")
 	f.DurationVar(&a.timeout, "timeout", 120*time.Second, "执行期限")
 	f.IntVar(&a.expected, "expected-version", 0, "期望的当前版本")
-	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error { return a.configure() }
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		a.workspaceMigration = cmd.Name() == "migrate-workspaces" && cmd.Parent().Name() == "config"
+		return a.configure()
+	}
 	root.AddCommand(a.simple("version", "版本", cobra.NoArgs, func(context.Context, []string) (any, error) {
 		return map[string]any{"version": Version, "schema_version": core.SchemaVersion}, nil
 	}))
@@ -162,12 +166,10 @@ func (a *app) command() *cobra.Command {
 		}
 	}}
 	root.AddCommand(completion)
-	a.memoryCommands()
 	a.backupCommands()
 	a.agentCommands()
 	a.channelCommands()
 	a.messageCommands()
-	a.audienceCommands()
 	a.outboxCommands()
 	a.runtimeCommands()
 	a.dataSourceCommands()
@@ -207,6 +209,12 @@ func (a *app) configure() error {
 		a.configPath = canonicalConfigPath(a.home)
 	}
 	if raw, err := os.ReadFile(a.configPath); err == nil {
+		if a.workspaceMigration {
+			raw, _, _, err = convertWorkspaceConfig(raw)
+			if err != nil {
+				return err
+			}
+		}
 		if err = a.loadConfig(raw); err != nil {
 			return err
 		}
@@ -302,6 +310,9 @@ func (a *app) simple(use, short string, args cobra.PositionalArgs, fn func(conte
 		data, err := fn(ctx, args)
 		if err != nil {
 			return err
+		}
+		if result, ok := data.(core.Result); ok {
+			return a.emit(result.Data, result.Cached)
 		}
 		return a.emit(data, false)
 	}}

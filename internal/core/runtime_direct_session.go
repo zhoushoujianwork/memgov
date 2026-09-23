@@ -142,7 +142,7 @@ JOIN runtime_tasks rt ON rt.id=dt.task_id JOIN runtime_task_messages tm ON tm.ta
 JOIN messages m ON m.id=tm.message_id JOIN message_revisions mr ON mr.message_id=m.id AND mr.revision=m.current_revision
 JOIN channels ch ON ch.id=m.channel_id
 JOIN identity_aliases ia ON ia.tenant=ch.tenant AND ia.id_type=m.sender_id_type AND ia.id_value=m.sender_id_value AND ia.verified=1 AND ia.principal_id=m.sender_principal
-WHERE dt.session_id=? AND dt.command='' AND rt.runtime_id=? AND rt.route_id=? AND rt.status IN ('completed','awaiting_confirmation','action_failed','action_unknown')
+WHERE dt.session_id=? AND dt.command='' AND rt.runtime_id=? AND rt.route_id=? AND rt.kind<>'memory' AND rt.status IN ('completed','awaiting_confirmation','action_failed','action_unknown')
 AND m.availability='available' AND m.current_revision=tm.revision AND m.sender_principal=? AND m.self_authored=0
 AND dt.sequence<(SELECT sequence FROM runtime_direct_turns WHERE task_id=?)
 AND EXISTS(SELECT 1 FROM outbox o WHERE o.job_id=rt.id AND o.state='accepted' AND o.reason NOT IN ('runtime_receipt','runtime_processing_receipt','runtime_completion_receipt','runtime_failure_receipt') AND o.route_id=?)

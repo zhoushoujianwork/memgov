@@ -177,33 +177,3 @@ func TestAppStreamSessionIsolatesForeignFramesAndStopsOnAWriteFailure(t *testing
 		t.Fatalf("a foreign frame's body was stored: %s", events)
 	}
 }
-
-// The two channel kinds keep separate audiences: publishing a memory to the
-// personal channel's conversation does not disclose it to the bot's group.
-func TestAudienceStaysSeparateBetweenPersonalAndAppChannels(t *testing.T) {
-	home := t.TempDir()
-	appChannel(t, home)
-	add := `{"name":"dws-main","kind":"dws_personal","identity":{"profile":"corp1:user1","expected_corp_id":"corp1","expected_user_id":"user1"},` +
-		`"route":{"conversation_id":"cid:group1","conversation_type":"group"}}`
-	if code, value := invoke(t, home, add, "channel", "add", "--input", "-"); code != 0 {
-		t.Fatalf("dws channel add: %+v", value)
-	}
-	id := formalMemory(t, home)
-	if code, value := invoke(t, home, "", "audience", "publish", "dws-main", id, "--conversation", "cid:group1", "--reason", "个人会话已讨论"); code != 0 {
-		t.Fatalf("publish: %+v", value)
-	}
-	code, value := invoke(t, home, "", "audience", "check", "bot-main", id, "--conversation", "cid:group2")
-	if code != 0 {
-		t.Fatalf("check: %+v", value)
-	}
-	if data(t, value)["allowed"] != false {
-		t.Fatalf("a personal publication disclosed to the bot's group: %+v", data(t, value))
-	}
-	// The bot's group needs its own publication, and that one does not reach back.
-	if code, value = invoke(t, home, "", "audience", "publish", "bot-main", id, "--conversation", "cid:group2", "--reason", "群里问到该流程"); code != 0 {
-		t.Fatalf("publish to the bot group: %+v", value)
-	}
-	if code, value = invoke(t, home, "", "audience", "check", "bot-main", id, "--conversation", "cid:group2"); code != 0 || data(t, value)["allowed"] != true {
-		t.Fatalf("the bot group's own publication did not permit disclosure: %+v", value)
-	}
-}

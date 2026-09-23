@@ -1,56 +1,36 @@
-# 本地管理台：任务执行记录与记忆卡片
+# Local console: task records and Agent Workspaces
 
-状态：任务、运行、设置及记忆卡片已在源码实现。已安装和正在运行的版本需分别核对；源码变更不代表本机服务已经升级。[使用说明](../guides/local-console-user-guide.md)介绍入口，[详细稿](local-console-design-detail.md)记录接口、边界与验收。
+Status: the workspace browser is implemented in source. Installed and running versions must be checked separately. See the [user guide](../guides/local-console-user-guide.md) and [implementation details](local-console-design-detail.md).
 
-## 目标与使用方式
+## Goal and use
 
-打开管理台，能看清任务如何执行、得到什么结果，以及哪些经验可以复用。对齐[最佳落地场景](../architecture/best-practice-scenarios.md)的“事项闭环”：处理过程可核对，长期记忆有来源。
+The local owner can inspect work, evidence, execution and durable knowledge in one place. This supports the [work-loop scenarios](../architecture/best-practice-scenarios.md): a task result, platform delivery and user acceptance remain distinct facts.
 
-通过统一服务打开管理台，或使用 `memgov ui --open` 启动独立诊断页面。沿用 `--home`、`--config` 选择实例，`--port 0` 自动选择端口。顶部显示当前数据目录、版本、连接状态与刷新时间。任务、记忆、运行和设置分别使用 `/tasks`、`/memories`、`/running`、`/settings`；可收藏、直接打开，刷新和前进后退仍停留在对应页面。
+Open the console hosted by the unified service, or use `memgov ui --open` for an independent diagnostic instance. Choose its data/configuration paths with the existing global options. The four pages have stable addresses:
 
-| 入口 | 可以查看或处理什么 |
+| Page | Purpose |
 | --- | --- |
-| 任务 | 原始请求、运行实例、各次执行记录、过程输出、产物、处理结果、Agent 沟通动作及投递状态 |
-| 记忆 | 按卡片浏览正式记忆，搜索与筛选，查看完整正文、来源证据和历史版本 |
-| 运行 | 服务、Agent 模块和数据源的状态、覆盖与缺口；重启服务固定在侧栏左下角 |
-| 设置 | 编辑、删除 YAML Agent 声明并预览变化；核对已应用策略、技能和版本 |
+| `/tasks` | Requests, attempts, available process output, results, artifacts, communication and delivery records |
+| `/workspaces` | Select an Owner/group workspace, search current files, read Markdown and inspect revision metadata |
+| `/running` | Service, Agent modules, source coverage, queues and current observations |
+| `/settings` | Edit and preview YAML Agent declarations; inspect applied policies, skills and versions |
 
-重启服务在各页面的侧栏左下角均可操作，重启期间禁用并显示进度；独立诊断页明确提示使用终端。所有系统时间默认显示“几分钟前”等相对时间，悬停查看含时区的完整时间，未记录和未来时间分别说明。
+The sidebar provides service restart and version checks. Standalone diagnostic instances disable controls that require the unified service. Relative times retain exact dates and time zones on hover.
 
-左下角同时显示当前版本、构建指纹和本机程序是否已加载，并支持“检查更新”。更新对照 GitHub 仓库中语义版本号最高的 tag，包含预发布 tag，不依赖 Release；私有仓库复用本机已有的 GitHub CLI 登录。无 tag、网络失败或版本不可比较时明确提示，不能视为已是最新。检查只提供状态与 tag 链接，不自动下载安装。
+## Workspace browsing
 
-## 记忆卡片
+Knowledge is displayed as files, with path, content digest, size and modification time. Search only examines the selected workspace; it does not merge Owner and group data or include migration archives and old revisions. Selecting a file loads its complete bounded body; history is loaded when expanded. The browser is read-only.
 
-借鉴 relayer-next 的竖版卡牌质感、类型配色和点击详情体验，保留 memgov 的六类记忆：事实、偏好、约束、决策、流程、经验。
+Owner private chat and background work share a workspace. Each group has its own, even when groups share a preset. The console is the local owner's inspection tool; it does not change Agent access rules or provide a group-member portal. Old memory card pages, category/status filters and Candidate/Review displays are removed.
 
-卡面展示标题、摘要、分类、工作区、状态和更新时间。摘要最多显示 100 字，完整内容不受卡面限制。点击后以正文为主阅读，来源证据、适用条件和版本历史可以展开；非有效记忆有明确提示。关闭详情后回到原浏览位置。
+## Runtime records and boundary
 
-支持标题、摘要和正文搜索，以及工作区、分类、状态筛选。默认查看全局有效记忆，选择工作区后包含该工作区与全局记忆；全部工作区需显式选择。最近更新在前，每页 24 张，显示准确总数。
+Task completion does not prove delivery or user acceptance. Proactive completion remains `record_only`; separately authorized communication has its own status and receipts. A process heartbeat does not prove model progress. Old task versions and unavailable message sources continue to hide affected output.
 
-卡片仅是正式 Memory 的展示方式。记忆页只读，不新增卡片实体，不引入套牌、人物、战斗规则、合卡、稀有度、费用、热度和升级系统。
+The service embeds the React/TypeScript/Vite frontend in one Go executable. SQLite supplies operational records; workspace files supply knowledge. The console listens on loopback and retains Host, Origin and same-origin control checks. It does not migrate storage when opened.
 
-## 任务执行记录与结果
+Knowledge and messages are untrusted text: Markdown does not execute HTML or automatically load remote images. Hidden tabs and disconnected views clear displayed data; content is not persisted to browser storage. Saving an Agent YAML declaration still requires the existing configuration plan/apply workflow.
 
-“战斗记录”在本项目对应任务执行记录，继续放在任务页。每个任务下归集多次执行，按“原始请求 → 执行记录 → 过程输出 → 处理结果 → 交付状态”核对。
+## Acceptance
 
-每次执行显示时间、状态、摘要与错误，有记录的产物随对应尝试展示。任务列表补充结果摘要和最近活动时间。任务完成、平台发送成功和用户验收分别呈现；没有验收记录时明确说明，不推断成功。
-
-Cyber owner 完成后仅记录结果，未发送消息属于正常情况。Agent 自主发起的沟通单独列出发送身份、对象、理由、内容和回执状态；结果未知不能显示为成功或直接重发。后台阻塞显示为“处理受阻”，需要额外授权的操作记录为未执行操作。机器人会话答复仍显示原会话交付状态，职责以[接入设计](dingtalk-integration-design.md)为准。
-
-任务记录为 running 不直接证明仍在执行。界面同时展示模块心跳与运行状态；旧任务版本、来源过期或撤回后的输出按规则隐藏。保留现有失败任务继续执行能力，只有服务端确认可继续时才显示入口，本期不扩展控制操作。
-
-## 核心方案与本期边界
-
-Go 服务、CLI 和 SQLite 继续复用，前端采用与 relayer-next 相同的 React、TypeScript 和 Vite，源码集中在本地 `web/` 目录。复用记忆卡面和正文优先的详情布局，接回 memgov 现有接口；不搬入套牌、角色及战斗业务。开发支持热更新，构建后的静态页面仍随一个 Go 二进制发布，使用者无需 Node。
-
-默认只在本机访问，直接打开 `http://127.0.0.1:8787/`，无需 token 登录。来源、记忆与任务保持各自生命周期；查看页面不会生成记忆或执行任务。正文不写浏览器持久缓存，页面隐藏、断线或来源到期时清空相应内容。记忆 Markdown 作为不可信文本安全展示，不执行 HTML 或自动加载外部图片。
-
-Agent 声明保存到 YAML 后仍需按既有配置流程应用；删除声明保留历史记录。已有服务重启和任务继续操作保持现行授权。Desktop 外壳、任务取消、记忆编辑治理仍属于后续范围。
-
-## 实施与验收
-
-1. 接入记忆只读查询与卡片页，验证搜索、筛选、计数、分页及完整阅读。
-2. 补齐任务尝试、产物与结果展示，验证多次执行和旧输出失效。
-3. 验证来源及历史追溯、工作区隔离、断线恢复、键盘与窄屏体验，回归运行和设置页面。
-
-交付分别报告源码测试、浏览器验收、真实业务验收、已安装二进制和运行版本；本期不自动部署或重启真实服务。具体结果见[详细稿](local-console-design-detail.md)。
+Validate scoped search, current-file reading, revision metadata, paths/symlinks, no HTTP writes, escaping and frontend build. Regress task-source retention, terminal output, restart/continuation controls, runtime and settings pages. Report source tests separately from browser, installation and real-platform acceptance; this refactor does not deploy or restart the user's service.

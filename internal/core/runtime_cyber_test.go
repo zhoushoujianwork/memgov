@@ -77,7 +77,7 @@ func TestCyberOwnerWithoutDeliveryRouteInvestigatesAndRecordsBlockedWork(t *test
 	})
 	runtimeMutate(t, f.s, "cyber.blocked", func(tx *Tx) (any, error) {
 		var err error
-		task, err = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "已定位，生产修改超出当前委托", Actions: []RuntimeAction{{Kind: "production_change", Target: "production", Payload: "requires a separate owner delegation"}}}, "")
+		task, err = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "已定位，生产修改超出当前委托", Actions: []RuntimeAction{{Kind: "production_change", Target: "production", Payload: "requires a separate owner delegation"}}})
 		return task, err
 	})
 	if task.Status != "blocked" {

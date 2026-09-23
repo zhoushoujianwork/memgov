@@ -46,8 +46,6 @@ type TaskCard struct {
 	Preview       string `json:"preview"`
 	ResultSummary string `json:"result_summary"`
 	Status        string `json:"status"`
-	MemoryStatus  string `json:"memory_status,omitempty"`
-	MemoryError   string `json:"memory_error_code,omitempty"`
 	WorkPhase     string `json:"work_phase,omitempty"`
 	WorkDeadline  string `json:"work_deadline,omitempty"`
 	WorkHeartbeat string `json:"work_heartbeat,omitempty"`
@@ -82,16 +80,15 @@ func (s *Server) query(ctx context.Context, r *http.Request) (any, error) {
 	if r.URL.Path == "/api/v1/runtimes" {
 		return s.cachedRuntimes(ctx)
 	}
+	if r.URL.Path == "/api/v1/agent-workspaces" || strings.HasPrefix(r.URL.Path, "/api/v1/agent-workspaces/") {
+		return workspaceQuery(s.opts.Home, r)
+	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 	switch r.URL.Path {
-	case "/api/v1/memory-workspaces":
-		return memoryWorkspaces(ctx, tx)
-	case "/api/v1/memories":
-		return memoryList(ctx, tx, r)
 	case "/api/v1/meta":
 		applied, err := core.ReadAppliedConfig(ctx, tx, 0)
 		if err != nil {
@@ -145,9 +142,6 @@ func (s *Server) query(ctx context.Context, r *http.Request) (any, error) {
 			}
 			return s.opts.AgentConfig.Save(ctx, tx, input)
 		}
-	}
-	if strings.HasPrefix(r.URL.Path, "/api/v1/memories/") {
-		return memoryDetail(ctx, tx, r)
 	}
 	if strings.HasPrefix(r.URL.Path, "/api/v1/tasks/") {
 		part := strings.TrimPrefix(r.URL.Path, "/api/v1/tasks/")
@@ -287,10 +281,6 @@ func (s *Server) card(ctx context.Context, q core.Queryer, id string) (TaskCard,
 	if err != nil {
 		return out, err
 	}
-	err = q.QueryRowContext(ctx, `SELECT memory_status,memory_error_code FROM runtime_tasks WHERE id=?`, id).Scan(&out.MemoryStatus, &out.MemoryError)
-	if err != nil {
-		return out, err
-	}
 	err = q.QueryRowContext(ctx, `SELECT phase,deadline_at,heartbeat_at,model_activity_at FROM runtime_work_leases WHERE task_id=? AND released=0 ORDER BY heartbeat_at DESC LIMIT 1`, id).Scan(&out.WorkPhase, &out.WorkDeadline, &out.WorkHeartbeat, &out.ModelActivity)
 	if err != nil && err != sql.ErrNoRows {
 		return out, err
@@ -305,7 +295,6 @@ func (s *Server) card(ctx context.Context, q core.Queryer, id string) (TaskCard,
 		out.ProcessState = "stopped_record"
 	}
 	out.Attention = out.Status == "failed" || out.Status == "stale" || out.Status == "clarification" || out.Status == "blocked" || out.Status == "action_failed" || out.Status == "action_unknown" || out.Status == "awaiting_confirmation" || (out.Status == "running" && (out.RuntimeStatus != "running" || out.ProcessState != "heartbeat"))
-	out.Attention = out.Attention || out.MemoryStatus == "failed" || out.MemoryStatus == "rejected"
 	rows, err := q.QueryContext(ctx, "SELECT message_id FROM runtime_task_messages WHERE task_id=? ORDER BY rowid", id)
 	if err != nil {
 		return out, err
@@ -538,7 +527,7 @@ func (s *Server) agents(ctx context.Context, q core.Queryer) ([]any, error) {
 				}
 				conversationID = route.ConversationID
 			}
-			policy := core.RuntimeAgentPolicy{Preset: c.AgentPreset, ClaudeProfile: c.ClaudeProfile, ExecutionModel: c.ExecutionModel, MemoryScope: c.MemoryScope, Capabilities: c.AgentCapabilities, BashEnabled: c.AgentBash, ExternalActions: c.ExternalActions, Skills: core.RuntimeSkillPolicy{Inherit: "none"}}
+			policy := core.RuntimeAgentPolicy{Preset: c.AgentPreset, ClaudeProfile: c.ClaudeProfile, ExecutionModel: c.ExecutionModel, Capabilities: c.AgentCapabilities, BashEnabled: c.AgentBash, ExternalActions: c.ExternalActions, Skills: core.RuntimeSkillPolicy{Inherit: "none"}}
 			policyError := ""
 			if routeID != "" {
 				p, e := core.ResolveRuntimeTaskAgent(ctx, q, c, core.RuntimeTask{RuntimeID: c.ID, RouteID: routeID})
@@ -558,11 +547,11 @@ func (s *Server) agents(ctx context.Context, q core.Queryer) ([]any, error) {
 					skills = resolved
 				}
 			}
-			names := []any{map[string]string{"name": "memgov-memory", "origin": "runtime_managed"}}
+			names := []any{map[string]string{"name": "memgov-workspace", "origin": "runtime_managed"}}
 			for _, skill := range skills {
 				names = append(names, map[string]string{"name": skill.Name, "digest": skill.Digest, "path": skill.Path})
 			}
-			out = append(out, map[string]any{"runtime": c.Name, "conversation_id": conversationID, "agent": policy.Agent, "preset": policy.Preset, "model": policy.ExecutionModel, "profile": policy.ClaudeProfile, "memory_scope": policy.MemoryScope, "capabilities": policy.Capabilities, "bash": policy.BashEnabled, "external_actions": policy.ExternalActions, "directories": policy.Directories, "inherit": policy.Skills.Inherit, "skills": names, "policy_error": policyError, "skill_error": skillError})
+			out = append(out, map[string]any{"runtime": c.Name, "conversation_id": conversationID, "agent": policy.Agent, "preset": policy.Preset, "model": policy.ExecutionModel, "profile": policy.ClaudeProfile, "capabilities": policy.Capabilities, "bash": policy.BashEnabled, "external_actions": policy.ExternalActions, "directories": policy.Directories, "inherit": policy.Skills.Inherit, "skills": names, "policy_error": policyError, "skill_error": skillError})
 		}
 	}
 	return out, nil

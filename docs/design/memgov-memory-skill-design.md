@@ -1,5 +1,7 @@
 # `memgov-memory` 跨 Agent 记忆接入设计
 
+> **Superseded historical design (2026-09-23).** The database memory pipeline, publication model, hotword ingestion and old AgentHome knowledge loading described here are removed by the [Agent Workspace design](agent-workspace-design.md). Use the [current runtime guide](../guides/runtime-user-guide.md) and [workspace details](agent-workspace-design-detail.md) for current behavior. The remainder records the previous design and its original validation; its commands and delivery claims do not apply to the new version.
+
 状态：将现有 skill 说明提升为正式的跨 Agent 接入协议；主线范围已确定，稳定 API/CLI 契约和安装版本仍需按实现状态验收。实现细节见[详细稿](memgov-memory-skill-design-detail.md)。
 
 ## 定位

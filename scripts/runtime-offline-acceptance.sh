@@ -21,6 +21,8 @@ if [ ! -x "$acceptance_binary" ]; then
   exit 2
 fi
 export MEMGOV_ACCEPTANCE_BINARY="$acceptance_binary"
-echo 'Running isolated schema 6/21 migration, Cyber owner, restart recovery and fake DWS binary acceptance.'
-go test ./internal/core -run 'Test(DualModeRestart|RuntimeRestartUnknown|InstalledRuntimeAcceptance|Schema22|CyberOwner|RuntimeOwnerMessage)' -count=1 -v
+echo 'Running isolated schema upgrade/archive, Workspace knowledge, owner tasks, restart recovery and fake DWS acceptance.'
+go test ./internal/core -run 'Test(DualModeRestart|RuntimeRestartUnknown|InstalledRuntimeAcceptance|Schema22|WorkspaceUpgrade|UpgradeArchives|InitArchiveFailure|UpgradeRefuses|CyberOwner|RuntimeOwnerMessage)' -count=1 -v
+go test ./internal/runtime -run 'Test(InstalledWorkspaceAcceptance|OwnerWorkspace|GroupWorkspace|Workspace|GroupKnowledge|IntakeDoesNot)' -count=1 -v
+go test ./tests/scenarios -run 'Test(Framework|ScenarioFixtures|Scenario1Acceptance)' -count=1 -v
 echo 'Offline acceptance passed. No live DingTalk or model request was made.'

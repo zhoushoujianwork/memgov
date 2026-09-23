@@ -91,7 +91,7 @@ func TestSlowStageFeedbackDoesNotBlockAgentOrResult(t *testing.T) {
 	models := &fakeModels{}
 	adapter := &blockingStageAdapter{started: make(chan struct{}, 1), release: make(chan struct{})}
 	service.Adapter = adapter
-	service.Analyzer, service.Executor, service.Actioner, service.Reviewer = models, models, models, models
+	service.Analyzer, service.Executor, service.Actioner = models, models, models
 	preset, err := agent.Enable(context.Background(), service.Home, "claude", "claude-default")
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +156,7 @@ func (s *blockingGroupSource) ListGroupConversations(ctx context.Context, _ chan
 func TestGroupDiscoveryDoesNotBlockMentionWake(t *testing.T) {
 	service, cfg, app, group, _ := setupGroupMentionService(t)
 	models := &fakeModels{}
-	service.Analyzer, service.Executor, service.Actioner, service.Reviewer = models, models, models, models
+	service.Analyzer, service.Executor, service.Actioner = models, models, models
 	service.ExternalReceiver = true
 	service.Tick = time.Hour
 	wake := make(chan struct{}, 1)

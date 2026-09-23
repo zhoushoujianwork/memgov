@@ -118,9 +118,7 @@ Profile 不存在、多个候选或缺少指纹字段时，驱动会返回 `iden
 
 ## 当前架构与能力边界
 
-v2 在 `internal/core` 提供 SQLite 权威状态、事务、证据源、候选记忆、版本修订和召回；
-`internal/cli` 是新的 CLI 入口。场景驱动是独立的外部查询适配器，不依赖旧 orchestrator，
-也不把外部聊天自动写入新核心。未来需要保留结果时，应显式通过 v2 的来源与候选记忆接口接入。
+`internal/core` retains SQLite operational state and source evidence, while `internal/agentworkspace` stores long-term knowledge files. The scenario driver remains an independent read-only query adapter and does not write workspace knowledge or task state. Any later integration must preserve source references and the current task/audience boundary; the removed candidate/memory commands are not an integration path.
 
 事项提取采用有限中文状态规则（被…阻塞、已恢复进行、正在进行、已完成、还没定）。
 唯一后缀可关联已有主题；清除依赖后的“请继续”只说明 ready，后续明确恢复才升级为 in_progress。

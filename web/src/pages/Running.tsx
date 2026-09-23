@@ -88,18 +88,49 @@ export function Running({
             <p className="muted">{modes[r.mode] || r.mode}</p>
             <KV label="Agent 活性">{processLabels[r.process_state]}</KV>
             <KV label="待处理消息">{r.pending_messages}</KV>
-            {r.mode === "proactive" && r.work && <>
-              <KV label="后台共享分析槽位">{r.work.analysis_active} / {r.work.analysis_limit}</KV>
-              <KV label="后台共享执行槽位">{r.work.execution_active} / {r.work.execution_limit}（审查 {r.work.review_active}）</KV>
-              <KV label="排队任务">{r.work.queued_tasks}</KV>
-              <KV label="排队记忆审查">{r.work.queued_reviews}</KV>
-              <KV label="最老消息等待">{r.work.oldest_waiting_seconds} 秒</KV>
-              <KV label="分析及时性">{({idle:"暂无工作",collecting:"聚合中",delayed:"延迟 / 排队",up_to_date:"已处理至最近批次",coverage_gap:"存在分析缺口"} as Record<string,string>)[r.work.analysis_health] || r.work.analysis_health}</KV>
-              <KV label="任务可推进性">{({idle:"暂无工作",running:"执行中",queued:"有排队任务",needs_attention:"存在失败、阻塞或待确认任务"} as Record<string,string>)[r.work.task_health] || r.work.task_health}</KV>
-              <KV label="最近成功分析"><Time value={r.work.last_analysis_at}/></KV>
-              <KV label="重试消息 / 分析缺口 / 累计超时">{r.work.retry_batches} / {r.work.analysis_gaps} / {r.work.timed_out}</KV>
-              <p className="muted">控制心跳仅证明进程存活，不代表模型有进展；采集连续性见下方数据源覆盖。</p>
-            </>}
+            {r.mode === "proactive" && r.work && (
+              <>
+                <KV label="后台共享分析槽位">
+                  {r.work.analysis_active} / {r.work.analysis_limit}
+                </KV>
+                <KV label="后台共享执行槽位">
+                  {r.work.execution_active} / {r.work.execution_limit}
+                </KV>
+                <KV label="排队任务">{r.work.queued_tasks}</KV>
+                <KV label="最老消息等待">{r.work.oldest_waiting_seconds} 秒</KV>
+                <KV label="分析及时性">
+                  {(
+                    {
+                      idle: "暂无工作",
+                      collecting: "聚合中",
+                      delayed: "延迟 / 排队",
+                      up_to_date: "已处理至最近批次",
+                      coverage_gap: "存在分析缺口",
+                    } as Record<string, string>
+                  )[r.work.analysis_health] || r.work.analysis_health}
+                </KV>
+                <KV label="任务可推进性">
+                  {(
+                    {
+                      idle: "暂无工作",
+                      running: "执行中",
+                      queued: "有排队任务",
+                      needs_attention: "存在失败、阻塞或待确认任务",
+                    } as Record<string, string>
+                  )[r.work.task_health] || r.work.task_health}
+                </KV>
+                <KV label="最近成功分析">
+                  <Time value={r.work.last_analysis_at} />
+                </KV>
+                <KV label="重试消息 / 分析缺口 / 累计超时">
+                  {r.work.retry_batches} / {r.work.analysis_gaps} /{" "}
+                  {r.work.timed_out}
+                </KV>
+                <p className="muted">
+                  控制心跳仅证明进程存活，不代表模型有进展；采集连续性见下方数据源覆盖。
+                </p>
+              </>
+            )}
             {!!r.waiting_receipt_messages && (
               <KV label="等待发送回执核对">{r.waiting_receipt_messages}</KV>
             )}

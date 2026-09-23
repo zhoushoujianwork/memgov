@@ -246,14 +246,13 @@ func TestSharedApplicationRuntimesBothContinueRouteProcessing(t *testing.T) {
 	s.Analyzer = modelsA
 	s.Executor = modelsA
 	s.Actioner = modelsA
-	s.Reviewer = modelsA
 	s.Tick = 10 * time.Millisecond
 	logger, err := runlog.Open(s.Home, ownerCfg.ID, io.Discard, runlog.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer logger.Close()
-	other := &Service{Home: s.Home, Store: s.Store, Adapter: adapter, Analyzer: modelsB, Executor: modelsB, Actioner: modelsB, Reviewer: modelsB, Logger: logger, Tick: 10 * time.Millisecond}
+	other := &Service{Home: s.Home, Store: s.Store, Adapter: adapter, Analyzer: modelsB, Executor: modelsB, Actioner: modelsB, Logger: logger, Tick: 10 * time.Millisecond}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	doneA, doneB := make(chan error, 1), make(chan error, 1)

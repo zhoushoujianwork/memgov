@@ -46,7 +46,7 @@ func crossConfirmationFixture(t *testing.T) (runtimeFixture, Channel, Route, Run
 	})
 	runtimeMutate(t, f.s, "test.cross.complete", func(tx *Tx) (any, error) {
 		var err error
-		task, err = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "准备完成", Actions: []RuntimeAction{{Kind: "git_push", Target: "origin/main", Payload: "push commit abc"}}}, "")
+		task, err = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, RuntimeAttemptResult{Result: "准备完成", Actions: []RuntimeAction{{Kind: "git_push", Target: "origin/main", Payload: "push commit abc"}}})
 		return nil, err
 	})
 	return f, app, direct, task.Actions[0]

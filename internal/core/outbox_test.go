@@ -9,15 +9,6 @@ import (
 
 // publishTo permits disclosure of one memory version to one conversation, which
 // is the precondition for citing it in a reply.
-func publishTo(t *testing.T, s *Store, channel, conversation, memoryID string) {
-	t.Helper()
-	ctx := context.Background()
-	if _, err := s.Mutate(ctx, Request{Scope: "global", Command: "memory.publish", Key: conversation + memoryID}, func(tx *Tx) (any, error) {
-		return tx.Publish(ctx, channel, conversation, memoryID, "回答该会话的提问")
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func openContext(t *testing.T, s *Store, channel string, in ContextInput) RequestContext {
 	t.Helper()
@@ -96,15 +87,13 @@ func TestRequestContextIsTrustedAndBounded(t *testing.T) {
 func TestDraftRefusesUndisclosableCitations(t *testing.T) {
 	s := testStore(t)
 	c, r := fixtureChannel(t, s, ChannelDwsPersonal, "cid:group1")
-	m := createMemory(t, s, fixtureMemory(t, s, "global"))
 	rc := openContext(t, s, c.Name, ContextInput{ConversationID: r.ConversationID,
 		Sender: Sender{IDType: "union_id", IDValue: "alice"}, Query: "发布前要检查什么"})
-	_, err := makeDraft(t, s, DraftInput{ContextID: rc.ID, Content: "先检查权限。", Citations: []string{m.ID}})
+	_, err := makeDraft(t, s, DraftInput{ContextID: rc.ID, Content: "先检查权限。", Citations: []string{"archived-memory"}})
 	if ErrorCode(err) != "denied" {
 		t.Fatalf("an unpublished memory was cited in a reply: %v", err)
 	}
-	publishTo(t, s, c.Name, r.ConversationID, m.ID)
-	out, err := makeDraft(t, s, DraftInput{ContextID: rc.ID, Content: "先检查权限。", Citations: []string{m.ID}})
+	out, err := makeDraft(t, s, DraftInput{ContextID: rc.ID, Content: "先检查权限。"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +115,7 @@ func TestDraftRefusesUndisclosableCitations(t *testing.T) {
 		t.Fatalf("an oversized draft was accepted: %v", err)
 	}
 	// The same reply task and input produce one draft, not two.
-	again, err := makeDraft(t, s, DraftInput{ContextID: rc.ID, Content: "先检查权限。", Citations: []string{m.ID}})
+	again, err := makeDraft(t, s, DraftInput{ContextID: rc.ID, Content: "先检查权限。"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,11 +130,9 @@ func TestPreviewDisplaysWithoutSendingOrApproving(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
 	c, r := fixtureChannel(t, s, ChannelDwsPersonal, "cid:group1")
-	m := createMemory(t, s, fixtureMemory(t, s, "global"))
-	publishTo(t, s, c.Name, r.ConversationID, m.ID)
 	rc := openContext(t, s, c.Name, ContextInput{ConversationID: r.ConversationID,
 		Sender: Sender{IDType: "union_id", IDValue: "alice"}, Query: "发布前要检查什么"})
-	out, err := makeDraft(t, s, DraftInput{ContextID: rc.ID, Content: "先检查权限，再看日志。", Citations: []string{m.ID}})
+	out, err := makeDraft(t, s, DraftInput{ContextID: rc.ID, Content: "先检查权限，再看日志。"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +147,7 @@ func TestPreviewDisplaysWithoutSendingOrApproving(t *testing.T) {
 	if p.Target["conversation_id"] != r.ConversationID || p.Target["sender_identity"] != c.AuthNamespace {
 		t.Fatalf("the target was not displayed: %+v", p.Target)
 	}
-	if len(p.Citations) != 1 || !p.Citations[0].Disclosed {
+	if len(p.Citations) != 0 {
 		t.Fatalf("citations: %+v", p.Citations)
 	}
 	if !strings.Contains(p.Note, "sends nothing") {
@@ -209,42 +196,7 @@ func TestPreviewDisplaysWithoutSendingOrApproving(t *testing.T) {
 
 // Revoking a publication or withdrawing evidence makes an existing draft fail its
 // checks, so a stale permission is never inherited at dispatch time.
-func TestPreviewRecheckesCurrentPermissionNotTheOneAtDraftTime(t *testing.T) {
-	ctx := context.Background()
-	s := testStore(t)
-	c, r := fixtureChannel(t, s, ChannelDwsPersonal, "cid:group1")
-	m := createMemory(t, s, fixtureMemory(t, s, "global"))
-	publishTo(t, s, c.Name, r.ConversationID, m.ID)
-	rc := openContext(t, s, c.Name, ContextInput{ConversationID: r.ConversationID,
-		Sender: Sender{IDType: "union_id", IDValue: "alice"}, Query: "发布前要检查什么"})
-	out, err := makeDraft(t, s, DraftInput{ContextID: rc.ID, Content: "先检查权限。", Citations: []string{m.ID}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	d := draftOf(t, out)
-	if _, err = s.Mutate(ctx, Request{Scope: "global", Command: "memory.unpublish"}, func(tx *Tx) (any, error) {
-		return tx.Unpublish(ctx, c.Name, r.ConversationID, m.ID, "范围收回")
-	}); err != nil {
-		t.Fatal(err)
-	}
-	p, err := PreviewDraft(ctx, s.DB, d.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.Citations[0].Disclosed || p.Sendable {
-		t.Fatalf("a revoked publication left the draft sendable: %+v", p)
-	}
-	// The draft itself was marked stale by the revocation, which is visible.
-	current, err := ReadDraft(ctx, s.DB, d.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if current.State != "stale" {
-		t.Fatalf("a draft citing revoked material stayed in state %q", current.State)
-	}
-}
 
-// A route policy change invalidates a draft produced under the old version.
 func TestDraftRefusesWhenTheRouteChangedUnderIt(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
@@ -267,8 +219,6 @@ func TestDispatchRequiresEnabledSendingAndKeepsUnknownUnknown(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
 	c, r := fixtureChannel(t, s, ChannelDwsPersonal, "cid:group1")
-	m := createMemory(t, s, fixtureMemory(t, s, "global"))
-	publishTo(t, s, c.Name, r.ConversationID, m.ID)
 	// Sending is enabled explicitly on both the route and the channel.
 	if _, err := s.Mutate(ctx, Request{Scope: "global", Command: "route.enable.send"}, func(tx *Tx) (any, error) {
 		return tx.UpdateRoute(ctx, r.ID, r.Version, RouteInput{ConversationID: r.ConversationID, SendPolicy: "dispatch_only"}, "本地操作者显式发送")
@@ -282,7 +232,7 @@ func TestDispatchRequiresEnabledSendingAndKeepsUnknownUnknown(t *testing.T) {
 	}
 	rc := openContext(t, s, c.Name, ContextInput{ConversationID: r.ConversationID,
 		Sender: Sender{IDType: "union_id", IDValue: "alice"}, Query: "发布前要检查什么", ReplyTransport: "dws_user"})
-	out, err := makeDraft(t, s, DraftInput{ContextID: rc.ID, Content: "先检查权限。", Citations: []string{m.ID}})
+	out, err := makeDraft(t, s, DraftInput{ContextID: rc.ID, Content: "先检查权限。"})
 	if err != nil {
 		t.Fatal(err)
 	}

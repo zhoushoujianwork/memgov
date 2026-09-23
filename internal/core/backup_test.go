@@ -10,7 +10,7 @@ import (
 func TestBackupRestoreCarriesPurgeAndLeavesSourceIndependent(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
-	m := createMemory(t, s, fixtureMemory(t, s, "global"))
+	source := fixtureSource(t, s)
 	path := s.Path
 	backup := filepath.Join(t.TempDir(), "snapshot.db")
 	b, err := s.CreateBackup(ctx, backup)
@@ -18,24 +18,16 @@ func TestBackupRestoreCarriesPurgeAndLeavesSourceIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, err := Export(ctx, s)
-	if err != nil || len(p.Tables["sources"]) != 1 || len(p.Tables["revisions"]) != 1 {
+	if err != nil || len(p.Tables["sources"]) != 1 {
 		t.Fatal(p, err)
 	}
-	var plan PurgePlan
-	_, err = s.Mutate(ctx, Request{Scope: "global"}, func(tx *Tx) (any, error) {
-		out, e := tx.PreviewPurge(ctx, m.ID, 1)
-		if e == nil {
-			plan = out.(map[string]any)["plan"].(PurgePlan)
+	runtimeMutate(t, s, "test.source.removed", func(tx *Tx) (any, error) {
+		op, e := tx.Audit(ctx, "source.remove", "removed", nil)
+		if e != nil {
+			return nil, e
 		}
-		return out, e
+		return tx.Conn.ExecContext(ctx, "INSERT INTO tombstones VALUES('source_digest',?,?,?)", source.SHA256, op.ID, Now())
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.Mutate(ctx, Request{Scope: "global"}, func(tx *Tx) (any, error) { return tx.ApplyPurge(ctx, plan.ID, plan.Digest) })
-	if err != nil {
-		t.Fatal(err)
-	}
 	s.Close()
 	req := Request{Scope: "global", Command: "backup.restore", Key: "restore-once", Input: b.SHA256}
 	if _, err = RestoreBackup(ctx, path, backup, b.SHA256, req); err != nil {
@@ -45,16 +37,13 @@ func TestBackupRestoreCarriesPurgeAndLeavesSourceIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = ReadMemory(ctx, restored.DB, m.ID, "global", 0); ErrorCode(err) != "not_found" {
+	if _, err = ReadSource(ctx, restored.DB, source.ID, "global"); ErrorCode(err) != "not_found" {
 		t.Fatal("restore resurrected body", err)
 	}
 	var n int
 	restored.DB.QueryRow("SELECT count(*) FROM tombstones").Scan(&n)
 	if n == 0 {
 		t.Fatal("lost tombstones")
-	}
-	if _, err = PurgeStatus(ctx, restored.DB, plan.ID); err != nil {
-		t.Fatal("lost purge receipt", err)
 	}
 	if err = restored.DB.QueryRow("SELECT count(*) FROM tombstones t LEFT JOIN operations o ON o.id=t.operation_id WHERE o.id IS NULL").Scan(&n); err != nil || n != 0 {
 		t.Fatal("lost purge audit", n, err)
@@ -83,7 +72,7 @@ func TestBackupRestoreCarriesPurgeAndLeavesSourceIndependent(t *testing.T) {
 func TestInvalidRestorePreservesCurrentDatabase(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
-	m := createMemory(t, s, fixtureMemory(t, s, "global"))
+	source := fixtureSource(t, s)
 	path := s.Path
 	s.Close()
 	bad := filepath.Join(t.TempDir(), "bad.db")
@@ -96,7 +85,7 @@ func TestInvalidRestorePreservesCurrentDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, err = ReadMemory(ctx, s.DB, m.ID, "global", 0); err != nil {
+	if _, err = ReadSource(ctx, s.DB, source.ID, "global"); err != nil {
 		t.Fatal("failed restore changed current database", err)
 	}
 }

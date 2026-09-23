@@ -83,16 +83,6 @@ func (a *app) outboxCommands() {
 	reply.AddCommand(a.read("show <context>", "读取请求上下文", cobra.ExactArgs(1), func(ctx context.Context, s *core.Store, args []string) (any, error) {
 		return core.ReadContext(ctx, s.DB, args[0])
 	}))
-	// recall takes no scope arguments on purpose: the context supplies the
-	// audience, so a remote Agent cannot widen it with an extra parameter.
-	var budget int
-	var explain bool
-	recall := a.read("recall <context> <question>", "在该上下文受众范围内召回", cobra.ExactArgs(2), func(ctx context.Context, s *core.Store, args []string) (any, error) {
-		return core.ContextRecall(ctx, s.DB, args[0], args[1], budget, explain)
-	})
-	recall.Flags().IntVar(&budget, "budget-chars", 4000, "上下文字符预算")
-	recall.Flags().BoolVar(&explain, "explain", false, "解释命中与拒绝原因")
-	reply.AddCommand(recall)
 	reply.AddCommand(a.write("draft", "记录回复草稿（引用逐条重新检查）", cobra.NoArgs, func(ctx context.Context, tx *core.Tx, _ []string, raw json.RawMessage) (any, error) {
 		var in core.DraftInput
 		if err := decode(raw, &in); err != nil {

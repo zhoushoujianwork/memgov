@@ -186,7 +186,7 @@ func TestDualApplyCreatesProactiveRuntimeBoundToSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := configFile(t, "data_sources:\n  work_chat:\n    channel: dws-main\n    groups:\n      member_robot: app-main\nagents:\n  owner-assistant:\n    preset: claude-default\n    memory_scope: owner_authorized\n    capabilities: [memory_read]\napplications:\n  proactive:\n    enabled: true\n    source: work_chat\n    owner: {id_type: user_id, id_value: owner1}\n    agent: owner-assistant\n")
+	cfg := configFile(t, "data_sources:\n  work_chat:\n    channel: dws-main\n    groups:\n      member_robot: app-main\nagents:\n  owner-assistant:\n    preset: claude-default\n    capabilities: [conversation_history_read]\napplications:\n  proactive:\n    enabled: true\n    source: work_chat\n    owner: {id_type: user_id, id_value: owner1}\n    agent: owner-assistant\n")
 	code, result := invoke(t, home, "", "--config", cfg, "config", "plan")
 	if code != 0 {
 		t.Fatal(result)
@@ -423,7 +423,7 @@ func TestDualApplyCreatesGroupAgentWithBoundDWSContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := configFile(t, "data_sources:\n  work_chat:\n    channel: dws-main\n    groups:\n      member_robot: app-main\nagents:\n  group-helper:\n    preset: claude-default\n    memory_scope: conversation_published\n    capabilities: [conversation_history_read, memory_read]\napplications:\n  group_mention:\n    enabled: true\n    source: work_chat\n    channel: app-main\n    default_agent: group-helper\n")
+	cfg := configFile(t, "data_sources:\n  work_chat:\n    channel: dws-main\n    groups:\n      member_robot: app-main\nagents:\n  group-helper:\n    preset: claude-default\n    capabilities: [conversation_history_read]\napplications:\n  group_mention:\n    enabled: true\n    source: work_chat\n    channel: app-main\n    default_agent: group-helper\n")
 	code, result := invoke(t, home, "", "--config", cfg, "config", "plan")
 	if code != 0 {
 		t.Fatal(result)
@@ -444,7 +444,7 @@ func TestDualApplyCreatesGroupAgentWithBoundDWSContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if runtime.ApplicationMode != "group_mention" || runtime.ContextChannelID != dws.ID || runtime.ChannelID != app.ID || len(runtime.RouteIDs) != 1 || runtime.MemoryScope != "conversation_published" {
+	if runtime.ApplicationMode != "group_mention" || runtime.ContextChannelID != dws.ID || runtime.ChannelID != app.ID || len(runtime.RouteIDs) != 1 {
 		t.Fatalf("group Agent configuration: %+v", runtime)
 	}
 }
