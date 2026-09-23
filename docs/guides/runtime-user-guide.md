@@ -12,6 +12,8 @@ macOS managed service uses the active `~/.memgov/config.yaml`; `config.dual.yaml
 
 私聊与群 @ 由机器人 Stream 实时接收。消息先用一个短事务保存去重、任务恢复和投递所需的 SQLite 状态，再立即唤醒对应 Agent；默认 1 秒扫描只在唤醒合并或丢失时兜底，不会等待 DWS 群历史查询。原消息的“已收到”“处理中”等表情按顺序旁路发送，平台接口变慢不会阻止 Agent 开始；群目录刷新和补漏也独立运行。回答与工具验证仍由 Claude 执行，正文当前在完整结果生成后一次性交付，回复会显示接入耗时、执行耗时和实际模型。
 
+After a managed restart, a running supervisor does not by itself prove that the bot Stream is connected. Verify application intake and the resulting bot reply before treating a private-chat probe as successful; DWS send success only confirms platform acceptance. The application receiver has no history backfill, so do not assume a request sent during reconnection will be recovered. The observed limitation is tracked in [implementation status](../implementation-status.md#authorized-local-acceptance).
+
 运行时会按实际通道加入通道专属系统提示。本人在钉钉私聊中提到某位同事、且问题可能依赖双方沟通时，Agent 默认通过 `dws` 先在当前企业中确认联系人，再读取与该人的一对一聊天；不会先遍历长期记忆，也不能因为运行时会话目录为空就声称没有聊天或正式记忆。重名时先请本人消歧，不猜测身份。只有本人明确询问长期知识，或私聊记录不足时，才继续使用 `memgov-workspace`。群内 @ 使用另一套边界：只使用当前群及向该群开放的上下文，不会因为提到某人而读取其私聊。
 
 发送也按通道区分身份。私聊机器人的普通回答不用调用 `dws`，由运行时以应用机器人身份回复当前私聊；本人明确要求“另发给某人或某群”时，绑定了 DWS profile 的完整 Owner Agent 才可用 `dws chat +messages-send --as user` 以本人身份发送，并保留 AI 标识。群 Agent 的回答始终以应用机器人身份回到原群，即使 Owner 在群里要求也不能改用 DWS 本人身份；跨群或私聊没有精确的机器人发送授权时只生成待处理操作。看到 Agent 为普通群回答探测 `dws chat --help`，或用 `--as user` 发送，均属于错误选路。

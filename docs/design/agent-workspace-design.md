@@ -1,6 +1,6 @@
 # Agent Workspace knowledge
 
-Status: implemented and validated in source on 2026-09-23; results and deployment boundaries are tracked in [implementation status](../implementation-status.md). This design does not claim that an installed service has been upgraded. [Implementation details](agent-workspace-design-detail.md) define the file contract and migration boundary.
+Status: source validation and a separately authorized local upgrade with Owner private-chat persistence checks passed on 2026-09-23. Scope, remaining live acceptance and restart intake limitations are tracked in [implementation status](../implementation-status.md). [Implementation details](agent-workspace-design-detail.md) define the file contract and migration boundary.
 
 ## Goal and everyday use
 
@@ -22,7 +22,7 @@ This is a destructive replacement. Archive the complete old database, configurat
 
 The implementation includes current-file search, conflict-safe writes, file revision metadata, a runtime-managed `memgov-workspace` skill, CLI access, and a read-only console. Message retention, task controls, source evidence, confirmation, and uncertain delivery results keep their existing responsibilities.
 
-Root/child task orchestration, automatic proactive completion notifications, new platform adapters, deployment, and real-platform acceptance are separate work. This change does not imply those goals are delivered.
+Root/child task orchestration, automatic proactive completion notifications and new platform adapters remain separate work. The completed local upgrade and private-chat check do not establish the full business loop or live background/group acceptance.
 
 ## Implementation and acceptance order
 
