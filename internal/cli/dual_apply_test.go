@@ -360,7 +360,8 @@ func dualAppliedVersion(plan map[string]any) string {
 	return strconv.Itoa(int(version))
 }
 
-func TestDualApplyCreatesGroupAgentWithBoundDWSContext(t *testing.T) {
+func groupApplyFixture(t *testing.T) (string, core.Channel, core.Channel) {
+	t.Helper()
 	home := filepath.Join(t.TempDir(), "home")
 	if code, result := invoke(t, home, "", "init"); code != 0 {
 		t.Fatal(result)
@@ -423,6 +424,11 @@ func TestDualApplyCreatesGroupAgentWithBoundDWSContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return home, dws, app
+}
+
+func TestDualApplyCreatesGroupAgentWithBoundDWSContext(t *testing.T) {
+	home, dws, app := groupApplyFixture(t)
 	cfg := configFile(t, "data_sources:\n  work_chat:\n    channel: dws-main\n    groups:\n      member_robot: app-main\nagents:\n  group-helper:\n    preset: claude-default\n    capabilities: [conversation_history_read]\napplications:\n  group_mention:\n    enabled: true\n    source: work_chat\n    channel: app-main\n    default_agent: group-helper\n")
 	code, result := invoke(t, home, "", "--config", cfg, "config", "plan")
 	if code != 0 {
@@ -435,7 +441,8 @@ func TestDualApplyCreatesGroupAgentWithBoundDWSContext(t *testing.T) {
 	if code, result = invoke(t, home, "", "--config", cfg, "config", "apply-runtime", "--plan-digest", plan["plan_digest"].(string), "--expected-version", "0"); code != 0 {
 		t.Fatal(result)
 	}
-	store, err = core.Open(ctx, filepath.Join(home, "state.db"), false)
+	ctx := context.Background()
+	store, err := core.Open(ctx, filepath.Join(home, "state.db"), false)
 	if err != nil {
 		t.Fatal(err)
 	}

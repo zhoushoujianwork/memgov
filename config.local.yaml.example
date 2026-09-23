@@ -133,6 +133,7 @@ channels: []
 #       group_mention:
 #         enabled: false
 #         execution_concurrency: 4  # 1–32; different members run independently, same-member follow-ups stay ordered
+#         execution_timeout_seconds: 3600 # One hour; omitted defaults to 900, valid range 1–86400
 #         # source: work_chat        # 可选同群历史；机器人交互不要求启用数据源
 #         # agent: group-helper      # 可覆盖 bot 默认 Agent
 #         bindings: []
