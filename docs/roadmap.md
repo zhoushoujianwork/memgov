@@ -17,7 +17,7 @@ The [Agent Workspace refactor](design/agent-workspace-design.md) replaces the da
 
 ## Next product work
 
-- Executable Claude tool parity and current skill initialization have passed source and isolated real-Claude checks. Complete the separately authorized conversation configuration and one real group business loop; missing robot callbacks and DWS Stream timestamp normalization remain independent follow-ups.
+- Executable Claude tool parity and current skill initialization passed source and isolated real-Claude checks; one authorized local conversation binding is applied and its signed service restarted. Next, verify one real group business loop. Missing robot callbacks and DWS Stream timestamp normalization remain independent follow-ups.
 - Investigate the request accepted by DWS without observed application intake immediately after restart; establish receiver readiness and the delivery guarantee before claiming lossless restart. Continue investigating other runtime failures independently of storage format.
 - Implement and verify Personal root/child task relationships and environment snapshots before advertising coordinated sub-Agent work.
 - Decide and implement automatic proactive result/blocked/confirmation notifications with deduplication and receipt recovery. Current completion remains `record_only` until that work is delivered.
