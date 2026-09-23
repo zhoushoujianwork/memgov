@@ -69,7 +69,7 @@ type stageDelivery struct {
 }
 
 func (s *Service) reserveSlot(cfg core.RuntimeConfig, kind string) bool {
-	if cfg.ApplicationMode != "proactive" || !s.concurrent {
+	if (cfg.ApplicationMode != "proactive" && cfg.ApplicationMode != "group_mention") || !s.concurrent {
 		return true
 	}
 	s.slotsMu.Lock()
@@ -89,7 +89,7 @@ func (s *Service) reserveSlot(cfg core.RuntimeConfig, kind string) bool {
 }
 
 func (s *Service) releaseSlot(cfg core.RuntimeConfig, kind string) {
-	if cfg.ApplicationMode != "proactive" || !s.concurrent {
+	if (cfg.ApplicationMode != "proactive" && cfg.ApplicationMode != "group_mention") || !s.concurrent {
 		return
 	}
 	s.slotsMu.Lock()
@@ -745,13 +745,13 @@ func (s *Service) tick(ctx context.Context, cfg core.RuntimeConfig, preset agent
 		s.emit(ctx, runlog.Event{RuntimeID: cfg.ID, Level: "info", Component: "intake", Event: "messages_synced", Status: "ready", Summary: fmt.Sprintf("发现 %d 条待分析消息", syncResult.Pending+syncResult.Revised)})
 	}
 	for n := 0; ; n++ {
-		if cfg.ApplicationMode != "group_mention" && n >= cfg.AnalysisConcurrency {
+		if n >= cfg.AnalysisConcurrency {
 			break
 		}
 		if !s.reserveSlot(cfg, "analysis") {
 			break
 		}
-		reservedAnalysis := cfg.ApplicationMode == "proactive" && s.concurrent
+		reservedAnalysis := (cfg.ApplicationMode == "proactive" || cfg.ApplicationMode == "group_mention") && s.concurrent
 		var batch core.RuntimeBatch
 		batchReady, err := core.RuntimeBatchReady(ctx, s.Store.DB, cfg.ID, s.now())
 		if err != nil {
@@ -802,11 +802,11 @@ func (s *Service) tick(ctx context.Context, cfg core.RuntimeConfig, preset agent
 			break
 		}
 	}
-	if s.executeOneConfirmedAction(ctx, cfg, preset) {
+	if s.executeOneConfirmedAction(ctx, cfg, preset) && (cfg.ApplicationMode != "group_mention" || !s.concurrent) {
 		return
 	}
 	for n := 0; ; n++ {
-		if cfg.ApplicationMode != "group_mention" && n >= cfg.Concurrency {
+		if n >= cfg.Concurrency {
 			break
 		}
 		if !s.executeOne(ctx, cfg, preset) {
@@ -822,7 +822,7 @@ func (s *Service) executeOneConfirmedAction(ctx context.Context, cfg core.Runtim
 	if !s.reserveSlot(cfg, "execution") {
 		return false
 	}
-	reserved := cfg.ApplicationMode == "proactive" && s.concurrent
+	reserved := (cfg.ApplicationMode == "proactive" || cfg.ApplicationMode == "group_mention") && s.concurrent
 	ready, err := core.RuntimeActionReady(ctx, s.Store.DB, cfg.ID)
 	if err != nil || !ready {
 		if reserved {
@@ -859,7 +859,10 @@ func (s *Service) executeOneConfirmedAction(ctx context.Context, cfg core.Runtim
 }
 
 func (s *Service) executeClaimedAction(ctx context.Context, cfg core.RuntimeConfig, preset agent.Preset, action core.RuntimePendingAction, attempt core.RuntimeActionAttempt) bool {
-	if cfg.ApplicationMode == "proactive" {
+	var finishTask func()
+	ctx, finishTask = s.taskContext(ctx, action.TaskID, action.TaskVersion)
+	defer finishTask()
+	if cfg.ApplicationMode == "proactive" || cfg.ApplicationMode == "group_mention" {
 		var finish func()
 		ctx, finish = s.workContext(ctx, attempt.ID, "", 0)
 		defer finish()
@@ -969,7 +972,7 @@ func (s *Service) failAction(ctx context.Context, cfg core.RuntimeConfig, action
 }
 
 func (s *Service) analyze(ctx context.Context, cfg core.RuntimeConfig, batch core.RuntimeBatch) {
-	if cfg.ApplicationMode == "proactive" {
+	if cfg.ApplicationMode == "proactive" || cfg.ApplicationMode == "group_mention" {
 		var finish func()
 		ctx, finish = s.workContext(ctx, batch.ID, "", 0)
 		defer finish()
@@ -1057,7 +1060,7 @@ func (s *Service) executeOne(ctx context.Context, cfg core.RuntimeConfig, preset
 	if !s.reserveSlot(cfg, "execution") {
 		return false
 	}
-	reserved := cfg.ApplicationMode == "proactive" && s.concurrent
+	reserved := (cfg.ApplicationMode == "proactive" || cfg.ApplicationMode == "group_mention") && s.concurrent
 	ready, err := core.RuntimeTaskReady(ctx, s.Store.DB, cfg.ID)
 	if err != nil || !ready {
 		if reserved {

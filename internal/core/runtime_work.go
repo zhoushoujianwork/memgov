@@ -200,7 +200,7 @@ func RuntimeBatchReady(ctx context.Context, q Queryer, value string, at time.Tim
 	if c.Status != "running" {
 		return false, nil
 	}
-	if !inMemoryCapacity(ctx) {
+	if c.ApplicationMode == "group_mention" || !inMemoryCapacity(ctx) {
 		if available, e := PoolAvailable(ctx, q, c, "analysis"); e != nil || !available {
 			return false, e
 		}
@@ -278,12 +278,12 @@ func RuntimeActionReady(ctx context.Context, q Queryer, value string) (bool, err
 	if c.Status != "running" {
 		return false, nil
 	}
-	if !inMemoryCapacity(ctx) {
+	if c.ApplicationMode == "group_mention" || !inMemoryCapacity(ctx) {
 		if available, e := PoolAvailable(ctx, q, c, "execution"); e != nil || !available {
 			return false, e
 		}
 	}
-	if active, activeErr := runtimeHasActiveExecution(ctx, q, c.ID); activeErr != nil || (active && c.ApplicationMode != "proactive") {
+	if active, activeErr := runtimeHasActiveExecution(ctx, q, c.ID); activeErr != nil || (active && c.ApplicationMode != "proactive" && c.ApplicationMode != "group_mention") {
 		return false, activeErr
 	}
 	var found int
@@ -291,6 +291,7 @@ func RuntimeActionReady(ctx context.Context, q Queryer, value string) (bool, err
 WHERE t.runtime_id=? AND t.status='awaiting_confirmation' AND t.version=a.task_version AND a.status='confirmed'
 AND NOT EXISTS(SELECT 1 FROM runtime_work_leases l WHERE l.task_id=t.id AND l.released=0)
 AND t.route_id IN (SELECT value FROM json_each(?))
+AND `+runtimeExecutionLaneSQL(c, "t", false)+`
 AND EXISTS (SELECT 1 FROM channel_routes r WHERE r.id=t.route_id AND r.channel_id=? AND r.status='active' AND r.mode<>'ignore'))`, c.ID, JSON(c.RouteIDs), c.ChannelID).Scan(&found)
 	return found != 0, err
 }
@@ -303,7 +304,7 @@ func RuntimeTaskReady(ctx context.Context, q Queryer, value string) (bool, error
 	if c.Status != "running" {
 		return false, nil
 	}
-	if c.ApplicationMode == "proactive" {
+	if c.ApplicationMode == "proactive" || c.ApplicationMode == "group_mention" {
 		if available, e := PoolAvailable(ctx, q, c, "execution"); e != nil || !available {
 			return false, e
 		}
@@ -314,6 +315,7 @@ func RuntimeTaskReady(ctx context.Context, q Queryer, value string) (bool, error
 	err = q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM runtime_tasks WHERE runtime_id=? AND status='pending'
 AND NOT EXISTS(SELECT 1 FROM runtime_work_leases l WHERE l.task_id=runtime_tasks.id AND l.released=0)
 AND kind<>'memory'
+AND `+runtimeExecutionLaneSQL(c, "runtime_tasks", true)+`
 AND route_id IN (SELECT value FROM json_each(?))
 AND EXISTS (SELECT 1 FROM channel_routes r WHERE r.id=runtime_tasks.route_id AND r.channel_id=? AND r.status='active' AND r.mode<>'ignore'))`, c.ID, JSON(c.RouteIDs), c.ChannelID).Scan(&found)
 	return found != 0, err

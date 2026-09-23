@@ -558,18 +558,19 @@ func (tx *Tx) SyncGroupMentionRoutes(ctx context.Context, value string, dwsConve
 }
 
 type RuntimeMessage struct {
-	ID           string        `json:"id"`
-	Revision     int           `json:"revision"`
-	SentAt       string        `json:"sent_at"`
-	Sender       string        `json:"sender_principal"`
-	SelfAuthored bool          `json:"self_authored"`
-	Addressed    bool          `json:"addressed,omitempty"`
-	Body         string        `json:"body"`
-	Quote        *MessageQuote `json:"quote,omitempty"`
-	SourceID     string        `json:"source_id,omitempty"`
-	FragmentID   string        `json:"fragment_id,omitempty"`
-	SHA256       string        `json:"sha256,omitempty"`
-	Evidence     []Evidence    `json:"evidence,omitempty"`
+	ID                string        `json:"id"`
+	Revision          int           `json:"revision"`
+	SentAt            string        `json:"sent_at"`
+	Sender            string        `json:"sender_principal"`
+	SenderDisplayName string        `json:"sender_display_name,omitempty"`
+	SelfAuthored      bool          `json:"self_authored"`
+	Addressed         bool          `json:"addressed,omitempty"`
+	Body              string        `json:"body"`
+	Quote             *MessageQuote `json:"quote,omitempty"`
+	SourceID          string        `json:"source_id,omitempty"`
+	FragmentID        string        `json:"fragment_id,omitempty"`
+	SHA256            string        `json:"sha256,omitempty"`
+	Evidence          []Evidence    `json:"evidence,omitempty"`
 	// Provider addressing is needed only for DingTalk reply affordances. It is
 	// deliberately excluded from model payloads and structured logs.
 	ProviderMessageID string `json:"-"`
@@ -816,13 +817,16 @@ func runtimeMessages(ctx context.Context, q Queryer, ids []string) ([]RuntimeMes
 	for _, id := range ids {
 		var m RuntimeMessage
 		var self, addressed int
+		var snapshot string
 		err := q.QueryRowContext(ctx, `SELECT m.id,m.current_revision,m.sent_at,m.sender_principal,m.self_authored,m.addressed,m.provider_message_id,m.conversation_id,
 CASE WHEN m.availability='available' THEN mr.body ELSE '' END,
 CASE WHEN m.availability='available' THEN coalesce(so.source_id,'') ELSE '' END,
 CASE WHEN m.availability='available' THEN coalesce((SELECT id FROM fragments WHERE source_id=so.source_id ORDER BY rowid LIMIT 1),'') ELSE '' END,
-CASE WHEN m.availability='available' THEN coalesce((SELECT digest FROM fragments WHERE source_id=so.source_id ORDER BY rowid LIMIT 1),'') ELSE '' END
+CASE WHEN m.availability='available' THEN coalesce((SELECT digest FROM fragments WHERE source_id=so.source_id ORDER BY rowid LIMIT 1),'') ELSE '' END,
+CASE WHEN m.availability='available' THEN coalesce(s.content,'') ELSE '' END
 FROM messages m JOIN message_revisions mr ON mr.message_id=m.id AND mr.revision=m.current_revision
-LEFT JOIN source_origins so ON so.message_id=m.id AND so.revision=m.current_revision WHERE m.id=?`, id).Scan(&m.ID, &m.Revision, &m.SentAt, &m.Sender, &self, &addressed, &m.ProviderMessageID, &m.ConversationID, &m.Body, &m.SourceID, &m.FragmentID, &m.SHA256)
+LEFT JOIN source_origins so ON so.message_id=m.id AND so.revision=m.current_revision
+LEFT JOIN sources s ON s.id=so.source_id WHERE m.id=?`, id).Scan(&m.ID, &m.Revision, &m.SentAt, &m.Sender, &self, &addressed, &m.ProviderMessageID, &m.ConversationID, &m.Body, &m.SourceID, &m.FragmentID, &m.SHA256, &snapshot)
 		if err != nil {
 			return nil, err
 		}
@@ -841,6 +845,7 @@ LEFT JOIN source_origins so ON so.message_id=m.id AND so.revision=m.current_revi
 			}
 		}
 		if m.SourceID != "" {
+			m.SenderDisplayName = runtimeSenderDisplayName(snapshot)
 			rows, queryErr := q.QueryContext(ctx, "SELECT id,digest FROM fragments WHERE source_id=? ORDER BY rowid", m.SourceID)
 			if queryErr != nil {
 				return nil, queryErr
@@ -878,7 +883,7 @@ func (tx *Tx) ClaimRuntimeBatch(ctx context.Context, value string, at time.Time)
 	if c.Status != "running" {
 		return out, nil
 	}
-	if !inMemoryCapacity(ctx) {
+	if c.ApplicationMode == "group_mention" || !inMemoryCapacity(ctx) {
 		if available, e := PoolAvailable(ctx, tx.Conn, c, "analysis"); e != nil || !available {
 			return out, e
 		}
@@ -1607,10 +1612,10 @@ func (tx *Tx) ClaimRuntimeTask(ctx context.Context, value, attemptID, model, pre
 (SELECT count(*) FROM runtime_action_attempts aa JOIN runtime_tasks rt ON rt.id=aa.task_id WHERE rt.runtime_id=? AND aa.status='running')`, c.ID, c.ID).Scan(&active); err != nil {
 		return t, a, err
 	}
-	if (c.ApplicationMode != "proactive" && c.ApplicationMode != "group_mention" && active > 0) || (c.ApplicationMode != "group_mention" && active >= c.Concurrency) {
+	if (c.ApplicationMode != "proactive" && c.ApplicationMode != "group_mention" && active > 0) || (active >= c.Concurrency) {
 		return t, a, nil
 	}
-	if !inMemoryCapacity(ctx) {
+	if c.ApplicationMode == "group_mention" || !inMemoryCapacity(ctx) {
 		if available, e := PoolAvailable(ctx, tx.Conn, c, "execution"); e != nil || !available {
 			return t, a, e
 		}
@@ -1620,6 +1625,7 @@ AND route_id IN (SELECT value FROM json_each(?))
 AND EXISTS (SELECT 1 FROM channel_routes r WHERE r.id=runtime_tasks.route_id AND r.channel_id=? AND r.status='active' AND r.mode<>'ignore')
 AND NOT EXISTS(SELECT 1 FROM runtime_work_leases l WHERE l.task_id=runtime_tasks.id AND l.released=0)
 AND kind<>'memory'
+AND `+runtimeExecutionLaneSQL(c, "runtime_tasks", true)+`
 ORDER BY max(updated_at,coalesce((SELECT max(a.started_at) FROM runtime_attempts a JOIN runtime_tasks previous ON previous.id=a.task_id WHERE previous.runtime_id=runtime_tasks.runtime_id AND previous.route_id=runtime_tasks.route_id),'')),updated_at,id LIMIT 1`, c.ID, JSON(c.RouteIDs), c.ChannelID), &t)
 	if errors.Is(err, sql.ErrNoRows) {
 		return RuntimeTask{}, RuntimeAttempt{}, nil
@@ -2027,7 +2033,7 @@ func (tx *Tx) ClaimRuntimeAction(ctx context.Context, value, attemptID, model st
 	if c.Status != "running" {
 		return action, attempt, nil
 	}
-	if !inMemoryCapacity(ctx) {
+	if c.ApplicationMode == "group_mention" || !inMemoryCapacity(ctx) {
 		if available, e := PoolAvailable(ctx, tx.Conn, c, "execution"); e != nil || !available {
 			return action, attempt, e
 		}
@@ -2038,7 +2044,7 @@ func (tx *Tx) ClaimRuntimeAction(ctx context.Context, value, attemptID, model st
 (SELECT count(*) FROM runtime_action_attempts aa JOIN runtime_tasks rt ON rt.id=aa.task_id WHERE rt.runtime_id=? AND aa.status='running')`, c.ID, c.ID).Scan(&active); err != nil {
 		return action, attempt, err
 	}
-	if (c.ApplicationMode != "proactive" && c.ApplicationMode != "group_mention" && active > 0) || (c.ApplicationMode != "group_mention" && active >= c.Concurrency) {
+	if (c.ApplicationMode != "proactive" && c.ApplicationMode != "group_mention" && active > 0) || (active >= c.Concurrency) {
 		return action, attempt, nil
 	}
 	err = tx.Conn.QueryRowContext(ctx, `SELECT a.id,a.task_id,a.task_version,a.kind,a.target,a.payload,a.payload_digest,a.status,a.confirmed_by,a.confirmation_origin,a.created_at,a.updated_at
@@ -2047,6 +2053,7 @@ WHERE t.runtime_id=? AND t.status='awaiting_confirmation' AND t.version=a.task_v
 AND NOT EXISTS(SELECT 1 FROM runtime_work_leases l WHERE l.task_id=t.id AND l.released=0)
 AND t.route_id IN (SELECT value FROM json_each(?))
 AND EXISTS (SELECT 1 FROM channel_routes r WHERE r.id=t.route_id AND r.channel_id=? AND r.status='active' AND r.mode<>'ignore')
+AND `+runtimeExecutionLaneSQL(c, "t", false)+`
 ORDER BY a.updated_at,a.id LIMIT 1`, c.ID, JSON(c.RouteIDs), c.ChannelID).Scan(&action.ID, &action.TaskID, &action.TaskVersion, &action.Kind, &action.Target, &action.Payload, &action.PayloadDigest, &action.Status, &action.ConfirmedBy, &action.ConfirmationOrigin, &action.CreatedAt, &action.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return RuntimePendingAction{}, RuntimeActionAttempt{}, nil

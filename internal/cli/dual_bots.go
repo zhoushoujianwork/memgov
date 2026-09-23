@@ -56,6 +56,10 @@ func normalizeBotApplications(d *DualModeDeclaration, diagnostics *[]ConfigDiagn
 			defaultBool(&g.Enabled, false)
 			defaultString(&g.Trigger, "mention")
 			defaultString(&g.ReplyPolicy, "reply_to_trigger")
+			defaultInt(&g.ExecutionConcurrency, 4)
+			if !bounded(g.ExecutionConcurrency, 1, 32) {
+				return dualInvalid("applications.bots.group_mention.execution_concurrency", "must be 1..32")
+			}
 		}
 		if b.OwnerPrivate != nil {
 			o := b.OwnerPrivate

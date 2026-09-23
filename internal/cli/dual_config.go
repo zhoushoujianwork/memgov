@@ -118,15 +118,16 @@ type ProactiveApplication struct {
 	Delivery        string           `yaml:"delivery" json:"delivery"`
 }
 type GroupMentionApplication struct {
-	Owner        ApplicationOwner    `yaml:"-" json:"owner,omitempty"`
-	Enabled      *bool               `yaml:"enabled" json:"enabled"`
-	Source       string              `yaml:"source" json:"source"`
-	Channel      string              `yaml:"channel" json:"channel"`
-	Trigger      string              `yaml:"trigger" json:"trigger"`
-	DefaultAgent string              `yaml:"default_agent" json:"default_agent"`
-	Agent        string              `yaml:"agent" json:"agent,omitempty"`
-	ReplyPolicy  string              `yaml:"reply_policy" json:"reply_policy"`
-	Bindings     []GroupAgentBinding `yaml:"bindings" json:"bindings"`
+	ExecutionConcurrency *int                `yaml:"execution_concurrency" json:"execution_concurrency"`
+	Owner                ApplicationOwner    `yaml:"-" json:"owner,omitempty"`
+	Enabled              *bool               `yaml:"enabled" json:"enabled"`
+	Source               string              `yaml:"source" json:"source"`
+	Channel              string              `yaml:"channel" json:"channel"`
+	Trigger              string              `yaml:"trigger" json:"trigger"`
+	DefaultAgent         string              `yaml:"default_agent" json:"default_agent"`
+	Agent                string              `yaml:"agent" json:"agent,omitempty"`
+	ReplyPolicy          string              `yaml:"reply_policy" json:"reply_policy"`
+	Bindings             []GroupAgentBinding `yaml:"bindings" json:"bindings"`
 }
 type GroupAgentBinding struct {
 	ConversationID string `yaml:"conversation_id" json:"conversation_id"`
@@ -397,6 +398,10 @@ func NormalizeDualModeConfig(c Config) (DualModeValidation, error) {
 	defaultBool(&g.Enabled, false)
 	defaultString(&g.Trigger, "mention")
 	defaultString(&g.ReplyPolicy, "reply_to_trigger")
+	defaultInt(&g.ExecutionConcurrency, 4)
+	if !bounded(g.ExecutionConcurrency, 1, 32) {
+		return out, dualInvalid("applications.group_mention.execution_concurrency", "must be 1..32")
+	}
 	if g.Trigger != "mention" || g.ReplyPolicy != "reply_to_trigger" {
 		return out, dualInvalid("applications.group_mention", "requires mention and reply_to_trigger")
 	}

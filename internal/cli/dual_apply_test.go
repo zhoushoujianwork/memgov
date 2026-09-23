@@ -447,4 +447,7 @@ func TestDualApplyCreatesGroupAgentWithBoundDWSContext(t *testing.T) {
 	if runtime.ApplicationMode != "group_mention" || runtime.ContextChannelID != dws.ID || runtime.ChannelID != app.ID || len(runtime.RouteIDs) != 1 {
 		t.Fatalf("group Agent configuration: %+v", runtime)
 	}
+	if runtime.Concurrency != 4 {
+		t.Fatalf("group execution default must permit independent members: %d", runtime.Concurrency)
+	}
 }
