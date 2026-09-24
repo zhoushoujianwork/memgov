@@ -551,6 +551,7 @@ func (c *Claude) execute(ctx context.Context, in ExecutionInput) (core.RuntimeAt
 		prompt += "\n\nChannel-specific operating context:\n" + in.ChannelSystemPrompt
 	}
 	prompt += agentWorkspacePrompt(in, workspaceTool)
+	prompt += loadedSkillPrompt(in)
 	input := map[string]any{"policy": policy, "task": in.Task, "workspace_bootstrap": in.WorkspaceBootstrap, "conversation_context": in.ConversationContext, "capabilities": in.Capabilities, "directory_snapshots": in.DirectorySnapshots}
 	if request := currentGroupRequest(in); request != nil {
 		input["current_request"] = request

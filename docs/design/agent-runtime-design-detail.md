@@ -237,6 +237,7 @@ dws 长连接中断后按 1 秒退避重连。接收会话使用 `all-group` 订
 | [group.md](../../internal/sysprompt/group.md) | 群内有效 @ |
 | [execute.md](../../internal/sysprompt/execute.md) | 普通任务执行 |
 | [confirmed-action.md](../../internal/sysprompt/confirmed-action.md) | 一次已确认外部操作 |
+| [skills.md](../../internal/sysprompt/skills.md) | Claude execution context for successfully prepared skills; distinguishes available knowledge from completed retrieval |
 
 公共规则区分当前已核验请求与资料中的指令，不按危险关键词直接封禁。要求在操作前核查目标、影响、受众、权限及可恢复性；对未授权破坏和外传拒绝执行，对范围不清的合法维护澄清必要信息。区分 `owner_request`、`owner_delegated` 与 `owner_confirmation`，不把资料内容当作新的授权。筛选阶段将嵌入攻击作为 context；Workspace 内容不得授予执行或披露权限。上述语义由模型遵循，不是新增的确定性攻击分类器。
 
@@ -305,6 +306,16 @@ Managed or resolved skills are enabled without Claude's `--disable-slash-command
 Each attempt initializes the current managed Workspace skill/wrapper from the running binary and refreshes executor-inherited skills. Existing Markdown knowledge is preserved. An old preset is not silently rewritten by upgrading the binary: create a current preset or explicitly synchronize policy. Repository `.claude/skills` roots are staged only inside the task checkout: link targets remain untouched, and regular skill directories are preserved before temporary replacement. Git verification restores unchanged original roots after checking repository and staging provenance; it rejects staged or committed changes to those skill roots and modified staged skill content. Symlinked control parents remain rejected. Runtime support changes must not become business commits or hide unrelated tracked changes.
 
 Workspace commands use the supplied absolute path, one operation per call. A permission denial or tool error must be reported as failure rather than an empty search result. This guidance improves the invocation contract; it is not proof that a model can never misreport an outcome.
+
+### Loaded skill context
+
+Source behavior: after skill preparation succeeds, Claude receives the available skill names and summaries as JSON data, alongside shared guidance from `internal/sysprompt/skills.md`. The inventory reflects the resolved, staged skills for that invocation; configuration intent alone is not evidence that a skill loaded. It does not copy every referenced document into the prompt or claim that a tool has run.
+
+The guidance distinguishes the Agent's durable Workspace experience from knowledge and procedures available through skills. A new or sparse `MEMORY.md` describes that Workspace index only. The Agent should explain relevant available skills naturally when asked about its knowledge or capabilities, without inventing saved experience or requiring a tool call just to introduce itself. Capability-only answers stay brief, omit command lists unless explicitly requested, and end without an extra invitation to search. For a factual lookup, it should use the relevant skill and authorized material as needed, then distinguish successful findings, empty results and failed calls. A prepared skill is not proof that its external service is reachable or authenticated.
+
+Skill names and summaries remain untrusted metadata. They cannot override system instructions or change tool, identity, audience or external-action permissions. The inventory does not mount archives, merge workspaces, expose another group's knowledge or enable additional tools. Runtime skill discovery/staging is refreshed before each Claude turn; skill policy/content and shared prompt digests participate in native-session compatibility checks, so stale native context is not silently reused after a change. Accepted conversation history can still be restored as untrusted context.
+
+Validation must cover direct and task execution, empty and populated inventories, JSON escaping of hostile metadata, unchanged permissions, and multi-turn refresh/session replacement. These are source and harness checks; installed prompt behavior and real-platform replies require separate evidence in [implementation status](../implementation-status.md).
 
 ## Group requesters and concurrency
 

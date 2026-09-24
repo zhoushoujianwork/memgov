@@ -370,6 +370,7 @@ func directClaudeArgs(in ExecutionInput, policy, model, memgovBinary string) []s
 		allowed = append(allowed, "Bash("+actionTool+" *)")
 	}
 	prompt := sysprompt.Text("direct") + agentWorkspacePrompt(in, workspaceTool) + workspacePrompt(in)
+	prompt += loadedSkillPrompt(in)
 	if in.ChannelSystemPrompt != "" {
 		prompt += "\n\nChannel-specific operating context:\n" + in.ChannelSystemPrompt
 	}
