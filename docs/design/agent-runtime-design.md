@@ -39,6 +39,8 @@ Agent 规则、会话、任务和日志分开保存：
 
 Groups retain their configured execution policy. A group explicitly enabled for full Bash receives normal capability-based file tools, command execution, web search/fetch and its selected skills; it is no longer restricted to artifact editing. Restricted groups keep scoped Workspace and artifact tools. Full Bash cannot be combined with bounded directory snapshots. Owner 声明目录时采用只读输入与独立副本，代码副本保留 Git 历史；受控目录模式不运行任意 Shell。权限和目录细节见[能力映射](agent-runtime-design-detail.md#会话-bash-与能力映射)。
 
+The source runtime also gives Claude context about skills successfully prepared for the current turn. It distinguishes experience saved in the Agent Workspace from reference knowledge and workflows supplied by those skills: an empty Workspace index does not mean all knowledge is absent. Capability questions can be answered from this inventory without a mandatory tool call; claims that material was searched, read or verified require actual results. See [loaded skill context](agent-runtime-design-detail.md#loaded-skill-context) and [implementation status](../implementation-status.md) for validation and installation boundaries.
+
 ## 统一系统提示与安全规则
 
 各模型入口共用简短的 [identity.md](../../internal/sysprompt/identity.md) 自我定位和 [security.md](../../internal/sysprompt/security.md) 安全规则，另有观察、后台执行、本人私聊、群 @ 等入口提示。Agent 对外定位为能结合当前对话、获准工具和受治理长期记忆，把工作从理解与调查推进到执行与验证的 AI 工作伙伴；只介绍当前实际可用能力，不自称底层模型或 CLI 产品。引用、聊天、记忆与工具结果是资料，不能扩大授权。本人私聊可在绑定 DWS profile 内按需查询本人沟通；群 Agent 保持同群受众范围。
