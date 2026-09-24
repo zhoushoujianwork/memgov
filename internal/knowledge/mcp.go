@@ -29,8 +29,9 @@ var sourceTools = map[string][]mcpTool{
 	},
 	"confluence": {
 		{"list_confluence_tools", "List currently advertised and approved Confluence read tools and their schemas.", schema(map[string]any{})},
-		{"search_confluence", "Search Confluence narrowly; read relevant pages and cite actual source_url.", schema(map[string]any{"query": field("string"), "query_mode": field("string"), "limit": field("integer"), "start": field("integer")}, "query")},
-		{"query_confluence", "Call an approved Confluence read tool with its advertised arguments.", schema(map[string]any{"tool": field("string"), "arguments": field("object")}, "tool", "arguments")},
+		{"search_confluence", "Search Confluence pages through read-only REST; read relevant pages and cite actual source_url.", schema(map[string]any{"query": field("string"), "query_mode": field("string"), "limit": field("integer"), "start": field("integer")}, "query")},
+		{"read_confluence_page", "Read a Confluence page by numeric ID through read-only REST, including its body and source URL.", schema(map[string]any{"id": field("string")}, "id")},
+		{"query_confluence", "Call an approved advanced Confluence read tool with its advertised arguments; use search_confluence for page search.", schema(map[string]any{"tool": field("string"), "arguments": field("object")}, "tool", "arguments")},
 		{"read_confluence_resource", "Read an export resource URI returned by Confluence.", schema(map[string]any{"uri": field("string")}, "uri")},
 	},
 }
@@ -123,6 +124,14 @@ func callTool(ctx context.Context, c *Client, name string, raw json.RawMessage) 
 			a.Limit = 10
 		}
 		return c.SearchConfluence(ctx, a.Query, a.Mode, a.Limit, a.Start)
+	case "read_confluence_page":
+		var a struct {
+			ID string `json:"id"`
+		}
+		if err := decodeArguments(raw, &a); err != nil {
+			return nil, err
+		}
+		return c.ReadConfluencePage(ctx, a.ID)
 	case "query_confluence":
 		var a struct {
 			Tool      string         `json:"tool"`

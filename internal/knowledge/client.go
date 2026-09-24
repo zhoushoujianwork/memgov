@@ -11,22 +11,25 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	dokkiAPI      = "https://dokki.one/api/v1"
-	dokkiWeb      = "https://dokki.one"
-	confluenceAPI = "https://mcp-dock.patsnap.info/mcp/confluence"
-	maxResponse   = 16 << 20
+	dokkiAPI       = "https://dokki.one/api/v1"
+	dokkiWeb       = "https://dokki.one"
+	confluenceAPI  = "https://mcp-dock.patsnap.info/mcp/confluence"
+	confluenceREST = "https://confluence.zhihuiya.com/rest/api"
+	maxResponse    = 16 << 20
 )
 
 var identifier = regexp.MustCompile(`^[A-Za-z0-9._-]{1,256}$`)
 var exportURI = regexp.MustCompile(`^confluence://page-export-pdf/[0-9]{1,40}$`)
+var numericPageID = regexp.MustCompile(`^[0-9]{1,40}$`)
 
 var confluenceReadTools = map[string]bool{
-	"confluence_search": true, "confluence_content_get": true, "confluence_content_list": true,
+	"confluence_content_get": true, "confluence_content_list": true,
 	"confluence_content_tree": true, "confluence_comment_list": true, "confluence_label_list": true,
 	"confluence_attachment_list": true, "confluence_attachment_download": true,
 	"confluence_property_get": true, "confluence_restriction_get": true,
@@ -37,14 +40,15 @@ var confluenceReadTools = map[string]bool{
 }
 
 type Client struct {
-	Credentials   Credentials
-	HTTP          *http.Client
-	DokkiURL      string
-	ConfluenceURL string
+	Credentials       Credentials
+	HTTP              *http.Client
+	DokkiURL          string
+	ConfluenceURL     string
+	ConfluenceRESTURL string
 }
 
 func NewClient(c Credentials) *Client {
-	return &Client{Credentials: c, HTTP: &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, DokkiURL: dokkiAPI, ConfluenceURL: confluenceAPI}
+	return &Client{Credentials: c, HTTP: &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, DokkiURL: dokkiAPI, ConfluenceURL: confluenceAPI, ConfluenceRESTURL: confluenceREST}
 }
 
 func (c *Client) secrets() []string {
@@ -426,25 +430,75 @@ func (c *Client) QueryConfluence(ctx context.Context, tool string, args map[stri
 
 func (c *Client) SearchConfluence(ctx context.Context, query, mode string, limit, start int) (any, error) {
 	query = strings.TrimSpace(query)
-	if query == "" || len(query) > 2000 || mode != "keyword" && mode != "cql" || limit < 1 || limit > 50 || start < 0 || start > 10000 {
+	if query == "" || len(query) > 2000 || strings.ContainsAny(query, "\r\n\x00") || mode != "keyword" && mode != "cql" || limit < 1 || limit > 50 || start < 0 || start > 10000 {
 		return nil, fmt.Errorf("invalid Confluence search parameters")
 	}
-	v, err := c.QueryConfluence(ctx, "confluence_search", map[string]any{"query": query, "query_mode": mode, "limit": limit, "start": start})
+	cql := query
+	if mode == "keyword" {
+		cql = "type = page and text ~ " + strconv.Quote(query)
+	}
+	params := url.Values{"cql": {cql}, "limit": {strconv.Itoa(limit)}, "start": {strconv.Itoa(start)}}
+	v, err := c.confluenceREST(ctx, "/content/search?"+params.Encode())
 	if err != nil {
 		return nil, err
 	}
+	rows, ok := v["results"].([]any)
+	if !ok || len(rows) > limit {
+		return nil, fmt.Errorf("Confluence search response is invalid")
+	}
+	for _, item := range rows {
+		row, ok := object(item)
+		if !ok || !numericPageID.MatchString(stringAt(row, "id")) || stringAt(row, "title") == "" {
+			return nil, fmt.Errorf("Confluence search hit is invalid")
+		}
+	}
+	return map[string]any{"data": map[string]any{"results": rows}, "total": v["totalSize"], "start": start, "limit": limit}, nil
+}
+
+func (c *Client) confluenceREST(ctx context.Context, path string) (map[string]any, error) {
+	pat := c.Credentials.Confluence.PAT
+	if pat == "" {
+		return nil, fmt.Errorf("Confluence is not configured")
+	}
+	if !validSecret(pat) {
+		return nil, fmt.Errorf("Confluence PAT is invalid")
+	}
+	v, err := c.request(ctx, "GET", c.ConfluenceRESTURL+path, nil, map[string]string{"Authorization": "Bearer " + pat, "Accept": "application/json"})
+	if err != nil {
+		return nil, err
+	}
+	v = withSourceURLs(scrub(v, c.secrets(), 0), "", 0)
 	result, ok := object(v)
 	if !ok {
-		return nil, fmt.Errorf("Confluence search response is invalid")
-	}
-	data, ok := object(result["data"])
-	if !ok {
-		return nil, fmt.Errorf("Confluence search response is invalid")
-	}
-	if _, ok = data["results"].([]any); !ok {
-		return nil, fmt.Errorf("Confluence search response is invalid")
+		return nil, fmt.Errorf("Confluence REST response is invalid")
 	}
 	return result, nil
+}
+
+func (c *Client) ReadConfluencePage(ctx context.Context, id string) (any, error) {
+	if !numericPageID.MatchString(id) {
+		return nil, fmt.Errorf("Confluence page ID must be numeric")
+	}
+	params := url.Values{"expand": {"body.storage,version,space"}}
+	v, err := c.confluenceREST(ctx, "/content/"+url.PathEscape(id)+"?"+params.Encode())
+	if err != nil {
+		return nil, err
+	}
+	if stringAt(v, "id") != id || stringAt(v, "type") != "page" {
+		return nil, fmt.Errorf("Confluence page identity mismatch")
+	}
+	body, ok := object(v["body"])
+	if !ok {
+		return nil, fmt.Errorf("Confluence page body is unavailable")
+	}
+	storage, ok := object(body["storage"])
+	if !ok {
+		return nil, fmt.Errorf("Confluence page body is unavailable")
+	}
+	if _, ok = storage["value"].(string); !ok {
+		return nil, fmt.Errorf("Confluence page body is unavailable")
+	}
+	return v, nil
 }
 
 func (c *Client) ReadConfluenceResource(ctx context.Context, uri string) (any, error) {

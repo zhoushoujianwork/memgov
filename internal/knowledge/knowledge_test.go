@@ -142,6 +142,16 @@ func TestDirectClientsValidateIdentityAndOnlyRead(t *testing.T) {
 				return
 			}
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"structuredContent":{"data":{"results":[{"title":"Page","_links":{"base":"https://confluence.example/wiki","webui":"/display/ABC/Page"}}]}}}}`))
+		case "/rest/content/search":
+			if r.Method != "GET" || r.Header.Get("Authorization") != "Bearer pat-private" || !strings.Contains(r.URL.Query().Get("cql"), `text ~ "query"`) {
+				t.Errorf("Confluence REST search request: %s", r.URL.String())
+			}
+			_, _ = w.Write([]byte(`{"results":[{"id":"42","type":"page","title":"Page","_links":{"webui":"/display/ABC/Page"}}],"totalSize":1,"_links":{"base":"https://confluence.example/wiki"}}`))
+		case "/rest/content/42":
+			if r.Method != "GET" || r.Header.Get("Authorization") != "Bearer pat-private" || r.URL.Query().Get("expand") != "body.storage,version,space" {
+				t.Errorf("Confluence REST read request: %s", r.URL.String())
+			}
+			_, _ = w.Write([]byte(`{"id":"42","type":"page","title":"Page","body":{"storage":{"value":"<p>Body</p>"}},"_links":{"base":"https://confluence.example/wiki","webui":"/display/ABC/Page"}}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -154,6 +164,7 @@ func TestDirectClientsValidateIdentityAndOnlyRead(t *testing.T) {
 	c := NewClient(creds)
 	c.DokkiURL = server.URL + "/dokki"
 	c.ConfluenceURL = server.URL + "/confluence"
+	c.ConfluenceRESTURL = server.URL + "/rest"
 	search, err := c.SearchDokki(context.Background(), "query", "hybrid", nil, 10)
 	if err != nil {
 		t.Fatal(err)
@@ -176,6 +187,9 @@ func TestDirectClientsValidateIdentityAndOnlyRead(t *testing.T) {
 	if _, err = c.QueryConfluence(context.Background(), "confluence_content_create", nil); err == nil {
 		t.Fatal("write tool admitted")
 	}
+	if _, err = c.QueryConfluence(context.Background(), "confluence_search", nil); err == nil {
+		t.Fatal("broken advanced search admitted")
+	}
 	page, err := c.SearchConfluence(context.Background(), "query", "keyword", 10, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -183,5 +197,18 @@ func TestDirectClientsValidateIdentityAndOnlyRead(t *testing.T) {
 	pageRaw, _ := json.Marshal(page)
 	if !strings.Contains(string(pageRaw), "https://confluence.example/wiki/display/ABC/Page") {
 		t.Fatalf("missing source URL: %s", pageRaw)
+	}
+	read, err := c.ReadConfluencePage(context.Background(), "42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	readMap, _ := object(read)
+	body, _ := object(readMap["body"])
+	storage, _ := object(body["storage"])
+	if stringAt(storage, "value") != "<p>Body</p>" || stringAt(readMap, "source_url") != "https://confluence.example/wiki/display/ABC/Page" {
+		t.Fatalf("Confluence exact read missing content or URL")
+	}
+	if _, err = c.ReadConfluencePage(context.Background(), "../42"); err == nil {
+		t.Fatal("unsafe page ID accepted")
 	}
 }

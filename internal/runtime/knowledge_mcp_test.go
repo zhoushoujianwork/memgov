@@ -104,7 +104,7 @@ func TestBuiltInKnowledgeMCPUsesMemgovBinaryAndSelectedSources(t *testing.T) {
 	if !ok || server.Command == "" || !strings.Contains(strings.Join(server.Args, " "), "knowledge-mcp") || strings.Contains(config, "relayer") {
 		t.Fatalf("not self-contained: %s", config)
 	}
-	if len(allowed) != 7 || !strings.Contains(strings.Join(allowed, ","), "mcp__memgov_knowledge__search_dokki") || !strings.Contains(strings.Join(allowed, ","), "mcp__memgov_knowledge__query_confluence") {
+	if len(allowed) != 8 || !strings.Contains(strings.Join(allowed, ","), "mcp__memgov_knowledge__search_dokki") || !strings.Contains(strings.Join(allowed, ","), "mcp__memgov_knowledge__query_confluence") || !strings.Contains(strings.Join(allowed, ","), "mcp__memgov_knowledge__read_confluence_page") {
 		t.Fatalf("wrong tool grant: %v", allowed)
 	}
 	in.ApplicationMode = "group_mention"
