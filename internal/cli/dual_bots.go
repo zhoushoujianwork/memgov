@@ -12,7 +12,7 @@ import (
 func fullOwnerAgent(external string, base AgentDeclaration) AgentDeclaration {
 	return AgentDeclaration{Preset: base.Preset, ClaudeProfile: base.ClaudeProfile, ExecutionModel: base.ExecutionModel,
 		Capabilities: []string{"conversation_history_read", "artifact_create", "local_read", "local_write", "local_test"},
-		Bash:         true, ExternalActions: external, Skills: core.RuntimeSkillPolicy{Inherit: "executor", Paths: []string{}}}
+		Bash:         true, ExternalActions: external, Skills: core.RuntimeSkillPolicy{Inherit: "executor", Paths: []string{}}, KnowledgeMCP: base.KnowledgeMCP}
 }
 
 func normalizeBotApplications(d *DualModeDeclaration, diagnostics *[]ConfigDiagnostic) error {

@@ -107,6 +107,9 @@ func (s *directSession) close() {
 
 func (c *Claude) executeDirectAgent(ctx context.Context, in ExecutionInput) (core.RuntimeAttemptResult, error) {
 	var out core.RuntimeAttemptResult
+	if err := validateKnowledgeMCP(in); err != nil {
+		return out, err
+	}
 	if _, err := uuid.Parse(in.SessionID); err != nil || !filepath.IsAbs(in.WorkDir) || !filepath.IsAbs(in.Home) || len(in.Task.Messages) == 0 {
 		return out, core.Fail("invalid_input", "direct session, home, work directory and current message are required")
 	}
@@ -333,6 +336,7 @@ func directPolicyDigest(in ExecutionInput, profile, model string) string {
 		"workdir": in.WorkDir, "profile": profile, "model": model,
 		"bash": in.BashEnabled, "external_actions": in.ExternalActions,
 		"skills":                in.Skills,
+		"knowledge_mcp":         in.KnowledgeMCP,
 		"sysprompt":             sysprompt.Digest(),
 		"channel_system_prompt": core.Digest(in.ChannelSystemPrompt)})
 }
@@ -365,12 +369,15 @@ func directClaudeArgs(in ExecutionInput, policy, model, memgovBinary string) []s
 		allowed = append(allowed, "Skill(memgov-workspace)", "Bash("+workspaceTool+" *)")
 	}
 	allowed = append(allowed, skillAllowlist(in.Skills)...)
+	knowledgeConfig, knowledgeTools, knowledgePrompt := knowledgeMCPConfiguration(in)
+	allowed = append(allowed, knowledgeTools...)
 	actionTool := filepath.Join(in.WorkDir, ".claude", "tools", "memgov-action")
 	if !in.BashEnabled {
 		allowed = append(allowed, "Bash("+actionTool+" *)")
 	}
 	prompt := sysprompt.Text("direct") + agentWorkspacePrompt(in, workspaceTool) + workspacePrompt(in)
 	prompt += loadedSkillPrompt(in)
+	prompt += knowledgePrompt
 	if in.ChannelSystemPrompt != "" {
 		prompt += "\n\nChannel-specific operating context:\n" + in.ChannelSystemPrompt
 	}
@@ -386,7 +393,7 @@ func directClaudeArgs(in ExecutionInput, policy, model, memgovBinary string) []s
 		prompt += "\nFor a separate external operation explicitly requested by the owner, prepare a JSON file with kind, target and payload inside this session directory and call " + actionTool + " with that file. This records only a pending operation for owner confirmation; it never performs the external write. Do not use this tool for the ordinary bot reply."
 	}
 	args := []string{"--print", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose", "--no-session-persistence", "--session-id", in.SessionID,
-		"--setting-sources", directSettingSources(in.Skills), "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--no-chrome", "--permission-mode", "dontAsk",
+		"--setting-sources", directSettingSources(in.Skills), "--strict-mcp-config", "--mcp-config", knowledgeConfig, "--no-chrome", "--permission-mode", "dontAsk",
 		"--tools", strings.Join(tools, ","), "--allowedTools", strings.Join(allowed, ","),
 		"--disallowedTools", strings.Join([]string{
 			"Edit(./.memgov-turn.json)", "Write(./.memgov-turn.json)",

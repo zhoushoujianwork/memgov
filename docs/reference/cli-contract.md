@@ -28,6 +28,8 @@ Workspace access has no implicit global merge. Owner private chat and proactive 
 
 `config show` 显示解析后的系统默认值、`runtime_setup`、`logging`、`channels` 以及 Personal Jarvis 的 `data_sources`、`agents`、`applications` 声明，不解析密钥引用。`config validate` 离线检查字段、系统参数与通道身份；路由策略和工作区在应用事务中校验。两者均不初始化数据库。未知字段、重复键、多文档 YAML 和错误类型返回 `invalid_input`。
 
+`agents.<name>.knowledge_mcp` optionally declares an Owner-only Relayer MCP process with `command` (absolute executable path), `args` (including `mcp --read-only`), and `sources` (`dokki`, `confluence`). It requires `bash: true`; group bindings reject it. The declaration stores paths and source names, not credentials. `config validate` checks its shape; `config plan` checks the executable and treats a newly admitted source or changed command as an authorization boundary change. See [runtime setup](../guides/runtime-user-guide.md#owner-knowledge-sources).
+
 `config migrate-workspaces` converts the selected `--config` file once. It archives the original configuration and legacy AgentHome notes, removes retired memory/home/shared/review fields, validates the replacement, and preserves preset, skills, routes and external-action permissions. It does not apply runtime configuration or migrate the database. Normal parsing rejects unconverted legacy fields. After conversion, `init` performs the database upgrade; saving YAML still does not apply its declarations.
 
 `config apply NAME` 从所选 YAML 的 `channels` 中读取一项，事务内写入 SQLite，不访问平台；该命令不接受 `--input`。已有通道要求 `--expected-version`（`config_version`）和 `--reason`；包含已有路由时另需 `--expected-route-version`。不能改变通道所属企业、个人账号或应用身份。配置内容参与幂等摘要，更新会清空能力记录、使旧草稿失效。完整字段和使用方式见[初始化与配置](../guides/initialization.md)。

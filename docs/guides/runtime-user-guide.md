@@ -71,6 +71,29 @@ Group history labels each speaker and identifies the current requester separatel
 
 A durable Workspace is a knowledge directory, not a Claude installation. New attempts regenerate managed tools from the running memgov binary and retain existing notes. Upgrading the executable does not rewrite an existing preset: create a current preset with `agent preset enable claude --name <new-name>`, or deliberately sync its policy. Full execution capability does not automatically migrate old reference documents into knowledge.
 
+### Owner knowledge sources
+
+To give an explicit Owner Agent read-only Dokki and Confluence tools, add `knowledge_mcp` to that Agent. The command starts your locally installed Relayer MCP server; use a dedicated actor and a private Relayer data directory with the source credentials configured there. Do not put tokens in YAML or command arguments. This example uses placeholders that must be replaced with absolute local paths:
+
+```yaml
+agents:
+  owner-search:
+    preset: claude-default
+    bash: true
+    external_actions: owner_request
+    knowledge_mcp:
+      command: /absolute/path/to/node
+      args: [/absolute/path/to/relayer/bin.js, mcp, --read-only, --actor, memgov-owner, --scope, global, --data-dir, /absolute/path/to/relayer-data]
+      sources: [dokki, confluence]
+applications:
+  owner_private:
+    enabled: true
+    runtime: owner-private
+    agent: owner-search
+```
+
+Use the existing Owner identity and application binding from your configuration. Run `config validate`, then `config plan`; adding these sources requires the plan's normal authorization for expanded access. Apply the reviewed plan with `config apply-runtime` and restart the service. A valid declaration only proves the tool can be offered: test one search and exact document read after configuring Dokki/Confluence credentials in Relayer. Group Agents and the analyzer do not receive these tools. The source text remains separate from Agent Workspace knowledge. See the [implementation details](../design/agent-runtime-design-detail.md#owner-knowledge-mcp) and [current validation status](../implementation-status.md).
+
 The source update for [loaded skill context](../design/agent-runtime-design-detail.md#loaded-skill-context) lets Claude explain both its saved Workspace experience and the knowledge or workflows available through successfully prepared skills. An empty `MEMORY.md` does not make those skills empty. A question such as “What can you help with?” can receive a direct answer; searching for a fact or claiming a document was checked still requires the appropriate evidence. Skills are refreshed for each turn, but availability does not prove that an external service is connected. This prompt change needs a newly built and installed binary plus a service restart; see [implementation status](../implementation-status.md) before assuming it is active.
 
 首次接入默认关注当前账号中已确认最近 30 天有消息的可访问群，并按 `--ignore` 排除不参与值守的群。仅在显式配置机器人筛选时，才要求机器人属于目标群。`runtime setup` 自动完成数据库初始化、Agent preset、项目工作区、当前钉钉身份、本人 `userId`、范围发现、通道、路由、能力探测和运行时配置。

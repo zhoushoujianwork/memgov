@@ -1231,7 +1231,7 @@ func (s *Service) executeClaimed(ctx context.Context, cfg core.RuntimeConfig, pr
 	execInput := ExecutionInput{Task: task, ConversationContext: conversationContext,
 		AttemptID: attempt.ID, NativeSessionID: attempt.ID, RecordSession: s.sessionRecorder(task, attempt), WorkspaceBranch: branch, WorkspaceBase: base, WorkspaceState: workspaceState, DirectoryPolicy: policy.Directories, AgentPolicyDigest: core.Digest(policy),
 		Home: s.Home, WorkspaceID: workspace.ID, WorkspacePath: executionWorkspacePath, ChannelID: cfg.ChannelID, ConversationID: conversationID,
-		WorkDir: workdir, Preset: preset, ApplicationMode: cfg.ApplicationMode, Capabilities: policy.Capabilities, BashEnabled: policy.BashEnabled, ExternalActions: policy.ExternalActions, DirectorySnapshots: snapshots, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile, DirectoryBounded: declaredWorkspace != nil, DirectoryWriteRoots: directoryWriteRoots, ChannelSystemPrompt: channelPrompt, Skills: policy.Skills}
+		WorkDir: workdir, Preset: preset, ApplicationMode: cfg.ApplicationMode, Capabilities: policy.Capabilities, BashEnabled: policy.BashEnabled, ExternalActions: policy.ExternalActions, DirectorySnapshots: snapshots, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile, DirectoryBounded: declaredWorkspace != nil, DirectoryWriteRoots: directoryWriteRoots, ChannelSystemPrompt: channelPrompt, Skills: policy.Skills, KnowledgeMCP: policy.KnowledgeMCP}
 	if err = s.bindAgentWorkspace(ctx, cfg, &execInput); err != nil {
 		s.failTask(ctx, cfg, task, attempt, err)
 		return

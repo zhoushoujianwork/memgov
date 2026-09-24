@@ -40,14 +40,15 @@ type HistoryImportConfig struct {
 	Days    *int  `yaml:"days" json:"days"`
 }
 type AgentDeclaration struct {
-	Preset          string                  `yaml:"preset" json:"preset"`
-	ClaudeProfile   string                  `yaml:"claude_profile" json:"claude_profile"`
-	ExecutionModel  string                  `yaml:"execution_model" json:"execution_model"`
-	Capabilities    []string                `yaml:"capabilities" json:"capabilities"`
-	Directories     []string                `yaml:"directories" json:"directories"`
-	Skills          core.RuntimeSkillPolicy `yaml:"skills" json:"skills"`
-	ExternalActions string                  `yaml:"external_actions" json:"external_actions"`
-	Bash            bool                    `yaml:"bash" json:"bash"`
+	Preset          string                    `yaml:"preset" json:"preset"`
+	ClaudeProfile   string                    `yaml:"claude_profile" json:"claude_profile"`
+	ExecutionModel  string                    `yaml:"execution_model" json:"execution_model"`
+	Capabilities    []string                  `yaml:"capabilities" json:"capabilities"`
+	Directories     []string                  `yaml:"directories" json:"directories"`
+	Skills          core.RuntimeSkillPolicy   `yaml:"skills" json:"skills"`
+	KnowledgeMCP    *core.RuntimeKnowledgeMCP `yaml:"knowledge_mcp" json:"knowledge_mcp,omitempty"`
+	ExternalActions string                    `yaml:"external_actions" json:"external_actions"`
+	Bash            bool                      `yaml:"bash" json:"bash"`
 }
 
 // yaml.v3 accepts legacy boolean spellings such as "yes" when decoding into a
@@ -57,7 +58,7 @@ func (a *AgentDeclaration) UnmarshalYAML(node *yaml.Node) error {
 		return dualInvalid("agents", "must be a mapping")
 	}
 	allowed := map[string]bool{"preset": true, "claude_profile": true, "execution_model": true,
-		"capabilities": true, "directories": true, "skills": true,
+		"capabilities": true, "directories": true, "skills": true, "knowledge_mcp": true,
 		"external_actions": true, "bash": true}
 	seen := map[string]bool{}
 	for i := 0; i < len(node.Content); i += 2 {
@@ -297,6 +298,33 @@ func NormalizeDualModeConfig(c Config) (DualModeValidation, error) {
 			seen[cap] = true
 		}
 		seen = map[string]bool{}
+		if a.KnowledgeMCP != nil {
+			mcp := a.KnowledgeMCP
+			if !filepath.IsAbs(mcp.Command) || strings.ContainsAny(mcp.Command, "\r\n\x00") || len(mcp.Sources) == 0 || len(mcp.Args) == 0 {
+				return out, dualInvalid("agents.knowledge_mcp", "requires an absolute command, arguments and at least one source")
+			}
+			if !a.Bash {
+				return out, dualInvalid("agents.knowledge_mcp", "requires an Owner Agent with bash: true")
+			}
+			sources := map[string]bool{}
+			for _, source := range mcp.Sources {
+				if (source != "dokki" && source != "confluence") || sources[source] {
+					return out, dualInvalid("agents.knowledge_mcp.sources", "must contain unique dokki and/or confluence names")
+				}
+				sources[source] = true
+			}
+			hasMCP, readOnly := false, false
+			for _, arg := range mcp.Args {
+				if strings.ContainsAny(arg, "\r\n\x00") || arg == "--allow-write" || arg == "--allow-dws-send" || arg == "--allow-local-directories" || arg == "--allow-runtime-closeout" {
+					return out, dualInvalid("agents.knowledge_mcp.args", "contains an unsafe argument")
+				}
+				hasMCP = hasMCP || arg == "mcp"
+				readOnly = readOnly || arg == "--read-only"
+			}
+			if !hasMCP || !readOnly {
+				return out, dualInvalid("agents.knowledge_mcp.args", "Relayer mcp --read-only is required")
+			}
+		}
 		for i, path := range a.Directories {
 			if !filepath.IsAbs(path) || strings.ContainsAny(path, "\r\n\x00") {
 				return out, dualInvalid("agents.directories", "must contain absolute paths")
@@ -337,9 +365,12 @@ func NormalizeDualModeConfig(c Config) (DualModeValidation, error) {
 		if name == "" && !required {
 			return nil
 		}
-		_, ok := d.Agents[name]
+		a, ok := d.Agents[name]
 		if !ok {
 			return dualInvalid("applications.agent", "agent must be declared in agents")
+		}
+		if group && a.KnowledgeMCP != nil {
+			return dualInvalid("applications.agent", "knowledge_mcp is available only to Owner Agents")
 		}
 		return nil
 	}

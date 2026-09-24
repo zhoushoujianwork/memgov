@@ -198,7 +198,13 @@ dws 长连接中断后按 1 秒退避重连。接收会话使用 `all-group` 订
 
 ## 按群解析 Agent 与目录快照
 
-`applied_configs` 中的最新声明是托管 Agent 的规则来源。先按任务 channel 选择 applications.bots 中的机器人，再按 Owner 私聊或群入口选择 Agent；群入口按精确会话匹配 bindings，无覆盖才使用 group_mention.agent/default_agent，再回落 bot.default_agent。旧 applications.owner_private/group_mention 仍兼容；同一通道或 runtime 的冲突声明拒绝应用。非托管实例继续使用自身 runtime 配置。解析包含 preset、profile、model、capabilities、directories、Bash、skills 和 external_actions，不读取旧配置当作当前授权。
+`applied_configs` 中的最新声明是托管 Agent 的规则来源。先按任务 channel 选择 applications.bots 中的机器人，再按 Owner 私聊或群入口选择 Agent；群入口按精确会话匹配 bindings，无覆盖才使用 group_mention.agent/default_agent，再回落 bot.default_agent。旧 applications.owner_private/group_mention 仍兼容；同一通道或 runtime 的冲突声明拒绝应用。非托管实例继续使用自身 runtime 配置。解析包含 preset、profile、model、capabilities、directories、Bash、skills、可选 `knowledge_mcp` 和 external_actions，不读取旧配置当作当前授权。
+
+### Owner knowledge MCP
+
+An explicit Owner Agent declaration may set `knowledge_mcp` with an absolute local `command`, `args` for a Relayer `mcp --read-only` process, and `sources` containing `dokki`, `confluence`, or both. This requires `bash: true`; group bindings reject it. The analyzer and other executors keep an empty strict MCP configuration. The connection is opt-in and does not inherit the Codex app's MCP configuration or credentials.
+
+At execution, memgov passes only this `relayer` server through Claude's `--strict-mcp-config`. `dontAsk` permissions admit the selected source's list/search/exact-read operations: Dokki `list_dokki_workspaces`, `search_dokki`, `read_dokki_resource`; Confluence `list_confluence_tools`, `search_confluence`, `query_confluence`, `read_confluence_resource`. The Relayer process must itself run in read-only mode; memgov rejects known write/send flags. The Agent is told to cite the human-facing source URL and to report an unconfigured source or failed read. Source text never authorizes actions or automatic Workspace writes. Adding a source or changing the MCP command is a permission/boundary change in `config plan`; the direct native session policy digest also changes.
 
 执行前重新检查所选 preset 已启用且 Git 工作树干净，并把实际 preset 名称、commit、模型及策略摘要写入 `runtime_attempts`。任务开始和结果提交前再次核对策略。任意已引用 Agent 的声明改变都会使该群运行时旧任务、待确认操作和待投递结果失效。确认后的外部操作同样解析所选 Agent，避免回落到默认 Agent 的接入配置。
 

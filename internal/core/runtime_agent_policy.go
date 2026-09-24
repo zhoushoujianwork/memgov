@@ -3,21 +3,55 @@ package core
 import (
 	"context"
 	"encoding/json"
+
+	"gopkg.in/yaml.v3"
 )
 
 // RuntimeAgentPolicy is resolved from the currently applied declaration for the
 // task's exact group. Unmanaged runtimes retain their explicit runtime settings.
 type RuntimeAgentPolicy struct {
-	Agent           string             `json:"agent"`
-	Preset          string             `json:"preset"`
-	ClaudeProfile   string             `json:"claude_profile"`
-	ExecutionModel  string             `json:"execution_model"`
-	Capabilities    []string           `json:"capabilities"`
-	Directories     []string           `json:"directories"`
-	Skills          RuntimeSkillPolicy `json:"skills"`
-	BashEnabled     bool               `json:"bash"`
-	ExternalActions string             `json:"external_actions"`
-	Managed         bool               `json:"managed"`
+	Agent           string               `json:"agent"`
+	Preset          string               `json:"preset"`
+	ClaudeProfile   string               `json:"claude_profile"`
+	ExecutionModel  string               `json:"execution_model"`
+	Capabilities    []string             `json:"capabilities"`
+	Directories     []string             `json:"directories"`
+	Skills          RuntimeSkillPolicy   `json:"skills"`
+	KnowledgeMCP    *RuntimeKnowledgeMCP `json:"knowledge_mcp,omitempty"`
+	BashEnabled     bool                 `json:"bash"`
+	ExternalActions string               `json:"external_actions"`
+	Managed         bool                 `json:"managed"`
+}
+
+// RuntimeKnowledgeMCP is an opt-in, read-only Relayer connection for an Owner
+// Agent. The command must be a locally managed executable. Callers should keep
+// credentials in Relayer's private data directory, never in these arguments.
+type RuntimeKnowledgeMCP struct {
+	Command string   `json:"command" yaml:"command"`
+	Args    []string `json:"args" yaml:"args"`
+	Sources []string `json:"sources" yaml:"sources"`
+}
+
+func (m *RuntimeKnowledgeMCP) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return Fail("invalid_input", "agents.knowledge_mcp: must be a mapping")
+	}
+	allowed := map[string]bool{"command": true, "args": true, "sources": true}
+	seen := map[string]bool{}
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i].Value
+		if !allowed[key] || seen[key] {
+			return Fail("invalid_input", "agents.knowledge_mcp: unknown or duplicate field")
+		}
+		seen[key] = true
+	}
+	type plain RuntimeKnowledgeMCP
+	var decoded plain
+	if err := node.Decode(&decoded); err != nil {
+		return Fail("invalid_input", "agents.knowledge_mcp: invalid field type")
+	}
+	*m = RuntimeKnowledgeMCP(decoded)
+	return nil
 }
 
 type RuntimeSkill struct {

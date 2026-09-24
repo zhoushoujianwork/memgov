@@ -113,6 +113,9 @@ func canonicalDeclaration(d DualModeDeclaration) DualModeDeclaration {
 		sort.Strings(a.Capabilities)
 		sort.Strings(a.Directories)
 		sort.Strings(a.Skills.Paths)
+		if a.KnowledgeMCP != nil {
+			sort.Strings(a.KnowledgeMCP.Sources)
+		}
 		sort.Slice(a.Skills.Resolved, func(i, j int) bool { return a.Skills.Resolved[i].Name < a.Skills.Resolved[j].Name })
 		out.Agents[name] = a
 	}
@@ -207,7 +210,17 @@ func classifyPermissionChange(c *PlanChange, before, after any) {
 		skillExpanded, skillReduced := setDifference(beforeSkills, afterSkills)
 		c.PermissionExpansion = c.PermissionExpansion || skillExpanded
 		c.PermissionReduction = c.PermissionReduction || skillReduced
-		c.BoundaryChange = b.Preset != a.Preset || b.ExternalActions != a.ExternalActions || b.Skills.Inherit != a.Skills.Inherit || core.Digest(b.Skills) != core.Digest(a.Skills)
+		beforeSources, afterSources := []string{}, []string{}
+		if b.KnowledgeMCP != nil {
+			beforeSources = b.KnowledgeMCP.Sources
+		}
+		if a.KnowledgeMCP != nil {
+			afterSources = a.KnowledgeMCP.Sources
+		}
+		sourceExpanded, sourceReduced := setDifference(beforeSources, afterSources)
+		c.PermissionExpansion = c.PermissionExpansion || sourceExpanded
+		c.PermissionReduction = c.PermissionReduction || sourceReduced
+		c.BoundaryChange = b.Preset != a.Preset || b.ExternalActions != a.ExternalActions || b.Skills.Inherit != a.Skills.Inherit || core.Digest(b.Skills) != core.Digest(a.Skills) || core.Digest(b.KnowledgeMCP) != core.Digest(a.KnowledgeMCP)
 	case DataSourceConfig:
 		a, ok := after.(DataSourceConfig)
 		if !ok {
@@ -258,6 +271,12 @@ func BuildDualConfigPlan(ctx context.Context, cfg Config, home string, q core.Qu
 	}
 	p.Declaration = canonicalDeclaration(valid.Declaration)
 	for name, declaration := range p.Declaration.Agents {
+		if declaration.KnowledgeMCP != nil {
+			info, statErr := os.Stat(declaration.KnowledgeMCP.Command)
+			if statErr != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
+				return p, core.Fail("unavailable", "Agent %q knowledge MCP executable is unavailable", name)
+			}
+		}
 		resolved, resolveErr := resolveClaudeSkills(declaration.Skills)
 		if resolveErr != nil {
 			return p, resolveErr
@@ -365,7 +384,7 @@ func BuildDualConfigPlan(ctx context.Context, cfg Config, home string, q core.Qu
 		}
 		if kind == "agent" && !bExists && aExists {
 			agent := a.(AgentDeclaration)
-			change.PermissionExpansion = agent.Bash || agent.ExternalActions != "owner_confirmation"
+			change.PermissionExpansion = agent.Bash || agent.ExternalActions != "owner_confirmation" || agent.KnowledgeMCP != nil
 		}
 		if bExists && aExists {
 			classifyPermissionChange(&change, b, a)

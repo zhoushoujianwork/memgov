@@ -77,6 +77,7 @@ type ExecutionInput struct {
 	BashEnabled         bool
 	ExternalActions     string
 	Skills              core.RuntimeSkillPolicy
+	KnowledgeMCP        *core.RuntimeKnowledgeMCP
 	MemgovBinary        string
 }
 type ActionExecutionInput struct {
@@ -478,6 +479,9 @@ func (c *Claude) execute(ctx context.Context, in ExecutionInput) (core.RuntimeAt
 		return c.executeDirectAgent(ctx, in)
 	}
 	var out core.RuntimeAttemptResult
+	if err := validateKnowledgeMCP(in); err != nil {
+		return out, err
+	}
 	ownerMessageTool := ""
 	if in.ApplicationMode == "proactive" {
 		binary, err := prepareOwnerAgentTools(&in)
@@ -563,6 +567,9 @@ func (c *Claude) execute(ctx context.Context, in ExecutionInput) (core.RuntimeAt
 		enabled = append(enabled, "Skill")
 	}
 	allowed = append(allowed, skillAllowlist(in.Skills)...)
+	knowledgeConfig, knowledgeTools, knowledgePrompt := knowledgeMCPConfiguration(in)
+	allowed = append(allowed, knowledgeTools...)
+	prompt += knowledgePrompt
 	if ownerMessageTool != "" && !in.BashEnabled {
 		allowed = append(allowed, "Bash("+ownerMessageTool+" *)")
 	}
@@ -572,7 +579,7 @@ func (c *Claude) execute(ctx context.Context, in ExecutionInput) (core.RuntimeAt
 	if !in.BashEnabled && (ownerMessageTool != "" || workspaceTool != "") {
 		enabled = append(enabled, "Bash")
 	}
-	args := []string{"--print", "--no-session-persistence", "--setting-sources", "project", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--no-chrome", "--output-format", "json", "--json-schema", executionSchema, "--permission-mode", "dontAsk", "--tools", strings.Join(enabled, ","), "--allowedTools", strings.Join(allowed, ","), "--append-system-prompt", sysprompt.Compose(policy, prompt)}
+	args := []string{"--print", "--no-session-persistence", "--setting-sources", "project", "--strict-mcp-config", "--mcp-config", knowledgeConfig, "--no-chrome", "--output-format", "json", "--json-schema", executionSchema, "--permission-mode", "dontAsk", "--tools", strings.Join(enabled, ","), "--allowedTools", strings.Join(allowed, ","), "--append-system-prompt", sysprompt.Compose(policy, prompt)}
 	if len(in.Skills.Resolved) == 0 && workspaceTool == "" {
 		args = append(args, "--disable-slash-commands")
 	}
