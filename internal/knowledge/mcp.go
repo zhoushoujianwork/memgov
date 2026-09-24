@@ -17,6 +17,9 @@ type mcpTool struct {
 }
 
 func schema(properties map[string]any, required ...string) map[string]any {
+	if required == nil {
+		required = []string{}
+	}
 	return map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}
 }
 func field(kind string) map[string]any { return map[string]any{"type": kind} }

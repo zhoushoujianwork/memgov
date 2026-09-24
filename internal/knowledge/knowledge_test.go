@@ -111,6 +111,11 @@ func TestMCPExposesOnlySelectedToolsAndRejectsUnavailableSource(t *testing.T) {
 	if len(list.Result.Tools) != 3 {
 		t.Fatalf("wrong tools: %v", list.Result.Tools)
 	}
+	for _, tool := range list.Result.Tools {
+		if _, ok := tool.InputSchema["required"].([]any); !ok {
+			t.Fatalf("MCP tool %s has a non-array required schema", tool.Name)
+		}
+	}
 	if !strings.Contains(lines[2], "tool is not enabled") || !strings.Contains(lines[3], "Dokki is not configured") {
 		t.Fatalf("boundary failure: %s", output.String())
 	}
