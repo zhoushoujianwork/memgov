@@ -20,24 +20,34 @@ func (a *Adapter) ResolveBotUser(ctx context.Context, cfg channel.Config, name s
 	if err != nil {
 		return channel.BotUser{}, err
 	}
+	type botProfile struct {
+		UserID      string `json:"userId"`
+		OrgUserID   string `json:"orgUserId"`
+		OrgUserName string `json:"orgUserName"`
+	}
 	var result struct {
-		Profile struct {
-			UserID      string `json:"userId"`
-			OrgUserID   string `json:"orgUserId"`
-			OrgUserName string `json:"orgUserName"`
-		} `json:"profile"`
+		Profile botProfile `json:"profile"`
+		Data    struct {
+			Profile botProfile `json:"profile"`
+		} `json:"data"`
 	}
 	if json.Unmarshal(raw, &result) != nil {
 		return channel.BotUser{}, core.Fail("unavailable", "DWS returned an unreadable recipient lookup")
 	}
-	id := result.Profile.UserID
-	if id == "" {
-		id = result.Profile.OrgUserID
+	profile := result.Profile
+	if profile.UserID == "" && profile.OrgUserID == "" {
+		profile = result.Data.Profile
+	} else if result.Data.Profile.UserID != "" || result.Data.Profile.OrgUserID != "" {
+		return channel.BotUser{}, core.Fail("denied", "DWS returned conflicting recipient profiles")
 	}
-	if id == "" || result.Profile.UserID != "" && result.Profile.OrgUserID != "" && result.Profile.UserID != result.Profile.OrgUserID {
+	id := profile.UserID
+	if id == "" {
+		id = profile.OrgUserID
+	}
+	if id == "" || profile.UserID != "" && profile.OrgUserID != "" && profile.UserID != profile.OrgUserID {
 		return channel.BotUser{}, core.Fail("denied", "DWS did not resolve one stable user ID")
 	}
-	return channel.BotUser{ID: id, Name: result.Profile.OrgUserName}, nil
+	return channel.BotUser{ID: id, Name: profile.OrgUserName}, nil
 }
 
 // ListBotGroups reads directory names for later intersection with this bot's

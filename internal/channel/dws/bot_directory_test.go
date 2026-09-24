@@ -25,6 +25,13 @@ func TestBotDirectoryUsesBoundProfileAndRequiresStableUser(t *testing.T) {
 		t.Fatalf("recipient lookup used the wrong identity or sent a message: %s", joined)
 	}
 	a.Run = func(_ context.Context, _ ...string) ([]byte, error) {
+		return []byte(`{"ok":true,"outcome":"success","data":{"profile":{"orgUserId":"user-1","orgUserName":"Wang"}}}`), nil
+	}
+	user, err = a.ResolveBotUser(context.Background(), cfg, "Wang")
+	if err != nil || user.ID != "user-1" || user.Name != "Wang" {
+		t.Fatalf("live DWS envelope resolved user=%+v error=%v", user, err)
+	}
+	a.Run = func(_ context.Context, _ ...string) ([]byte, error) {
 		return []byte(`{"success":true,"result":{"profile":{"userId":"user-1","orgUserId":"user-2"}}}`), nil
 	}
 	if _, err = a.ResolveBotUser(context.Background(), cfg, "Wang"); core.ErrorCode(err) != "denied" {
