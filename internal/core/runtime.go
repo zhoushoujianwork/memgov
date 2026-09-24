@@ -1692,6 +1692,21 @@ func (tx *Tx) CompleteRuntimeTask(ctx context.Context, taskID string, version in
 	if len([]rune(result.Result)) > 200000 || len([]rune(result.Summary)) > 2000 || len(result.Artifacts) > 32 || len(result.ToolKinds) > 32 || len(result.Actions) > 20 {
 		return t, Fail("invalid_input", "runtime result exceeds its size limit")
 	}
+	config, err := ReadRuntime(ctx, tx.Conn, t.RuntimeID)
+	if err != nil {
+		return t, err
+	}
+	// Bot messaging is performed by the scoped MCP. A model-supplied bot
+	// action is only a duplicate description, never a second send or approval.
+	if config.ApplicationMode == "group_mention" {
+		kept := make([]RuntimeAction, 0, len(result.Actions))
+		for _, action := range result.Actions {
+			if !strings.HasPrefix(action.Kind, "bot_") {
+				kept = append(kept, action)
+			}
+		}
+		result.Actions = kept
+	}
 	status := "completed"
 	var prepared int
 	if err = tx.Conn.QueryRowContext(ctx, "SELECT count(*) FROM runtime_pending_actions WHERE task_id=? AND task_version=? AND status='pending'", taskID, version).Scan(&prepared); err != nil {
@@ -1699,10 +1714,6 @@ func (tx *Tx) CompleteRuntimeTask(ctx context.Context, taskID string, version in
 	}
 	if len(result.Actions)+prepared > 0 {
 		status = "awaiting_confirmation"
-		config, readErr := ReadRuntime(ctx, tx.Conn, t.RuntimeID)
-		if readErr != nil {
-			return t, readErr
-		}
 		if config.ApplicationMode == "proactive" {
 			status = "blocked"
 			allDestructive := prepared == 0 && len(result.Actions) > 0

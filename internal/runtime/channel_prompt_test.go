@@ -29,7 +29,7 @@ func TestDingTalkChannelSystemPromptsKeepConversationBoundaries(t *testing.T) {
 	}
 
 	group := channelSystemPrompt(core.Channel{Provider: "dingtalk", Kind: core.ChannelDingTalkApp}, core.Route{ConversationType: "group"}, "group_mention", "corp-owner", "work-chat")
-	for _, expected := range []string{"group mention", "same-group history", "application bot identity", "Do not call dws", "never use DWS --as user", "even when the owner is the requester", "bot-scoped MCP", "pending confirmation", "Do not inspect a member's private chat"} {
+	for _, expected := range []string{"group mention", "same-group history", "application bot identity", "Do not call dws", "never use DWS --as user", "even when the owner is the requester", "bot-scoped MCP", "sends immediately", "Do not inspect a member's private chat"} {
 		if !strings.Contains(group, expected) {
 			t.Fatalf("group channel prompt omitted %q: %s", expected, group)
 		}

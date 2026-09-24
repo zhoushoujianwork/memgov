@@ -127,6 +127,6 @@ func agentMCPConfiguration(in ExecutionInput) (string, []string, string) {
 		return config, allowed, prompt
 	}
 	allowed = append(allowed, "mcp__memgov_bot__resolve_bot_user", "mcp__memgov_bot__resolve_bot_group", "mcp__memgov_bot__forward_bot_message")
-	prompt += "\nBot-scoped tools available: resolve_bot_user, resolve_bot_group and forward_bot_message. A separate user or group send must use forward_bot_message with the exact content to disclose. It prepares an Owner-confirmed action in this group's task; it does not send immediately. Resolve ambiguous names before preparing, and never claim delivery before the confirmed action reports platform acceptance."
+	prompt += "\nBot-scoped tools available: resolve_bot_user, resolve_bot_group and forward_bot_message. A separate user or group send must use forward_bot_message with the exact content to disclose. The tool sends immediately through the application bot, without a confirmation token. Resolve ambiguous names before sending, never retry an unknown outcome, and report platform acceptance only when the tool returns accepted. Do not add a bot send to final-result actions."
 	return string(raw), allowed, prompt
 }

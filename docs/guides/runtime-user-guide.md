@@ -355,7 +355,7 @@ memgov runtime task retry TASK_ID
 
 ## 7. 确认外部操作
 
-A group Agent now has three bot MCP tools: `resolve_bot_user`, `resolve_bot_group`, and `forward_bot_message`. To forward from a group, quote or state the exact text and name one recipient. User names are resolved through the bot's same-tenant bound DWS directory; target groups must already be mounted on that bot. An ambiguous name, missing directory binding, or unavailable quote stops preparation. The forwarding tool creates a pending action and sends nothing yet. The verified Owner confirms the exact recipient and content in the original group; the application bot then sends once and records platform acceptance or an unknown result. Ordinary answers still return to the triggering group automatically.
+A group Agent has three bot MCP tools: `resolve_bot_user`, `resolve_bot_group`, and `forward_bot_message`. To forward from a group, quote or state the exact text and name one recipient. User names are resolved through the bot's same-tenant bound DWS directory; target groups must already be mounted on that bot. An ambiguous name, missing directory binding, or unavailable quote stops the send. The forwarding tool sends through the application bot immediately and records platform acceptance, failure, or an unknown result. No Owner confirmation is needed for bot forwarding. Ordinary answers still return to the triggering group automatically.
 
 群助手关联 `identity.confirmation_card_template` 后，原生审批卡片能力仍保留在代码中；当前运行服务暂时停用卡片入口，群内待确认操作统一展示完整确认口令。这样可以先完成操作闭环，恢复卡片时无需改动任务或动作数据。卡片标题、详情、按钮与执行链路的实现和验收要求见[模板要求](../design/dingtalk-integration-design-detail.md#群回复与确认卡片)。
 

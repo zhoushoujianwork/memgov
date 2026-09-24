@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/zhoushoujianwork/memgov/internal/channel"
+	"github.com/zhoushoujianwork/memgov/internal/channel/dingtalkapp"
 	"github.com/zhoushoujianwork/memgov/internal/channel/dws"
 	"github.com/zhoushoujianwork/memgov/internal/core"
 )
@@ -24,6 +25,7 @@ type botDirectory interface {
 type botMCP struct {
 	store     *core.Store
 	directory botDirectory
+	sender    channel.Adapter
 	taskID    string
 	attemptID string
 }
@@ -44,7 +46,7 @@ func botSchema(properties map[string]any, required ...string) map[string]any {
 var botMCPTools = []botMCPTool{
 	{"resolve_bot_user", "Resolve one same-tenant DingTalk user name to a stable userId. Ambiguous names must be clarified.", botSchema(map[string]any{"name": map[string]any{"type": "string"}}, "name")},
 	{"resolve_bot_group", "Resolve a group name or ID among groups mounted on this application bot.", botSchema(map[string]any{"name_or_id": map[string]any{"type": "string"}}, "name_or_id")},
-	{"forward_bot_message", "Prepare a separate application-bot message to a user or mounted group. This records a pending action; the bot sends only after the verified Owner confirms it in the origin group.", botSchema(map[string]any{"target_type": map[string]any{"type": "string", "enum": []string{"user", "group"}}, "recipient": map[string]any{"type": "string"}, "content": map[string]any{"type": "string"}}, "target_type", "recipient", "content")},
+	{"forward_bot_message", "Send a separate message through this application bot to one resolved same-tenant user or mounted group. Reports platform acceptance, failure, or an unknown outcome; never retry an unknown send.", botSchema(map[string]any{"target_type": map[string]any{"type": "string", "enum": []string{"user", "group"}}, "recipient": map[string]any{"type": "string"}, "content": map[string]any{"type": "string"}}, "target_type", "recipient", "content")},
 }
 
 // ServeBotMCP exposes the current group bot's forwarding operations to one
@@ -58,7 +60,7 @@ func ServeBotMCP(ctx context.Context, home, taskID, attemptID string, in io.Read
 		return err
 	}
 	defer store.Close()
-	return (&botMCP{store: store, directory: dws.New(), taskID: taskID, attemptID: attemptID}).serve(ctx, in, out)
+	return (&botMCP{store: store, directory: dws.New(), sender: dingtalkapp.New(), taskID: taskID, attemptID: attemptID}).serve(ctx, in, out)
 }
 
 func (m *botMCP) serve(ctx context.Context, in io.Reader, out io.Writer) error {
@@ -151,7 +153,7 @@ func (m *botMCP) current(ctx context.Context) (core.RuntimeConfig, core.Channel,
 	if err != nil {
 		return cfg, app, core.Channel{}, err
 	}
-	if task.Status != "running" || cfg.Status != "running" || cfg.ApplicationMode != "group_mention" || cfg.ExternalActions != "owner_confirmation" || app.Kind != core.ChannelDingTalkApp || !app.Capabilities.Verified["send"] || app.Status != "active" && app.Status != "configured" {
+	if task.Status != "running" || cfg.Status != "running" || cfg.ApplicationMode != "group_mention" || app.Kind != core.ChannelDingTalkApp || !app.Capabilities.Verified["send"] || app.Status != "active" && app.Status != "configured" {
 		return cfg, app, core.Channel{}, core.Fail("denied", "bot MCP requires an active group bot attempt")
 	}
 	route, err := core.ReadRoute(ctx, m.store.DB, task.RouteID)
@@ -268,13 +270,42 @@ func (m *botMCP) call(ctx context.Context, name string, raw json.RawMessage) (an
 			return nil, core.Fail("invalid_input", "bot forward target must be user or group")
 		}
 		proof := core.RuntimeBotTargetVerification{ChannelID: app.ID, ChannelVersion: app.ConfigVersion, Tenant: app.Tenant, TargetType: args.TargetType, TargetID: targetID}
-		var value any
-		_, err = m.store.Mutate(ctx, core.Request{ID: core.NewID(), Scope: "global", Command: "runtime.bot.forward.prepare", Actor: "bot_mcp"}, func(tx *core.Tx) (any, error) {
+		input := core.RuntimeMessageInput{AttemptID: m.attemptID, IdempotencyKey: core.Hash([]byte(core.JSON(map[string]string{"task": m.taskID, "target_type": args.TargetType, "target_id": targetID, "content": args.Content}))), TargetType: args.TargetType, TargetID: targetID, Content: args.Content, Reason: "group_bot_forward"}
+		var action core.RuntimeMessageAction
+		var created bool
+		_, err = m.store.Mutate(ctx, core.Request{ID: core.NewID(), Scope: "global", Command: "runtime.bot.forward.authorize", Actor: "bot_mcp"}, func(tx *core.Tx) (any, error) {
 			var e error
-			value, e = tx.ProposeRuntimeBotForward(ctx, m.taskID, m.attemptID, args.TargetType, targetID, recipientName, args.Content, proof)
-			return value, e
+			action, created, e = tx.AuthorizeRuntimeBotMessage(ctx, m.taskID, input, proof)
+			return action, e
 		})
-		return value, err
+		if err != nil {
+			return nil, err
+		}
+		if !created {
+			return map[string]any{"action_id": action.ID, "status": action.State, "target_type": args.TargetType, "target_id": targetID, "recipient": recipientName}, nil
+		}
+		transport := "bot_dm"
+		if args.TargetType == "group" {
+			transport = "bot_group"
+		}
+		result, sendErr := m.sender.Send(ctx, channel.ConfigFor(app), channel.SendRequest{ConversationID: targetID, Transport: transport, Content: args.Content, Format: "markdown", IdempotencyKey: action.ID})
+		state := result.State
+		if sendErr != nil && state != "failed" && state != "blocked" || state == "accepted" && result.Receipt == "" || state != "accepted" && state != "failed" && state != "blocked" {
+			state = "unknown"
+		}
+		if state == "blocked" {
+			state = "failed"
+		}
+		if sendErr != nil && result.Detail == "" {
+			result.Detail = sendErr.Error()
+		}
+		_, err = m.store.Mutate(ctx, core.Request{ID: core.NewID(), Scope: "global", Command: "runtime.bot.forward.record", Actor: "bot_mcp"}, func(tx *core.Tx) (any, error) {
+			return tx.RecordRuntimeMessageResult(ctx, action.ID, state, result.Receipt, result.Detail)
+		})
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"action_id": action.ID, "status": state, "target_type": args.TargetType, "target_id": targetID, "recipient": recipientName}, nil
 	}
 	return nil, fmt.Errorf("unknown bot tool")
 }

@@ -31,7 +31,7 @@ func (fixtureBotDirectory) ListBotGroups(context.Context, channel.Config) ([]cha
 func TestGroupBotMCPRegistrationIsScoped(t *testing.T) {
 	in := ExecutionInput{Home: t.TempDir(), Task: core.RuntimeTask{ID: "task-1"}, AttemptID: "attempt-1", ApplicationMode: "group_mention"}
 	config, allowed, prompt := agentMCPConfiguration(in)
-	if !strings.Contains(config, `"memgov_bot"`) || !strings.Contains(config, `"bot-mcp"`) || !strings.Contains(strings.Join(allowed, ","), "mcp__memgov_bot__forward_bot_message") || !strings.Contains(prompt, "Owner-confirmed") {
+	if !strings.Contains(config, `"memgov_bot"`) || !strings.Contains(config, `"bot-mcp"`) || !strings.Contains(strings.Join(allowed, ","), "mcp__memgov_bot__forward_bot_message") || !strings.Contains(prompt, "sends immediately") {
 		t.Fatalf("group bot tool not registered: %s %v %q", config, allowed, prompt)
 	}
 	in.ApplicationMode = "proactive"
@@ -61,7 +61,7 @@ func TestGroupBotMCPRegistrationIsScoped(t *testing.T) {
 	}
 }
 
-func TestBotForwardMCPPreparesThenConfirmedAdapterSends(t *testing.T) {
+func TestBotForwardMCPSendsWithoutConfirmation(t *testing.T) {
 	s, cfg, app, group, _ := setupGroupMentionService(t)
 	ctx := context.Background()
 	history, err := core.ReadChannel(ctx, s.Store.DB, app.Identity.HistoryChannel)
@@ -93,7 +93,7 @@ func TestBotForwardMCPPreparesThenConfirmedAdapterSends(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	m := &botMCP{store: s.Store, directory: fixtureBotDirectory{}, taskID: task.ID, attemptID: attempt.ID}
+	m := &botMCP{store: s.Store, directory: fixtureBotDirectory{}, sender: s.Adapter, taskID: task.ID, attemptID: attempt.ID}
 	m.directory = fixtureBotDirectory{attestationErr: core.Fail("denied", "profile identity changed")}
 	if _, err = m.call(ctx, "resolve_bot_user", []byte(`{"name":"Wang"}`)); core.ErrorCode(err) != "denied" {
 		t.Fatalf("unattested owner profile resolved a recipient: %v", err)
@@ -106,67 +106,27 @@ func TestBotForwardMCPPreparesThenConfirmedAdapterSends(t *testing.T) {
 	if _, err = m.call(ctx, "resolve_bot_group", []byte(`{"name_or_id":"Other"}`)); core.ErrorCode(err) != "denied" {
 		t.Fatalf("unmounted group resolved: %v", err)
 	}
-	prepared, err := m.call(ctx, "forward_bot_message", []byte(`{"target_type":"user","recipient":"Wang","content":"Exact quoted content"}`))
-	if err != nil || prepared.(map[string]any)["status"] != "pending_confirmation" {
-		t.Fatalf("forward preparation=%+v error=%v", prepared, err)
+	sent, err := m.call(ctx, "forward_bot_message", []byte(`{"target_type":"user","recipient":"Wang","content":"Exact quoted content"}`))
+	if err != nil || sent.(map[string]any)["status"] != "accepted" {
+		t.Fatalf("bot send=%+v error=%v", sent, err)
 	}
-	if len(s.Adapter.(*fakeAdapter).requests) != 0 {
-		t.Fatal("bot sent before Owner confirmation")
+	requests := s.Adapter.(*fakeAdapter).requests
+	if len(requests) != 1 || requests[0].Transport != "bot_dm" || requests[0].ConversationID != "user-wang" || requests[0].Content != "Exact quoted content" || requests[0].IdempotencyKey != sent.(map[string]any)["action_id"] {
+		t.Fatalf("bot used wrong identity or target: %+v", requests)
+	}
+	again, err := m.call(ctx, "forward_bot_message", []byte(`{"target_type":"user","recipient":"Wang","content":"Exact quoted content"}`))
+	if err != nil || again.(map[string]any)["action_id"] != sent.(map[string]any)["action_id"] || len(s.Adapter.(*fakeAdapter).requests) != 1 {
+		t.Fatalf("duplicate bot send=%+v error=%v requests=%+v", again, err, s.Adapter.(*fakeAdapter).requests)
 	}
 	if err = s.mutate(ctx, "global", "bot.mcp.complete", func(tx *core.Tx) (any, error) {
 		var e error
-		task, e = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, core.RuntimeAttemptResult{Result: "Waiting for Owner confirmation", Summary: "Forward prepared"})
+		task, e = tx.CompleteRuntimeTask(ctx, task.ID, task.Version, attempt.ID, core.RuntimeAttemptResult{Result: "Bot accepted the message", Summary: "Forward complete", Actions: []core.RuntimeAction{{Kind: "bot_direct_message", Target: "user:user-wang", Payload: "duplicate"}}})
 		return task, e
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if task.Status != "awaiting_confirmation" || len(task.Actions) != 1 || task.Actions[0].Target != "user:user-wang" {
-		t.Fatalf("pending bot action=%+v", task)
-	}
-	action := task.Actions[0]
-	action.ConfirmedBy, action.ConfirmationOrigin = cfg.OwnerPrincipalID, "dingtalk_message:verified-owner-message"
-	tampered := action
-	tampered.Target = "user:someone-else"
-	if _, _, err = s.executeConfirmedBotForward(ctx, cfg, task, tampered); core.ErrorCode(err) != "denied" || len(s.Adapter.(*fakeAdapter).requests) != 0 {
-		t.Fatalf("changed recipient inherited approval: %v", err)
-	}
-	var claimed core.RuntimePendingAction
-	var actionAttempt core.RuntimeActionAttempt
-	if err = s.mutate(ctx, "global", "bot.mcp.confirm", func(tx *core.Tx) (any, error) {
-		if _, e := tx.Conn.ExecContext(ctx, "UPDATE identity_aliases SET verified=1 WHERE principal_id=? AND id_type='staff_id' AND id_value='owner-1'", cfg.OwnerPrincipalID); e != nil {
-			return nil, e
-		}
-		message, e := tx.Intake(ctx, app.ID, core.NormalizedEvent{Kind: core.EventMessage, Adapter: "fake", ParseVersion: "1", Origin: "stream", ProviderMessageID: "owner-confirms-forward", ConversationID: group.ConversationID, ConversationType: "group", Tenant: app.Tenant, Sender: core.Sender{IDType: "staff_id", IDValue: "owner-1"}, Mentioned: true, Body: core.ConfirmationToken(action), SentAt: time.Now().Add(time.Second).UTC().Format(time.RFC3339Nano)})
-		if e != nil {
-			return nil, e
-		}
-		if _, e = tx.ConfirmRuntimeActionFromMessage(ctx, action.ID, message.MessageID); e != nil {
-			return nil, e
-		}
-		claimed, actionAttempt, e = tx.ClaimRuntimeAction(ctx, cfg.ID, core.NewID(), "fake")
-		return claimed, e
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err = core.RuntimeActionAttemptPolicyCurrent(ctx, s.Store.DB, actionAttempt.ID, claimed.ID, claimed.TaskVersion); err != nil {
-		t.Fatalf("confirmed action failed its current approval proof: %v", err)
-	}
-	if _, err = s.Store.DB.ExecContext(ctx, "UPDATE runtime_pending_actions SET target='user:someone-else' WHERE id=?", claimed.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err = core.RuntimeActionAttemptPolicyCurrent(ctx, s.Store.DB, actionAttempt.ID, claimed.ID, claimed.TaskVersion); core.ErrorCode(err) != "denied" {
-		t.Fatalf("stored recipient change inherited Owner approval: %v", err)
-	}
-	if _, err = s.Store.DB.ExecContext(ctx, "UPDATE runtime_pending_actions SET target=? WHERE id=?", claimed.Target, claimed.ID); err != nil {
-		t.Fatal(err)
-	}
-	result, unknown, err := s.executeConfirmedBotForward(ctx, cfg, task, claimed)
-	if err != nil || unknown || !strings.Contains(result.Result, "accepted") {
-		t.Fatalf("confirmed forward=%+v unknown=%v error=%v", result, unknown, err)
-	}
-	requests := s.Adapter.(*fakeAdapter).requests
-	if len(requests) != 1 || requests[0].Transport != "bot_dm" || requests[0].ConversationID != "user-wang" || requests[0].Content != "Exact quoted content" || requests[0].IdempotencyKey != claimed.ID {
-		t.Fatalf("bot used wrong identity or target: %+v", requests)
+	if task.Status != "completed" || len(task.Actions) != 0 {
+		t.Fatalf("bot send still requires confirmation: %+v", task)
 	}
 }
 

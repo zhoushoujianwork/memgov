@@ -45,7 +45,7 @@ Schema 22 固定企业/profile/userId 及证据修订。配置变化期间到达
 
 运行时只用可信通道、路由和同企业历史通道元数据生成 `ChannelSystemPrompt`，消息正文不能修改发送身份。应用机器人 Owner 私聊分成两类发送：本轮普通回答直接返回结果，由 Outbox 通过当前应用机器人投递到原私聊，不调用 DWS；Owner 明确要求向另一位用户或群另发消息时，只有绑定了同企业 DWS profile 且 `owner_request` 等当前动作策略允许，才提示 Agent 使用 `dws chat +messages-send --as user`。该路径固定 DWS 本人身份、AI 标识、稳定目标与幂等语义，不用 `--as bot`、Webhook 或父命令探测代替。未绑定 profile 时不得借用环境中的当前 DWS 账号。
 
-群 @ 的通道提示不注入 DWS profile。普通回答只返回结果，由 `reply_to_trigger` 使用挂载的应用机器人发送到触发群；不得调用 DWS 本人身份发送，即使发起人是 Owner。跨群或私聊使用运行时绑定的 `memgov_bot` MCP：`resolve_bot_user`、`resolve_bot_group` 和 `forward_bot_message`。该 MCP 只提供用户和群消息转发，不暴露卡片、表情或通用平台发送接口。工具在独立 stdio 进程中按 task/attempt、应用通道、同企业 DWS 目录和当前策略复核；用户姓名必须唯一解析为 userId，群名或 ID 必须唯一匹配该机器人已挂载的有效群。DWS 仅用于只读收件人解析，不能以本人身份发送。`forward_bot_message` 把确定的收件人和正文写入当前群任务的待确认动作；模型结果不能伪造同类动作。Owner 在原群确认冻结的动作后，运行时重新核对确认与路由，再用应用机器人发送一次；平台仅受理时只报告 accepted，失败或未知结果不自动重试。没有绑定的同企业目录时不提供跨会话转发。提示词负责让 Agent 正确选路，普通答复仍受原群 Outbox 门禁约束；显式开启的完整 Bash 仍不是 OS 沙箱，不能把提示词描述成系统级进程隔离。
+群 @ 的通道提示不注入 DWS profile。普通回答只返回结果，由 `reply_to_trigger` 使用挂载的应用机器人发送到触发群；不得调用 DWS 本人身份发送，即使发起人是 Owner。跨群或私聊使用运行时绑定的 `memgov_bot` MCP：`resolve_bot_user`、`resolve_bot_group` 和 `forward_bot_message`。该 MCP 只提供用户和群消息转发，不暴露卡片、表情或通用平台发送接口。工具在独立 stdio 进程中按 task/attempt、应用通道、同企业 DWS 目录和当前策略复核；用户姓名必须唯一解析为 userId，群名或 ID 必须唯一匹配该机器人已挂载的有效群。DWS 仅用于只读收件人解析，不能以本人身份发送。`forward_bot_message` 在调用应用机器人发送前记录审计与幂等键，随后直接发送，无需 Owner 确认；模型结果中的重复机器人动作不会进入待确认队列。平台仅受理时只报告 accepted，失败或未知结果不自动重试。没有绑定的同企业目录时不提供跨会话转发。提示词负责限制何时调用工具、选择收件人与正文，普通答复仍受原群 Outbox 门禁约束；显式开启的完整 Bash 仍不是 OS 沙箱，不能把提示词描述成系统级进程隔离。
 
 验收见[后台观察与机器人交互验收](../architecture/best-practice-scenarios-detail.md#personal-jarvis-固定验收案例)。
 

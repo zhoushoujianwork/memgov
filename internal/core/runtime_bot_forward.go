@@ -50,6 +50,64 @@ type RuntimeBotTargetVerification struct {
 	TargetID       string
 }
 
+// AuthorizeRuntimeBotMessage records a bot MCP send before the transport call.
+// A repeated call with the same target and content returns the prior outcome
+// and never starts a second send.
+func (tx *Tx) AuthorizeRuntimeBotMessage(ctx context.Context, taskID string, in RuntimeMessageInput, verified RuntimeBotTargetVerification) (RuntimeMessageAction, bool, error) {
+	if err := validateRuntimeMessageInput(in); err != nil {
+		return RuntimeMessageAction{}, false, err
+	}
+	if in.Reason != "group_bot_forward" || len(in.EvidenceMessageIDs) != 0 {
+		return RuntimeMessageAction{}, false, Fail("invalid_input", "bot MCP send has an invalid decision record")
+	}
+	if a, found, err := ExistingRuntimeMessageAction(ctx, tx.Conn, taskID, in); err != nil || found {
+		return a, false, err
+	}
+	t, err := ReadRuntimeTask(ctx, tx.Conn, taskID)
+	if err != nil {
+		return RuntimeMessageAction{}, false, err
+	}
+	c, err := ReadRuntime(ctx, tx.Conn, t.RuntimeID)
+	if err != nil {
+		return RuntimeMessageAction{}, false, err
+	}
+	app, err := ReadChannel(ctx, tx.Conn, c.ChannelID)
+	if err != nil {
+		return RuntimeMessageAction{}, false, err
+	}
+	if t.Status != "running" || c.Status != "running" || c.ApplicationMode != "group_mention" || app.Kind != ChannelDingTalkApp || !app.Capabilities.Verified["send"] || !contains([]string{"configured", "active"}, app.Status) {
+		return RuntimeMessageAction{}, false, Fail("denied", "bot forwarding requires an active group bot")
+	}
+	if verified.ChannelID != app.ID || verified.ChannelVersion != app.ConfigVersion || verified.Tenant != app.Tenant || verified.TargetType != in.TargetType || verified.TargetID != in.TargetID {
+		return RuntimeMessageAction{}, false, Fail("denied", "bot recipient verification changed")
+	}
+	if err = tx.CheckRuntimeAttemptPolicy(ctx, in.AttemptID, t.ID, t.Version); err != nil {
+		return RuntimeMessageAction{}, false, err
+	}
+	if current, e := runtimeTaskMessagesCurrent(ctx, tx.Conn, t.ID); e != nil || !current {
+		if e != nil {
+			return RuntimeMessageAction{}, false, e
+		}
+		return RuntimeMessageAction{}, false, Fail("conflict", "bot forwarding source changed")
+	}
+	if admitted, e := runtimeTaskTriggerAdmitted(ctx, tx.Conn, c, t); e != nil || !admitted {
+		if e != nil {
+			return RuntimeMessageAction{}, false, e
+		}
+		return RuntimeMessageAction{}, false, Fail("denied", "bot forwarding trigger is no longer admitted")
+	}
+	if in.TargetType == "group" {
+		route, e := RouteFor(ctx, tx.Conn, app.ID, in.TargetID)
+		if e != nil || route.Status != "active" || route.ConversationType != "group" || route.Mode != "assistant" || !contains(c.RouteIDs, route.ID) {
+			return RuntimeMessageAction{}, false, Fail("denied", "target group is not mounted on this bot")
+		}
+	}
+	now := Now()
+	a := RuntimeMessageAction{ID: NewID(), TaskID: t.ID, TaskVersion: t.Version, AttemptID: in.AttemptID, ChannelID: app.ID, ChannelVersion: app.ConfigVersion, OwnerTenant: app.Tenant, TargetType: in.TargetType, TargetID: in.TargetID, Content: in.Content, Reason: in.Reason, EvidenceMessageIDs: []string{}, EvidenceMessageRevisions: map[string]int{}, InputDigest: runtimeMessageDigest(taskID, in), IdempotencyKey: in.IdempotencyKey, State: "sending", ProviderMessageIDs: []string{}, CreatedAt: now, UpdatedAt: now}
+	_, err = tx.Conn.ExecContext(ctx, "INSERT INTO runtime_message_actions("+runtimeMessageActionColumns+") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", a.ID, a.TaskID, a.TaskVersion, a.AttemptID, a.ChannelID, a.ChannelVersion, a.OwnerProfile, a.OwnerTenant, a.OwnerUserID, a.TargetType, a.TargetID, a.Content, a.Reason, JSON(a.EvidenceMessageIDs), JSON(a.EvidenceMessageRevisions), a.InputDigest, a.IdempotencyKey, a.State, a.Receipt, a.Detail, JSON(a.ProviderMessageIDs), a.ProviderSendTaskID, a.ProviderConversationID, a.CreatedAt, a.UpdatedAt)
+	return a, err == nil, err
+}
+
 // Recheck text confirmation immediately before a bot send. Card confirmations
 // use the existing immutable card snapshot check in the policy gate.
 func runtimeBotForwardApprovalCurrent(ctx context.Context, q Queryer, actionID string) error {
