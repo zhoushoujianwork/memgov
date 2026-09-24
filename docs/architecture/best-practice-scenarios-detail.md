@@ -34,6 +34,7 @@
 | 案例 | 必须观察到的行为 |
 | --- | --- |
 | 有效群 @ | 仍由挂载机器人在原群回复，使用原有 preset、模型、技能、工具和Workspace 和显式只读资料配置 |
+| Picture in a group @ | A fresh standalone or rich-text picture reaches the same group Agent as a vision input; a failed download is explicitly unread, and neither the download code nor another group's picture reaches the Agent. Verify offline and then with a live DingTalk callback. |
 | Owner 在群内 @ | 仍按群策略处理，不升级为 Personal Jarvis，不切换到 DWS 本人身份 |
 | 群 Jarvis 使用 skill | 只读或治理当前群的 Workspace 文件；运行时核验任务与受众 |
 | 群工具和目录 | 已配置能力继续可用；Personal Jarvis 的配置迁移不删除或收紧群声明 |

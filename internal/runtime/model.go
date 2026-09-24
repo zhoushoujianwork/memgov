@@ -681,6 +681,13 @@ func (c *Claude) execute(ctx context.Context, in ExecutionInput) (core.RuntimeAt
 		input["continuation_instruction"] = continuationPrompt(in.Task.Resume.Mode)
 		payload, _ = json.Marshal(input)
 	}
+	payload, hasImages, err := groupImageInput(in, payload)
+	if err != nil {
+		return out, err
+	}
+	if hasImages {
+		args = append(args, "--input-format", "stream-json")
+	}
 	raw, err := c.invokeExecution(ctx, in, payload, args...)
 	if err != nil {
 		return out, err

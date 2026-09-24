@@ -39,6 +39,7 @@ DWS 采集与后台执行独立于机器人交互。采集保持只读，不添�
 - 新建后台默认完整能力、Bash、执行器技能和 Owner 委托；显式限制与已有权限保留，扩权仍通过配置预览和显式应用。
 - 本人私聊与有效群 @ 共用“已收到 → 处理中 → 已完成／打叉”状态链，在原消息上分阶段替换。等待审批仍显示“处理中”，审批通过后继续原任务，完成或失败再收敛。每一阶段都有独立持久化记录，服务重启会按任务真相补齐，管理台可查看完整阶段历史；消息上只保留当前标记。群处理失败、取消或操作结果未知时都会在原群给出脱敏的文字说明；已经产生可用结论时同时保留结论，不再只留下“打叉”。群额外操作的审批留在原群，不转 Owner 私聊。原生审批卡片能力已实现但当前运行服务暂时停用，待确认操作先在原群展示完整确认口令；恢复卡片后仍只有 DWS 所有者可以“同意”或“拒绝”。
 - 应用 Stream 只在最小消息记录提交 SQLite 后向平台确认；提交完成会立即唤醒对应私聊与群 Agent，1 秒扫描仅作丢失唤醒时的恢复兜底。“已收到”“处理中”等表情在独立有序队列发送，不阻塞 Agent；群目录发现与历史补漏也不占用交互处理循环。
+- A new group @ message can include a picture, either alone or inside rich text. The bot downloads it with its own application identity and supplies the image to the group Agent for visual analysis. If retrieval fails, the message marks that picture as unread; older messages cannot be repaired automatically.
 - 直接 Agent 单轮最长运行 30 分钟；即时失败或服务恢复时发现遗留运行中任务，会将任务和尝试收口为失败，并由应用机器人向已确认接收的 Owner 私聊发送一次幂等收尾通知。未知外部操作只标记结果未知，不自动重放。
 - Long-term knowledge now uses [Agent Workspace](agent-workspace-design.md). Internal Source evidence and temporary task records remain in SQLite; Owner and group workspace boundaries are derived from verified identity and route.
 

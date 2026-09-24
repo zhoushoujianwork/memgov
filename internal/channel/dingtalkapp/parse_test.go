@@ -81,7 +81,7 @@ func richTextFrame(parts any) string {
 }
 
 func TestParseFrameAcceptsLiveShapedTextOnlyRichText(t *testing.T) {
-	if ParseVersion != "dingtalk_app/6" {
+	if ParseVersion != "dingtalk_app/7" {
 		t.Fatalf("richText interpretation requires its own parser version: %s", ParseVersion)
 	}
 	for _, parts := range []any{
@@ -307,7 +307,7 @@ func TestEpochMillisLeavesAnAbsentTimeEmpty(t *testing.T) {
 }
 
 func TestParseFrameSenderUsesExactUserIDAndUnionFallback(t *testing.T) {
-	if ParseVersion != "dingtalk_app/6" {
+	if ParseVersion != "dingtalk_app/7" {
 		t.Fatalf("identity interpretation must have its own parser version: %s", ParseVersion)
 	}
 	for _, tc := range []struct {

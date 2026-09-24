@@ -16,14 +16,14 @@ import (
 
 // ParseVersion travels with every event, so a parser change is visible in the
 // stored record rather than silently altering history.
-const ParseVersion = "dingtalk_app/6"
+const ParseVersion = "dingtalk_app/7"
 
 // maxFrameBytes bounds one callback payload. A larger frame is isolated instead
 // of parsed, because a truncated payload cannot be trusted.
 const maxFrameBytes = 1 << 20
 
-// Body limits apply to ordinary text and normalized richText. Media remains
-// unreadable until a separate, authorized retrieval path is implemented.
+// Body limits apply to ordinary text and normalized richText. Parsing leaves
+// media unread until the authenticated receiver retrieves it successfully.
 const maxBodyBytes = 64 << 10
 const maxRichTextParts = 128
 
@@ -184,6 +184,20 @@ func callbackBody(cb botCallback) (string, []core.Attachment, error) {
 	switch cb.MsgType {
 	case "", "text":
 		body = cb.Text.Content
+	case "picture":
+		var content map[string]json.RawMessage
+		if len(cb.Content) == 0 || json.Unmarshal(cb.Content, &content) != nil {
+			return "", nil, core.Fail("invalid_input", "picture content is not a supported object")
+		}
+		part := map[string]json.RawMessage{"type": json.RawMessage(`"picture"`)}
+		for key, value := range content {
+			part[key] = value
+		}
+		piece, attachment, err := richTextPart(part, 1)
+		if err != nil {
+			return "", nil, err
+		}
+		body, attachments = piece, []core.Attachment{*attachment}
 	case "richText":
 		// Preserve part order and explicitly identify unread media/links. Never
 		// copy capability URLs or download codes into the body or attachment ID.

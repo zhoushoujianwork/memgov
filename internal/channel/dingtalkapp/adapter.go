@@ -42,6 +42,7 @@ type Adapter struct {
 	ProbeTimeout time.Duration
 	HTTP         *http.Client
 	APIBase      string
+	MediaRoot    string
 	Now          func() time.Time
 
 	tokenMu     sync.Mutex
@@ -197,6 +198,7 @@ func (a *Adapter) RunReceiver(ctx context.Context, cfg channel.Config, opts chan
 				return opts.Reject(ctx, channel.RejectedEvent{Reason: core.ErrorCode(parseErr),
 					Detail: parseErr.Error(), Payload: payload})
 			}
+			a.attachPictures(ctx, cfg, raw, &e)
 			if err := opts.Handle(ctx, e); err != nil {
 				return err
 			}

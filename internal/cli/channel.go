@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -28,7 +29,11 @@ func (a *app) ensureAdapterRegistry() *channel.Registry {
 	// here, rather than in channel, so importing the contract never imports a
 	// platform SDK.
 	_ = r.Register(core.ChannelDwsPersonal, func() channel.Adapter { return dws.New() })
-	_ = r.Register(core.ChannelDingTalkApp, func() channel.Adapter { return dingtalkapp.New() })
+	_ = r.Register(core.ChannelDingTalkApp, func() channel.Adapter {
+		adapter := dingtalkapp.New()
+		adapter.MediaRoot = filepath.Join(a.home, "runtime", "media")
+		return adapter
+	})
 	a.adapterRegistry = r
 	return r
 }

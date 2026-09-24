@@ -566,6 +566,7 @@ type RuntimeMessage struct {
 	SelfAuthored      bool          `json:"self_authored"`
 	Addressed         bool          `json:"addressed,omitempty"`
 	Body              string        `json:"body"`
+	Attachments       []Attachment  `json:"attachments,omitempty"`
 	Quote             *MessageQuote `json:"quote,omitempty"`
 	SourceID          string        `json:"source_id,omitempty"`
 	FragmentID        string        `json:"fragment_id,omitempty"`
@@ -868,6 +869,25 @@ LEFT JOIN sources s ON s.id=so.source_id WHERE m.id=?`, id).Scan(&m.ID, &m.Revis
 		m.Quote, err = runtimeMessageQuote(ctx, q, m.ID, m.Revision)
 		if err != nil {
 			return nil, err
+		}
+		if m.Body != "" {
+			attachments, queryErr := q.QueryContext(ctx, "SELECT name,media_type,resource_id FROM message_attachments WHERE message_id=? AND revision=? AND state='referenced' ORDER BY ordinal", m.ID, m.Revision)
+			if queryErr != nil {
+				return nil, queryErr
+			}
+			for attachments.Next() {
+				var attachment Attachment
+				if queryErr = attachments.Scan(&attachment.Name, &attachment.MediaType, &attachment.ResourceID); queryErr != nil {
+					attachments.Close()
+					return nil, queryErr
+				}
+				m.Attachments = append(m.Attachments, attachment)
+			}
+			if queryErr = attachments.Err(); queryErr != nil {
+				attachments.Close()
+				return nil, queryErr
+			}
+			attachments.Close()
 		}
 		out = append(out, m)
 	}

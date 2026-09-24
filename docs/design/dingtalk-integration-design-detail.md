@@ -415,7 +415,9 @@ DingTalk [官方 Stream 机器人教程](https://open-dingtalk.github.io/develop
 
 `dingtalk_app/6` 在纯文字基础上接收已识别的图片段（`type=picture` 与下载引用）和带 `url` 的文字段，按原顺序在正文插入“内容未读取”或“目标未读取”标记，附件元信息仅记录种类与不可读说明，不记录下载 Code 或链接目标。正文标记随消息、Source 与任务进入 Agent 输入，避免把未读内容当成图片识别结果或链接正文。旧的 `/4` 限制保留为历史行为；`/5` 的机器人引用消息功能继续适用。
 
-不支持的媒体类型、未知字段、空或错误类型引用、空白正文和超出 128 段／64 KiB 的内容仍拒收；原始回调先按已有规则递归脱敏。离线测试覆盖平台样本形态、消息接收确认、附件标记、顺序、凭证脱敏与无效结构拒收。图片下载、链接访问及混合消息的真实平台往返尚未实现或验证；旧拒收记录中的凭证已脱敏，不能自动回放为完整媒体消息。
+不支持的媒体类型、未知字段、空或错误类型引用、空白正文和超出 128 段／64 KiB 的内容仍拒收；原始回调先按已有规则递归脱敏。离线测试覆盖平台样本形态、消息接收确认、附件标记、顺序、凭证脱敏与无效结构拒收。`/6` did not download pictures; old unread records have redacted codes and cannot be replayed as complete media messages.
+
+`dingtalk_app/7` also accepts a standalone `picture` callback. For a bound, addressed conversation, the receiver uses the bot application token and `downloadCode` with DingTalk's [message file download API](https://dingtalk.apifox.cn/api-140599627), then fetches the returned HTTPS URL from a trusted media host. It accepts up to four pictures of at most 5 MiB each, verifies the image MIME type, and stores bytes under `<MEMGOV_HOME>/runtime/media` with owner-only permissions and a content digest as the database reference. Codes, URLs, and bytes never enter the message body, evidence snapshot, or model text. The group execution path verifies the file digest and supplies the image as a native vision block. Download failure leaves the explicit unread marker. Local media files must be retained alongside `state.db` for recovery; the database backup command does not include them. Platform download and model vision have offline contract tests, but a live DingTalk round trip still needs acceptance testing. Link targets remain unread.
 
 ### DWS 历史导入的时间续步（源码已实现）
 
