@@ -585,6 +585,7 @@ func (c *Claude) execute(ctx context.Context, in ExecutionInput) (core.RuntimeAt
 	}
 	if in.ApplicationMode == "group_mention" && !in.BashEnabled {
 		allowed = groupClaudeTools(in.Capabilities)
+		allowed = append(allowed, knowledgeTools...)
 		if workspaceTool != "" {
 			allowed = append(allowed, "Bash("+workspaceTool+" *)", "Skill(memgov-workspace)")
 		}
@@ -630,6 +631,7 @@ func (c *Claude) execute(ctx context.Context, in ExecutionInput) (core.RuntimeAt
 			return out, core.Fail("unavailable", "declared-directory tests require a verified OS sandbox")
 		}
 		allowed = ownerDirectoryTools(in)
+		allowed = append(allowed, knowledgeTools...)
 		if ownerMessageTool != "" {
 			allowed = append(allowed, "Bash("+ownerMessageTool+" *)")
 		}

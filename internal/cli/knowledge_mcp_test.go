@@ -23,7 +23,6 @@ func TestOwnerKnowledgeMCPRequiresReadOnlyRelayerAndNamedSources(t *testing.T) {
 		"write grant":       strings.Replace(knowledgeMCPAgent, "--read-only", "--read-only, --allow-write", 1),
 		"unknown source":    strings.Replace(knowledgeMCPAgent, "confluence", "drive", 1),
 		"duplicate source":  strings.Replace(knowledgeMCPAgent, "confluence", "dokki", 1),
-		"bash disabled":     strings.Replace(knowledgeMCPAgent, "bash: true", "bash: false", 1),
 		"unknown nested":    strings.Replace(knowledgeMCPAgent, "      sources: [dokki, confluence]", "      sources: [dokki, confluence]\n      token: DO_NOT_ECHO_SECRET", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -43,11 +42,15 @@ func TestOwnerKnowledgeMCPRequiresReadOnlyRelayerAndNamedSources(t *testing.T) {
 	}
 }
 
-func TestGroupAgentCannotUseOwnerKnowledgeMCP(t *testing.T) {
-	raw := strings.Replace(dualConfigYAML, "    capabilities: [conversation_history_read, artifact_create]", "    capabilities: [conversation_history_read, artifact_create]\n    bash: true\n    knowledge_mcp:\n      command: /usr/bin/node\n      args: [/opt/relayer/bin.js, mcp, --read-only]\n      sources: [dokki]", 1)
+func TestGroupAgentCanDeclareReadOnlyKnowledgeWithoutBash(t *testing.T) {
+	raw := strings.Replace(dualConfigYAML, "    capabilities: [conversation_history_read, artifact_create]", "    capabilities: [conversation_history_read, artifact_create]\n    bash: false\n    knowledge_mcp:\n      sources: [dokki, confluence]", 1)
 	a := &app{}
-	if err := a.loadConfig([]byte(raw)); core.ErrorCode(err) != "invalid_input" {
-		t.Fatalf("group Agent accepted Owner knowledge source: %v", err)
+	if err := a.loadConfig([]byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+	validated, err := NormalizeDualModeConfig(a.cfg)
+	if err != nil || validated.Declaration.Agents["group-helper"].KnowledgeMCP == nil {
+		t.Fatalf("read-only group source rejected: %v", err)
 	}
 }
 

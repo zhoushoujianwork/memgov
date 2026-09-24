@@ -10,17 +10,11 @@ import (
 	"github.com/zhoushoujianwork/memgov/internal/core"
 )
 
-func TestKnowledgeMCPOnlyAddsNamedReadToolsToOwnerRuns(t *testing.T) {
+func TestKnowledgeMCPOnlyAddsNamedReadToolsToDeclaredAgents(t *testing.T) {
 	mcp := &core.RuntimeKnowledgeMCP{Command: "/usr/bin/node", Args: []string{"/opt/relayer/bin.js", "mcp", "--read-only"}, Sources: []string{"dokki", "confluence"}}
 	for _, mode := range []string{"direct", "proactive", "group_mention"} {
 		in := ExecutionInput{ApplicationMode: mode, KnowledgeMCP: mcp}
 		config, allowed, prompt := knowledgeMCPConfiguration(in)
-		if mode == "group_mention" {
-			if config != emptyMCPConfig || len(allowed) != 0 || prompt != "" {
-				t.Fatal("group Agent received Owner MCP tools")
-			}
-			continue
-		}
 		var parsed struct {
 			MCPServers map[string]struct {
 				Command string   `json:"command"`
@@ -33,6 +27,10 @@ func TestKnowledgeMCPOnlyAddsNamedReadToolsToOwnerRuns(t *testing.T) {
 		if len(allowed) != 7 || !strings.Contains(strings.Join(allowed, ","), "mcp__relayer__read_dokki_resource") || !strings.Contains(strings.Join(allowed, ","), "mcp__relayer__query_confluence") || strings.Contains(prompt, "write") {
 			t.Fatalf("unexpected source tools or prompt: %v %q", allowed, prompt)
 		}
+	}
+	config, allowed, prompt := knowledgeMCPConfiguration(ExecutionInput{ApplicationMode: "analysis", KnowledgeMCP: mcp})
+	if config != emptyMCPConfig || len(allowed) != 0 || prompt != "" {
+		t.Fatal("analyzer received MCP tools")
 	}
 }
 
@@ -80,8 +78,8 @@ func TestKnowledgeMCPFailsClosedWhenExecutableIsMissing(t *testing.T) {
 		t.Fatalf("missing MCP command did not fail before the model starts: %v", err)
 	}
 	in.ApplicationMode = "group_mention"
-	if err := validateKnowledgeMCP(in); core.ErrorCode(err) != "denied" {
-		t.Fatalf("group Agent received Owner source grant: %v", err)
+	if err := validateKnowledgeMCP(in); core.ErrorCode(err) != "unavailable" {
+		t.Fatalf("group Agent did not validate the executable: %v", err)
 	}
 }
 
@@ -108,7 +106,27 @@ func TestBuiltInKnowledgeMCPUsesMemgovBinaryAndSelectedSources(t *testing.T) {
 		t.Fatalf("wrong tool grant: %v", allowed)
 	}
 	in.ApplicationMode = "group_mention"
-	if err := validateKnowledgeMCP(in); core.ErrorCode(err) != "denied" {
-		t.Fatalf("group received MCP: %v", err)
+	in.BashEnabled = false
+	if err := validateKnowledgeMCP(in); err != nil {
+		t.Fatalf("group read-only MCP requires Bash: %v", err)
+	}
+}
+
+func TestRestrictedGroupAgentReceivesOnlyDeclaredKnowledgeTools(t *testing.T) {
+	c, in, _ := directAgentFixture(t)
+	in.ApplicationMode = "group_mention"
+	in.BashEnabled = false
+	in.DirectoryBounded = true
+	in.DirectorySnapshots = []DirectorySnapshot{{Path: "inputs/001/notes", Content: "approved"}}
+	in.KnowledgeMCP = &core.RuntimeKnowledgeMCP{Sources: []string{"dokki"}}
+	c.Run = func(_ context.Context, _ string, _ []byte, args ...string) ([]byte, error) {
+		values := claudeArgumentValues(args)
+		if !strings.Contains(values["--mcp-config"], `"memgov_knowledge"`) || !strings.Contains(values["--allowedTools"], "mcp__memgov_knowledge__search_dokki") || strings.Contains(values["--allowedTools"], "confluence") || strings.Contains(","+values["--allowedTools"]+",", ",Bash,") {
+			t.Fatalf("group MCP grant is wrong: %v", values)
+		}
+		return claudeResult(t, core.RuntimeAttemptResult{Result: "done"}), nil
+	}
+	if _, err := c.Execute(context.Background(), in); err != nil {
+		t.Fatal(err)
 	}
 }

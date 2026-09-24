@@ -31,7 +31,7 @@ flowchart TD
 
 Files are authoritative for knowledge. The short index is refreshed every turn, while topic notes are searched and read when relevant. Agents maintain their files directly and preserve dates and source references. SQLite remains authoritative for execution facts and raw message evidence; a completed task or a retained source does not automatically become a note.
 
-An explicitly configured Owner Agent may read Dokki or Confluence through memgov's own read-only source tools. Credentials stay in the private memgov home. Those documents remain external evidence; reading them neither imports them into a Workspace nor gives group Agents access. The [runtime design](../design/agent-runtime-design.md) defines this optional tool access.
+An explicitly configured Owner or group Agent may read Dokki or Confluence through memgov's own read-only source tools. Credentials stay in the private memgov home. Those documents remain external evidence; reading them does not import them into a Workspace. A group Agent can cite source content to its group only when its selected Agent declaration grants access. The [runtime design](../design/agent-runtime-design.md) defines this tool access.
 
 The old Source → Candidate → Review → Memory knowledge pipeline, memory card UI and `memgov-memory` skill are replaced by [Agent Workspace](../design/agent-workspace-design.md). Internal Source and fragment records remain for message evidence and retention. Upgrades archive old knowledge and start clean workspaces rather than importing it.
 

@@ -20,9 +20,6 @@ func (s *Service) resolveTaskAgent(ctx context.Context, cfg core.RuntimeConfig, 
 		return policy, agent.Preset{}, err
 	}
 	if cfg.ApplicationMode == "group_mention" {
-		if policy.KnowledgeMCP != nil {
-			return policy, agent.Preset{}, core.Fail("denied", "group Agents cannot use Owner knowledge sources")
-		}
 		if hasAgentCapability(policy.Capabilities, "local_test") && !policy.BashEnabled {
 			return policy, agent.Preset{}, core.Fail("denied", "group Agents cannot execute shell tests")
 		}

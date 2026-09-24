@@ -23,7 +23,8 @@ type RuntimeAgentPolicy struct {
 	Managed         bool                 `json:"managed"`
 }
 
-// RuntimeKnowledgeMCP enables read-only source tools for an Owner Agent.
+// RuntimeKnowledgeMCP enables read-only source tools for an explicitly
+// configured Agent, including one bound to a group.
 // Command and Args are retained only for compatibility with older declarations;
 // a sources-only declaration launches memgov's own knowledge server.
 type RuntimeKnowledgeMCP struct {

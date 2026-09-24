@@ -102,7 +102,7 @@ channels: []
 #     bash: true
 #     external_actions: owner_delegated # 仅后台使用 Owner 预设授权
 #     skills: {inherit: executor, paths: []}
-#     # Optional Owner-only Dokki / Confluence search through memgov's
+#     # Optional Dokki / Confluence search through memgov's
 #     # built-in read-only knowledge server. Keep credentials out of YAML.
 #     # knowledge_mcp:
 #     #   sources: [dokki, confluence]
@@ -112,6 +112,10 @@ channels: []
 #     bash: false
 #     external_actions: owner_confirmation
 #     skills: {inherit: none, paths: []}
+#     # Add to a group Agent to let it read both sources without Bash.
+#     # Group replies may cite these documents to everyone in that group.
+#     # knowledge_mcp:
+#     #   sources: [dokki, confluence]
 # applications:
 #   proactive:
 #     enabled: false

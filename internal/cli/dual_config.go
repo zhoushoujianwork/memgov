@@ -303,9 +303,6 @@ func NormalizeDualModeConfig(c Config) (DualModeValidation, error) {
 			if len(mcp.Sources) == 0 || (mcp.Command == "") != (len(mcp.Args) == 0) || mcp.Command != "" && (!filepath.IsAbs(mcp.Command) || strings.ContainsAny(mcp.Command, "\r\n\x00")) {
 				return out, dualInvalid("agents.knowledge_mcp", "requires sources; legacy command and args must be supplied together")
 			}
-			if !a.Bash {
-				return out, dualInvalid("agents.knowledge_mcp", "requires an Owner Agent with bash: true")
-			}
 			sources := map[string]bool{}
 			for _, source := range mcp.Sources {
 				if (source != "dokki" && source != "confluence") || sources[source] {
@@ -363,16 +360,13 @@ func NormalizeDualModeConfig(c Config) (DualModeValidation, error) {
 		}
 		return nil
 	}
-	agentRef := func(name string, required, group bool) error {
+	agentRef := func(name string, required, _ bool) error {
 		if name == "" && !required {
 			return nil
 		}
-		a, ok := d.Agents[name]
+		_, ok := d.Agents[name]
 		if !ok {
 			return dualInvalid("applications.agent", "agent must be declared in agents")
-		}
-		if group && a.KnowledgeMCP != nil {
-			return dualInvalid("applications.agent", "knowledge_mcp is available only to Owner Agents")
 		}
 		return nil
 	}
