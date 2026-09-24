@@ -121,7 +121,7 @@ func TestRestrictedGroupAgentReceivesOnlyDeclaredKnowledgeTools(t *testing.T) {
 	in.KnowledgeMCP = &core.RuntimeKnowledgeMCP{Sources: []string{"dokki"}}
 	c.Run = func(_ context.Context, _ string, _ []byte, args ...string) ([]byte, error) {
 		values := claudeArgumentValues(args)
-		if !strings.Contains(values["--mcp-config"], `"memgov_knowledge"`) || !strings.Contains(values["--allowedTools"], "mcp__memgov_knowledge__search_dokki") || !strings.Contains(","+values["--tools"]+",", ",Read,") || strings.Contains(values["--allowedTools"], "confluence") || strings.Contains(","+values["--allowedTools"]+",", ",Bash,") {
+		if !strings.Contains(values["--mcp-config"], `"memgov_knowledge"`) || !strings.Contains(values["--mcp-config"], `"memgov_bot"`) || !strings.Contains(values["--allowedTools"], "mcp__memgov_knowledge__search_dokki") || !strings.Contains(values["--allowedTools"], "mcp__memgov_bot__forward_bot_message") || !strings.Contains(","+values["--tools"]+",", ",Read,") || strings.Contains(values["--allowedTools"], "confluence") || strings.Contains(","+values["--allowedTools"]+",", ",Bash,") {
 			t.Fatalf("group MCP grant is wrong: tools=%q allowed=%q", values["--tools"], values["--allowedTools"])
 		}
 		return claudeResult(t, core.RuntimeAttemptResult{Result: "done"}), nil

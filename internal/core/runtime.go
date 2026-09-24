@@ -1732,6 +1732,9 @@ func (tx *Tx) CompleteRuntimeTask(ctx context.Context, taskID string, version in
 		return t, err
 	}
 	for _, action := range result.Actions {
+		if action.Kind == RuntimeBotForwardAction {
+			return t, Fail("denied", "bot forwarding must be prepared through the bot MCP recipient gate")
+		}
 		if strings.TrimSpace(action.Kind) == "" || strings.TrimSpace(action.Target) == "" || strings.TrimSpace(action.Payload) == "" {
 			return t, Fail("invalid_input", "pending actions require kind, target and payload")
 		}
@@ -2628,7 +2631,7 @@ func (tx *Tx) prepareTaskDelivery(ctx context.Context, taskID, purpose string, d
 			if action.Status != "pending" {
 				continue
 			}
-			fmt.Fprintf(&b, "\n\n- 类型：%s\n- 目标：%s\n- 具体内容：%s", action.Kind, action.Target, action.Payload)
+			fmt.Fprintf(&b, "\n\n- 类型：%s\n- 目标：%s\n- 具体内容：%s", action.Kind, runtimeActionDisplayTarget(action), runtimeActionDisplayPayload(action))
 			if !buttonCard {
 				fmt.Fprintf(&b, "\n- 确认口令：`%s`", ConfirmationToken(action))
 			}

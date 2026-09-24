@@ -94,6 +94,11 @@ WHERE id=? AND action_id=?`, attemptID, actionID).Scan(&version, &claimedVersion
 		if err = destructiveApprovalCurrent(ctx, q, action); err != nil {
 			return err
 		}
+		if action.Kind == RuntimeBotForwardAction {
+			if err = runtimeBotForwardApprovalCurrent(ctx, q, actionID); err != nil {
+				return err
+			}
+		}
 	}
 	if strings.HasPrefix(origin, "dingtalk_card:") {
 		config, err := ReadRuntime(ctx, q, runtimeID)

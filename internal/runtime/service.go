@@ -910,12 +910,23 @@ func (s *Service) executeClaimedAction(ctx context.Context, cfg core.RuntimeConf
 		s.failAction(ctx, cfg, action, attempt, err, false)
 		return true
 	}
-	_, bootstrap, knowledgeErr := s.agentWorkspace(ctx, cfg, task)
-	if knowledgeErr != nil {
-		s.failAction(ctx, cfg, action, attempt, knowledgeErr, false)
-		return true
+	var result core.RuntimeAttemptResult
+	var executeErr error
+	if action.Kind == core.RuntimeBotForwardAction {
+		var outcomeUnknown bool
+		result, outcomeUnknown, executeErr = s.executeConfirmedBotForward(ctx, cfg, task, action)
+		if executeErr != nil {
+			s.failAction(ctx, cfg, action, attempt, executeErr, outcomeUnknown)
+			return true
+		}
+	} else {
+		_, bootstrap, knowledgeErr := s.agentWorkspace(ctx, cfg, task)
+		if knowledgeErr != nil {
+			s.failAction(ctx, cfg, action, attempt, knowledgeErr, false)
+			return true
+		}
+		result, executeErr = s.Actioner.ExecuteConfirmedAction(ctx, ActionExecutionInput{Task: task, Action: action, WorkspaceBootstrap: bootstrap, WorkDir: workdir, Preset: preset, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile})
 	}
-	result, executeErr := s.Actioner.ExecuteConfirmedAction(ctx, ActionExecutionInput{Task: task, Action: action, WorkspaceBootstrap: bootstrap, WorkDir: workdir, Preset: preset, PolicyResolved: true, ExecutionModel: policy.ExecutionModel, ClaudeProfile: policy.ClaudeProfile})
 	if ctx.Err() != nil {
 		executeErr = workError(ctx, "execution")
 	}

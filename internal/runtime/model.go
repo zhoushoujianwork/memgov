@@ -567,7 +567,7 @@ func (c *Claude) execute(ctx context.Context, in ExecutionInput) (core.RuntimeAt
 		enabled = append(enabled, "Skill")
 	}
 	allowed = append(allowed, skillAllowlist(in.Skills)...)
-	knowledgeConfig, knowledgeTools, knowledgePrompt := knowledgeMCPConfiguration(in)
+	knowledgeConfig, knowledgeTools, knowledgePrompt := agentMCPConfiguration(in)
 	allowed = append(allowed, knowledgeTools...)
 	prompt += knowledgePrompt
 	if ownerMessageTool != "" && !in.BashEnabled {

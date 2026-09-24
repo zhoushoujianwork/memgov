@@ -16,7 +16,7 @@ After a managed restart, a running supervisor does not by itself prove that the 
 
 运行时会按实际通道加入通道专属系统提示。本人在钉钉私聊中提到某位同事、且问题可能依赖双方沟通时，Agent 默认通过 `dws` 先在当前企业中确认联系人，再读取与该人的一对一聊天；不会先遍历长期记忆，也不能因为运行时会话目录为空就声称没有聊天或正式记忆。重名时先请本人消歧，不猜测身份。只有本人明确询问长期知识，或私聊记录不足时，才继续使用 `memgov-workspace`。群内 @ 使用另一套边界：只使用当前群及向该群开放的上下文，不会因为提到某人而读取其私聊。
 
-发送也按通道区分身份。私聊机器人的普通回答不用调用 `dws`，由运行时以应用机器人身份回复当前私聊；本人明确要求“另发给某人或某群”时，绑定了 DWS profile 的完整 Owner Agent 才可用 `dws chat +messages-send --as user` 以本人身份发送，并保留 AI 标识。群 Agent 的回答始终以应用机器人身份回到原群，即使 Owner 在群里要求也不能改用 DWS 本人身份；跨群或私聊没有精确的机器人发送授权时只生成待处理操作。看到 Agent 为普通群回答探测 `dws chat --help`，或用 `--as user` 发送，均属于错误选路。
+发送也按通道区分身份。私聊机器人的普通回答不用调用 `dws`，由运行时以应用机器人身份回复当前私聊；本人明确要求“另发给某人或某群”时，绑定了 DWS profile 的完整 Owner Agent 才可用 `dws chat +messages-send --as user` 以本人身份发送，并保留 AI 标识。群 Agent 的回答始终以应用机器人身份回到原群，即使 Owner 在群里要求也不能改用 DWS 本人身份；跨群或私聊由机器人 MCP 查找精确收件人并准备待确认操作，确认后才以应用机器人身份发送。看到 Agent 为普通群回答探测 `dws chat --help`，或用 `--as user` 发送，均属于错误选路。
 
 系统提示的共用自我定位在 [identity.md](../../internal/sysprompt/identity.md)、安全规则在 [security.md](../../internal/sysprompt/security.md) 统一维护，各入口基础提示放在同目录。Agent 被问及身份或能力时，会把自己简要说明为能结合对话、获准工具和受治理长期记忆推进工作的 AI 伙伴，只列当前实际能力，不自称底层模型或 CLI 产品。修改后需要构建、安装新二进制并重启服务，所有入口一起生效；当前不支持热加载，也无需逐个同步 preset。升级后若继续旧任务提示策略已变化，应重新发起请求。规则、验证与完整 Bash 的安全限制见[维护说明](../design/agent-runtime-design-detail.md#统一系统提示与安全验证)。
 
@@ -354,6 +354,8 @@ memgov runtime task retry TASK_ID
 同一事项的后续消息会更新原任务。执行中发生编辑、取消或撤回时，旧版本结果不会交付。
 
 ## 7. 确认外部操作
+
+A group Agent now has three bot MCP tools: `resolve_bot_user`, `resolve_bot_group`, and `forward_bot_message`. To forward from a group, quote or state the exact text and name one recipient. User names are resolved through the bot's same-tenant bound DWS directory; target groups must already be mounted on that bot. An ambiguous name, missing directory binding, or unavailable quote stops preparation. The forwarding tool creates a pending action and sends nothing yet. The verified Owner confirms the exact recipient and content in the original group; the application bot then sends once and records platform acceptance or an unknown result. Ordinary answers still return to the triggering group automatically.
 
 群助手关联 `identity.confirmation_card_template` 后，原生审批卡片能力仍保留在代码中；当前运行服务暂时停用卡片入口，群内待确认操作统一展示完整确认口令。这样可以先完成操作闭环，恢复卡片时无需改动任务或动作数据。卡片标题、详情、按钮与执行链路的实现和验收要求见[模板要求](../design/dingtalk-integration-design-detail.md#群回复与确认卡片)。
 

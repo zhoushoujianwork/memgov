@@ -131,6 +131,11 @@ type GroupConversation struct {
 	Name string
 }
 
+type BotUser struct {
+	ID   string `json:"user_id"`
+	Name string `json:"name"`
+}
+
 type DirectConversation struct {
 	ID          string
 	DisplayName string

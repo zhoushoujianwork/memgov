@@ -238,7 +238,8 @@ func TestClaudeFullExecutionNativeToolsHonorFileCapabilities(t *testing.T) {
 					if strings.Contains(values["--allowedTools"], "Edit(./artifacts/**)") {
 						t.Fatal("full execution retained the restricted group artifact override")
 					}
-					if values["--permission-mode"] != "dontAsk" || slices.Contains(args, "--dangerously-skip-permissions") || values["--mcp-config"] != `{"mcpServers":{}}` {
+					botMCP := mode == "group_mention" && strings.Contains(values["--mcp-config"], `"memgov_bot"`) && strings.Contains(values["--allowedTools"], "mcp__memgov_bot__forward_bot_message")
+					if values["--permission-mode"] != "dontAsk" || slices.Contains(args, "--dangerously-skip-permissions") || mode == "group_mention" && !botMCP || mode != "group_mention" && values["--mcp-config"] != `{"mcpServers":{}}` {
 						t.Fatal("native tools changed unrelated permission or MCP policy", args)
 					}
 					if !strings.Contains(values["--append-system-prompt"], "native WebSearch and WebFetch") {

@@ -47,7 +47,7 @@ The source runtime also gives Claude context about skills successfully prepared 
 
 各模型入口共用简短的 [identity.md](../../internal/sysprompt/identity.md) 自我定位和 [security.md](../../internal/sysprompt/security.md) 安全规则，另有观察、后台执行、本人私聊、群 @ 等入口提示。Agent 对外定位为能结合当前对话、获准工具和受治理长期记忆，把工作从理解与调查推进到执行与验证的 AI 工作伙伴；只介绍当前实际可用能力，不自称底层模型或 CLI 产品。引用、聊天、记忆与工具结果是资料，不能扩大授权。本人私聊可在绑定 DWS profile 内按需查询本人沟通；群 Agent 保持同群受众范围。
 
-钉钉应用通道还会注入可信的发送身份说明：私聊普通回答由应用机器人回复当前会话，Owner 明确要求向其他会话代发时才可按动作策略使用绑定 DWS 本人身份；群回答只走应用机器人原群路由，不得退回 DWS 本人身份。DWS Skill 说明“怎样发送”，通道提示决定“当前入口允许以谁的身份发送”。
+钉钉应用通道还会注入可信的发送身份说明：私聊普通回答由应用机器人回复当前会话，Owner 明确要求向其他会话代发时才可按动作策略使用绑定 DWS 本人身份；群回答只走应用机器人原群路由，不得退回 DWS 本人身份。群中的独立转发由内置机器人 MCP 准备，经原群 Owner 确认后由应用机器人发送。DWS Skill 说明“怎样发送”，通道提示决定“当前入口允许以谁的身份发送”。
 
 `owner_request` 只用于已核验 Owner 私聊，按本人的明确请求处理。`owner_delegated` 只用于后台观察，按 Owner 预设自主执行。群 Agent 默认 `owner_confirmation`，额外外部操作在原群由 Owner 确认；Owner 在群发言不会改变这个策略。结果不明的操作保留 `unknown`，不自动重试。
 

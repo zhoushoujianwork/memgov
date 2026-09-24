@@ -55,10 +55,10 @@ func runtimeConfirmationCardPresentation(task RuntimeTask) (title, summary, deta
 		if len(pending) > 1 {
 			lines = append(lines, fmt.Sprintf("操作 %d · %s", i+1, strings.Join(strings.Fields(action.Kind), " ")))
 		}
-		if target := strings.Join(strings.Fields(action.Target), " "); target != "" {
+		if target := strings.Join(strings.Fields(runtimeActionDisplayTarget(action)), " "); target != "" {
 			lines = append(lines, "目标："+target)
 		}
-		if payload := strings.Join(strings.Fields(action.Payload), " "); payload != "" {
+		if payload := strings.Join(strings.Fields(runtimeActionDisplayPayload(action)), " "); payload != "" {
 			lines = append(lines, "内容："+payload)
 		}
 		if i+1 < len(pending) {

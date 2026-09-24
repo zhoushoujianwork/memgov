@@ -174,6 +174,7 @@ func (a *app) command() *cobra.Command {
 	a.runtimeCommands()
 	a.dataSourceCommands()
 	a.knowledgeCommands()
+	a.botMCPCommand()
 	root.AddCommand(a.uiCommand(), a.serviceCommand())
 	return root
 }

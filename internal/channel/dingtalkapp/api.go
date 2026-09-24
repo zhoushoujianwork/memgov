@@ -182,7 +182,7 @@ func (a *Adapter) Send(ctx context.Context, cfg channel.Config, req channel.Send
 		return channel.SendResult{State: "unknown"}, nil
 	}
 	if len(out.Invalid)+len(out.Filtered)+len(out.FlowControlled) > 0 {
-		return channel.SendResult{State: "failed"}, core.Fail("denied", "DingTalk did not accept the configured owner as a delivery target")
+		return channel.SendResult{State: "failed"}, core.Fail("denied", "DingTalk did not accept the bot message recipient")
 	}
 	if out.ProcessQueryKey == "" {
 		return channel.SendResult{State: "unknown"}, nil
