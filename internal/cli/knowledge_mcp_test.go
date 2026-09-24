@@ -62,3 +62,18 @@ func TestKnowledgeMCPChangeRequiresAuthorization(t *testing.T) {
 		t.Fatalf("knowledge source admission was not classified as a permission and boundary change: %+v", change)
 	}
 }
+
+func TestBuiltInKnowledgeDeclarationNeedsOnlySourceNames(t *testing.T) {
+	raw := "agents:\n  owner:\n    bash: true\n    knowledge_mcp:\n      sources: [dokki, confluence]\n"
+	a := &app{}
+	if err := a.loadConfig([]byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NormalizeDualModeConfig(a.cfg); err != nil {
+		t.Fatal(err)
+	}
+	bad := strings.Replace(raw, "sources: [dokki, confluence]", "command: /usr/bin/node\n      sources: [dokki, confluence]", 1)
+	if err := (&app{}).loadConfig([]byte(bad)); core.ErrorCode(err) != "invalid_input" {
+		t.Fatalf("half legacy declaration accepted: %v", err)
+	}
+}

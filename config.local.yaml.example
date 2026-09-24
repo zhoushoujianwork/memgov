@@ -102,12 +102,9 @@ channels: []
 #     bash: true
 #     external_actions: owner_delegated # 仅后台使用 Owner 预设授权
 #     skills: {inherit: executor, paths: []}
-#     # Optional Owner-only Dokki / Confluence search through a dedicated,
-#     # read-only Relayer MCP process. Use absolute paths and a separate actor.
-#     # Configure source credentials in Relayer, not in this YAML.
+#     # Optional Owner-only Dokki / Confluence search through memgov's
+#     # built-in read-only knowledge server. Keep credentials out of YAML.
 #     # knowledge_mcp:
-#     #   command: /absolute/path/to/node
-#     #   args: [/absolute/path/to/relayer/bin.js, mcp, --read-only, --actor, memgov-owner, --scope, global, --data-dir, /absolute/path/to/relayer-data]
 #     #   sources: [dokki, confluence]
 #   group-helper:
 #     preset: claude-default

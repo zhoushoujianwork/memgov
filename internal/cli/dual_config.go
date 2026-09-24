@@ -300,8 +300,8 @@ func NormalizeDualModeConfig(c Config) (DualModeValidation, error) {
 		seen = map[string]bool{}
 		if a.KnowledgeMCP != nil {
 			mcp := a.KnowledgeMCP
-			if !filepath.IsAbs(mcp.Command) || strings.ContainsAny(mcp.Command, "\r\n\x00") || len(mcp.Sources) == 0 || len(mcp.Args) == 0 {
-				return out, dualInvalid("agents.knowledge_mcp", "requires an absolute command, arguments and at least one source")
+			if len(mcp.Sources) == 0 || (mcp.Command == "") != (len(mcp.Args) == 0) || mcp.Command != "" && (!filepath.IsAbs(mcp.Command) || strings.ContainsAny(mcp.Command, "\r\n\x00")) {
+				return out, dualInvalid("agents.knowledge_mcp", "requires sources; legacy command and args must be supplied together")
 			}
 			if !a.Bash {
 				return out, dualInvalid("agents.knowledge_mcp", "requires an Owner Agent with bash: true")
@@ -313,16 +313,18 @@ func NormalizeDualModeConfig(c Config) (DualModeValidation, error) {
 				}
 				sources[source] = true
 			}
-			hasMCP, readOnly := false, false
-			for _, arg := range mcp.Args {
-				if strings.ContainsAny(arg, "\r\n\x00") || arg == "--allow-write" || arg == "--allow-dws-send" || arg == "--allow-local-directories" || arg == "--allow-runtime-closeout" {
-					return out, dualInvalid("agents.knowledge_mcp.args", "contains an unsafe argument")
+			if mcp.Command != "" {
+				hasMCP, readOnly := false, false
+				for _, arg := range mcp.Args {
+					if strings.ContainsAny(arg, "\r\n\x00") || arg == "--allow-write" || arg == "--allow-dws-send" || arg == "--allow-local-directories" || arg == "--allow-runtime-closeout" {
+						return out, dualInvalid("agents.knowledge_mcp.args", "contains an unsafe argument")
+					}
+					hasMCP = hasMCP || arg == "mcp"
+					readOnly = readOnly || arg == "--read-only"
 				}
-				hasMCP = hasMCP || arg == "mcp"
-				readOnly = readOnly || arg == "--read-only"
-			}
-			if !hasMCP || !readOnly {
-				return out, dualInvalid("agents.knowledge_mcp.args", "Relayer mcp --read-only is required")
+				if !hasMCP || !readOnly {
+					return out, dualInvalid("agents.knowledge_mcp.args", "legacy MCP command requires mcp --read-only")
+				}
 			}
 		}
 		for i, path := range a.Directories {

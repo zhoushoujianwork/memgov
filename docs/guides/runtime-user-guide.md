@@ -73,7 +73,7 @@ A durable Workspace is a knowledge directory, not a Claude installation. New att
 
 ### Owner knowledge sources
 
-To give an explicit Owner Agent read-only Dokki and Confluence tools, add `knowledge_mcp` to that Agent. The command starts your locally installed Relayer MCP server; use a dedicated actor and a private Relayer data directory with the source credentials configured there. Do not put tokens in YAML or command arguments. This example uses placeholders that must be replaced with absolute local paths:
+To give an explicit Owner Agent read-only Dokki and Confluence tools, add `knowledge_mcp.sources` to that Agent. memgov starts its own MCP server and calls the two remote sources directly; no Relayer process is needed. Do not put tokens in YAML or command arguments:
 
 ```yaml
 agents:
@@ -82,8 +82,6 @@ agents:
     bash: true
     external_actions: owner_request
     knowledge_mcp:
-      command: /absolute/path/to/node
-      args: [/absolute/path/to/relayer/bin.js, mcp, --read-only, --actor, memgov-owner, --scope, global, --data-dir, /absolute/path/to/relayer-data]
       sources: [dokki, confluence]
 applications:
   owner_private:
@@ -92,7 +90,7 @@ applications:
     agent: owner-search
 ```
 
-Use the existing Owner identity and application binding from your configuration. Run `config validate`, then `config plan`; adding these sources requires the plan's normal authorization for expanded access. Apply the reviewed plan with `config apply-runtime` and restart the service. A valid declaration only proves the tool can be offered: test one search and exact document read after configuring Dokki/Confluence credentials in Relayer. Group Agents and the analyzer do not receive these tools. The source text remains separate from Agent Workspace knowledge. See the [implementation details](../design/agent-runtime-design-detail.md#owner-knowledge-mcp) and [current validation status](../implementation-status.md).
+Use the existing Owner identity and application binding from your configuration. Store credentials under the memgov home using `memgov knowledge configure --input /private/path/credentials.json` (or `--input -` for stdin). The JSON shape is `{"dokki":{"api_key":"…"},"confluence":{"dock_token":"…","pat":"…"}}`; keep the input file private and remove it when no longer needed. For a one-time copy from an existing Relayer installation, run `memgov knowledge import-relayer --from /absolute/path/to/external-knowledge.sqlite`. The old database is left intact; `memgov knowledge status` shows only whether each source is configured. Run `config validate`, then `config plan`; adding these sources requires the plan's normal authorization for expanded access. Apply the reviewed plan with `config apply-runtime` and restart the service. A valid declaration only proves the tool can be offered: test one search and exact document read. Group Agents and the analyzer do not receive these tools. The source text remains separate from Agent Workspace knowledge. See the [implementation details](../design/agent-runtime-design-detail.md#owner-knowledge-mcp) and [current validation status](../implementation-status.md).
 
 The source update for [loaded skill context](../design/agent-runtime-design-detail.md#loaded-skill-context) lets Claude explain both its saved Workspace experience and the knowledge or workflows available through successfully prepared skills. An empty `MEMORY.md` does not make those skills empty. A question such as “What can you help with?” can receive a direct answer; searching for a fact or claiming a document was checked still requires the appropriate evidence. Skills are refreshed for each turn, but availability does not prove that an external service is connected. This prompt change needs a newly built and installed binary plus a service restart; see [implementation status](../implementation-status.md) before assuming it is active.
 

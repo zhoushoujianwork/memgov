@@ -23,9 +23,9 @@ type RuntimeAgentPolicy struct {
 	Managed         bool                 `json:"managed"`
 }
 
-// RuntimeKnowledgeMCP is an opt-in, read-only Relayer connection for an Owner
-// Agent. The command must be a locally managed executable. Callers should keep
-// credentials in Relayer's private data directory, never in these arguments.
+// RuntimeKnowledgeMCP enables read-only source tools for an Owner Agent.
+// Command and Args are retained only for compatibility with older declarations;
+// a sources-only declaration launches memgov's own knowledge server.
 type RuntimeKnowledgeMCP struct {
 	Command string   `json:"command" yaml:"command"`
 	Args    []string `json:"args" yaml:"args"`

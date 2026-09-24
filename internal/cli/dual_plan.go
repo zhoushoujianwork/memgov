@@ -271,7 +271,7 @@ func BuildDualConfigPlan(ctx context.Context, cfg Config, home string, q core.Qu
 	}
 	p.Declaration = canonicalDeclaration(valid.Declaration)
 	for name, declaration := range p.Declaration.Agents {
-		if declaration.KnowledgeMCP != nil {
+		if declaration.KnowledgeMCP != nil && declaration.KnowledgeMCP.Command != "" {
 			info, statErr := os.Stat(declaration.KnowledgeMCP.Command)
 			if statErr != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
 				return p, core.Fail("unavailable", "Agent %q knowledge MCP executable is unavailable", name)

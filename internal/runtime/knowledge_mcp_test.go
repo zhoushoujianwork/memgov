@@ -84,3 +84,31 @@ func TestKnowledgeMCPFailsClosedWhenExecutableIsMissing(t *testing.T) {
 		t.Fatalf("group Agent received Owner source grant: %v", err)
 	}
 }
+
+func TestBuiltInKnowledgeMCPUsesMemgovBinaryAndSelectedSources(t *testing.T) {
+	in := ExecutionInput{ApplicationMode: "direct", BashEnabled: true, Home: t.TempDir(), KnowledgeMCP: &core.RuntimeKnowledgeMCP{Sources: []string{"dokki", "confluence"}}}
+	if err := validateKnowledgeMCP(in); err != nil {
+		t.Fatal(err)
+	}
+	config, allowed, _ := knowledgeMCPConfiguration(in)
+	var parsed struct {
+		MCPServers map[string]struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal([]byte(config), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	server, ok := parsed.MCPServers["memgov_knowledge"]
+	if !ok || server.Command == "" || !strings.Contains(strings.Join(server.Args, " "), "knowledge-mcp") || strings.Contains(config, "relayer") {
+		t.Fatalf("not self-contained: %s", config)
+	}
+	if len(allowed) != 7 || !strings.Contains(strings.Join(allowed, ","), "mcp__memgov_knowledge__search_dokki") || !strings.Contains(strings.Join(allowed, ","), "mcp__memgov_knowledge__query_confluence") {
+		t.Fatalf("wrong tool grant: %v", allowed)
+	}
+	in.ApplicationMode = "group_mention"
+	if err := validateKnowledgeMCP(in); core.ErrorCode(err) != "denied" {
+		t.Fatalf("group received MCP: %v", err)
+	}
+}

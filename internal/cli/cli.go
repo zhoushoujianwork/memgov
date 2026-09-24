@@ -173,6 +173,7 @@ func (a *app) command() *cobra.Command {
 	a.outboxCommands()
 	a.runtimeCommands()
 	a.dataSourceCommands()
+	a.knowledgeCommands()
 	root.AddCommand(a.uiCommand(), a.serviceCommand())
 	return root
 }
